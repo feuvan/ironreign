@@ -1,0 +1,20 @@
+# Unreal Engine generated files
+Binaries/
+DerivedDataCache/
+Intermediate/
+Saved/
+.vs/
+.idea/
+
+# IDE and OS files
+.DS_Store
+*.suo
+*.user
+*.userprefs
+*.xcworkspace
+
+# Build outputs
+Build/
+Plugins/*/Binaries/
+Plugins/*/Intermediate/
+
