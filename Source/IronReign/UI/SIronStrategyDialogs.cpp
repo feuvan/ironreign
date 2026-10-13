@@ -385,7 +385,7 @@ void SIronPrisonerDialog::Construct(const FArguments& InArgs)
 	.AutoHeight()
 	.Padding(FMargin(0.0f, 8.0f, 0.0f, 0.0f))
 	[
-		IronStrategy::MakeStatsHeader(-1, 12.0f)
+		IronStrategy::MakeStatsHeader(-1, 13.0f)
 	];
 	Info->AddSlot()
 	.AutoHeight()

@@ -621,6 +621,7 @@ IRON_TEST(BattleAttackDamageIsSane)
 		IRON_EXPECT_EQ(Battle.Unit(0).Troops, 5000 - Counter->Value);
 		IRON_EXPECT_EQ(Battle.Unit(0).DamageDealt, Hit->Value);
 		IRON_EXPECT(!Hit->Text.empty());
+		IRON_EXPECT_EQ(Hit->Tactic, -1);
 	}
 	IRON_EXPECT(Battle.Unit(1).Morale < 70);
 	IRON_EXPECT(!Battle.Attack(0, 1));
@@ -686,7 +687,7 @@ IRON_TEST(BattleTacticsFireConfuseRally)
 		if (Done)
 		{
 			bBurned = true;
-			IRON_EXPECT(Done->Tactic == ETactic::Fire && Done->Unit == 0 && Done->Target == 1 && Done->Value > 0);
+			IRON_EXPECT(Done->Tactic == static_cast<int>(ETactic::Fire) && Done->Unit == 0 && Done->Target == 1 && Done->Value > 0);
 			IRON_EXPECT_EQ(Battle.Unit(1).Troops, 5000 - Done->Value);
 			IRON_EXPECT_EQ(Battle.BurningAt({7, 5}), 2);
 			IRON_EXPECT_EQ(Battle.Unit(0).TacticsSucceeded, 1);
@@ -727,7 +728,7 @@ IRON_TEST(BattleTacticsFireConfuseRally)
 		if (Done)
 		{
 			bConfused = true;
-			IRON_EXPECT(Done->Tactic == ETactic::Confuse);
+			IRON_EXPECT(Done->Tactic == static_cast<int>(ETactic::Confuse));
 			IRON_EXPECT(Mind.Unit(1).ConfusedDays > 0);
 			Mind.EndTurn();
 			IRON_EXPECT_EQ(Mind.ActiveSide(), 1);
@@ -767,7 +768,7 @@ IRON_TEST(BattleTacticsFireConfuseRally)
 		if (Done)
 		{
 			bRallied = true;
-			IRON_EXPECT(Done->Tactic == ETactic::Rally && Done->Value > 0);
+			IRON_EXPECT(Done->Tactic == static_cast<int>(ETactic::Rally) && Done->Value > 0);
 			IRON_EXPECT_EQ(Camp.Unit(1).Morale, 20 + Done->Value);
 		}
 		BattleTestUtil::EndDay(Camp);
@@ -1268,7 +1269,7 @@ IRON_TEST(BattleAIUsesTacticsSensibly)
 		bool bFire = false;
 		for (const FBattleEvent& Event : Battle.Events())
 		{
-			bFire = bFire || ((Event.Type == EBattleEventType::Tactic || Event.Type == EBattleEventType::TacticFailed) && Event.Tactic == ETactic::Fire && Event.Unit == 0);
+			bFire = bFire || ((Event.Type == EBattleEventType::Tactic || Event.Type == EBattleEventType::TacticFailed) && Event.Tactic == static_cast<int>(ETactic::Fire) && Event.Unit == 0);
 		}
 		IRON_EXPECT(bFire);
 	}
@@ -1291,7 +1292,7 @@ IRON_TEST(BattleAIUsesTacticsSensibly)
 		bool bRally = false;
 		for (const FBattleEvent& Event : Battle.Events())
 		{
-			bRally = bRally || ((Event.Type == EBattleEventType::Tactic || Event.Type == EBattleEventType::TacticFailed) && Event.Tactic == ETactic::Rally);
+			bRally = bRally || ((Event.Type == EBattleEventType::Tactic || Event.Type == EBattleEventType::TacticFailed) && Event.Tactic == static_cast<int>(ETactic::Rally));
 		}
 		IRON_EXPECT(bRally);
 	}

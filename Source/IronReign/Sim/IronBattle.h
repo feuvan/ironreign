@@ -177,8 +177,9 @@ namespace IronSim
 	 *   Counter        Unit (the defender, at From) struck back at Target (at To); Value = troops lost.
 	 *   GateHit        Unit (at From) battered the gate at To; Value = gate damage. Use To: great cities have two gates.
 	 *   GateBroken     The gate at To is now Rubble.
-	 *   Tactic         Unit used Tactic on Target (at To). Value: Fire = troops lost, Confuse = 1, Rally = morale gained.
-	 *   TacticFailed   Unit's Tactic on Target failed; Value = the chance (percent).
+	 *   Tactic         Unit used the tactic in Tactic (an ETactic) on Target (at To). Value: Fire = troops lost,
+	 *                  Confuse = 1, Rally = morale gained.
+	 *   TacticFailed   Unit's tactic (Tactic) on Target failed; Value = the chance (percent).
 	 *   Burn           Unit lost Value troops to the fire on its hex (To) at dawn.
 	 *   DuelChallenge  Unit challenged Target; Value = the AI's acceptance chance.
 	 *   DuelDeclined   Target refused Unit's challenge; Value = morale Target lost.
@@ -196,8 +197,8 @@ namespace IronSim
 		FHex To;
 		/** Damage, chance, morale change... depending on Type. */
 		int Value = 0;
-		/** Which tactic, for Tactic / TacticFailed events. */
-		ETactic Tactic = ETactic::Fire;
+		/** static_cast<int>(ETactic) for Tactic / TacticFailed events, -1 for every other event. */
+		int Tactic = -1;
 		std::string Text;
 	};
 

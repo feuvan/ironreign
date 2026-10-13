@@ -568,7 +568,7 @@ namespace IronStrategy
 					.Delta(SafeStep)
 					.Value_Lambda([ValuePtr]() { return ValuePtr != nullptr ? *ValuePtr : 0; })
 					.OnValueChanged_Lambda([SetValue](int32 SpinValue) { SetValue(SpinValue); })
-					.OnValueCommitted_Lambda([SetValue](int32 CommittedValue, ETextCommit::Type CommitKind) { SetValue(CommittedValue); })
+					.OnValueCommitted_Lambda([SetValue](int32 CommittedValue, ETextCommit::Type) { SetValue(CommittedValue); })
 					.Font(IronStyle::Body(14.0f))
 				]
 			]

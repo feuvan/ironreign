@@ -1275,7 +1275,7 @@ namespace IronSim
 		if (!Rng.Chance(Chance))
 		{
 			Emit(EBattleEventType::TacticFailed, UnitId, TargetId, Actor.Pos, Subject.Pos, Chance, LocF("battle.log.tacticFailed", "{unit} attempts {tactic} on {target}, but it fails.", {{"unit", Actor.Setup.Name}, {"tactic", DisplayName(Tactic)}, {"target", Subject.Setup.Name}}));
-			PendingEvents.back().Tactic = Tactic;
+			PendingEvents.back().Tactic = static_cast<int>(Tactic);
 			return true;
 		}
 		++Actor.TacticsSucceeded;
@@ -1298,14 +1298,14 @@ namespace IronSim
 				}
 			}
 			Emit(EBattleEventType::Tactic, UnitId, TargetId, Actor.Pos, Spot, Loss, LocF("battle.log.fire", "{unit} sets fire to {target}'s position: {damage} casualties.", {{"unit", Actor.Setup.Name}, {"target", Subject.Setup.Name}, {"damage", ToText(Loss)}}));
-			PendingEvents.back().Tactic = Tactic;
+			PendingEvents.back().Tactic = static_cast<int>(Tactic);
 			CheckFall(TargetId, UnitId);
 			break;
 		}
 		case ETactic::Confuse:
 			Subject.ConfusedDays = std::max(Subject.ConfusedDays, 1);
 			Emit(EBattleEventType::Tactic, UnitId, TargetId, Actor.Pos, Subject.Pos, 1, LocF("battle.log.confuse", "{unit} throws {target} into confusion; it will lose its next turn.", {{"unit", Actor.Setup.Name}, {"target", Subject.Setup.Name}}));
-			PendingEvents.back().Tactic = Tactic;
+			PendingEvents.back().Tactic = static_cast<int>(Tactic);
 			break;
 		case ETactic::Rally:
 		{
@@ -1320,7 +1320,7 @@ namespace IronSim
 			{
 				Emit(EBattleEventType::Tactic, UnitId, TargetId, Actor.Pos, Subject.Pos, Gain, LocF("battle.log.rally", "{unit} rallies {target}: morale +{amount}.", {{"unit", Actor.Setup.Name}, {"target", Subject.Setup.Name}, {"amount", ToText(Gain)}}));
 			}
-			PendingEvents.back().Tactic = Tactic;
+			PendingEvents.back().Tactic = static_cast<int>(Tactic);
 			break;
 		}
 		}
