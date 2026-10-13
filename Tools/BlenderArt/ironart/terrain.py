@@ -18,8 +18,6 @@ Conventions: arrays are indexed [row, col] = [y_down, x] like images; coordinate
 noise functions are in *map pixels*; heights are normalised so 0 = sea level, 1 = highest peak.
 """
 
-import math
-
 import numpy as np
 
 # ---------------------------------------------------------------------------------------------

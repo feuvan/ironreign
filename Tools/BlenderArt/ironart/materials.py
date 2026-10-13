@@ -277,7 +277,7 @@ def stone_wall(name="Stone", color="stone", mortar="mortar", block=(0.55, 0.28),
 
 
 def roof_tiles(name="RoofTile", color="roof_tile", channel=0.16, course=0.22, bump=0.6,
-               roughness=0.42, glaze=0.25):
+               roughness=0.42, glaze=0.25, specular=0.5):
     """Glazed barrel-tile roof (UV metres: u along the eave, v down/up the slope).
 
     Channels (tile rows running down the slope) every ``channel`` m, tile courses every ``course``.
@@ -301,7 +301,7 @@ def roof_tiles(name="RoofTile", color="roof_tile", channel=0.16, course=0.22, bu
     light = tuple(min(1, c * 1.25) for c in lin) + (1,)
     col = nb.ramp(height, [(0.0, dark), (0.55, palette.lin4(color)), (1.0, light)])
     col = nb.mix(col, _vary(nb, color, 0.12, 1.5), 0.35)
-    p = nb.principled(Base_Color=col, Roughness=roughness, Specular_IOR_Level=0.5,
+    p = nb.principled(Base_Color=col, Roughness=roughness, Specular_IOR_Level=specular,
                       Coat_Weight=glaze, Coat_Roughness=0.25,
                       Normal=nb.bump(height, bump, 0.03))
     nb.output(p.outputs[0])
@@ -309,19 +309,30 @@ def roof_tiles(name="RoofTile", color="roof_tile", channel=0.16, course=0.22, bu
 
 
 def lacquer(name="Lacquer", color="lacquer", roughness=0.32, coat=1.0, coat_roughness=0.06,
-            vary=0.08, gradient=0.0):
+            vary=0.08, gradient=0.0, sheen_band=0.0, band=(0.60, 0.75)):
     """Red (or black) lacquer: deep base + clear glossy coat; very subtle brushing variation.
 
     ``gradient`` > 0 brightens the top / darkens the bottom of the object's bounding box (the
-    classic lacquered-button glow; uniform horizontally so 9-slices stretch cleanly).
+    classic lacquered-button glow).  ``sheen_band`` > 0 adds a soft horizontal highlight band
+    (+sheen_band value) between ``band`` = (lo, hi) of the bounding-box height (Generated Y,
+    0 = bottom; the studio button uses 0.60-0.75, i.e. 25-40 % from the top).  Both vary only
+    vertically, so 9-slices stretch cleanly - use ``vary=0`` on 9-slice pieces (noise varies
+    along the edges and streaks when stretched).
     """
     mat, nb, created = new(name)
     if created:
         base = _vary(nb, color, vary, 4.0) if vary else color
-        if gradient > 0:
+        if gradient > 0 or sheen_band > 0:
             sep = nb.node("ShaderNodeSeparateXYZ")
             nb.link(nb.coord("Generated"), sep.inputs[0])
             g = nb.maprange(sep.outputs["Y"], 0.0, 1.0, 1.0 - gradient, 1.0 + gradient)
+            if sheen_band > 0:
+                lo, hi = band
+                mid, half = (lo + hi) / 2.0, (hi - lo) / 2.0
+                d = nb.math("ABSOLUTE", nb.math("SUBTRACT", sep.outputs["Y"], mid))
+                bandv = nb.maprange(d, half * 0.4, half * 1.6, 1.0, 0.0, interp="SMOOTHSTEP")
+                g = nb.math("MULTIPLY", g, nb.math("ADD", 1.0, nb.math("MULTIPLY", bandv,
+                                                                         sheen_band * 1.6)))
             gc = nb.node("ShaderNodeCombineColor")
             for k in ("Red", "Green", "Blue"):
                 nb.link(g, gc.inputs[k])
@@ -332,13 +343,19 @@ def lacquer(name="Lacquer", color="lacquer", roughness=0.32, coat=1.0, coat_roug
     return mat
 
 
-def gold_leaf(name="Gold", color="gold", roughness=0.28, vary=0.1):
+def gold_leaf(name="Gold", color="gold", roughness=0.28, vary=0.1, uniform=False):
+    """Gold leaf / gilt bronze (metallic).  ``uniform=True`` removes every noise (colour and
+    roughness) - required for mouldings along 9-slice edges, where any variation along the edge
+    becomes a streak when stretched (STYLE.md: per-row std <= 2 levels)."""
     mat, nb, created = new(name)
     if created:
-        base = _vary(nb, color, vary, 8.0)
-        n = nb.noise(nb.coord("Object"), scale=30.0, detail=2)
-        rough = nb.maprange(n.outputs["Fac"], 0.3, 0.7, roughness * 0.7, roughness * 1.4)
-        p = nb.principled(Base_Color=base, Metallic=1.0, Roughness=rough)
+        if uniform or vary <= 0:
+            p = nb.principled(Base_Color=color, Metallic=1.0, Roughness=roughness)
+        else:
+            base = _vary(nb, color, vary, 8.0)
+            n = nb.noise(nb.coord("Object"), scale=30.0, detail=2)
+            rough = nb.maprange(n.outputs["Fac"], 0.3, 0.7, roughness * 0.7, roughness * 1.4)
+            p = nb.principled(Base_Color=base, Metallic=1.0, Roughness=rough)
         nb.output(p.outputs[0])
     return mat
 
@@ -385,16 +402,35 @@ def cloth(name="Cloth", color="silk_red", sheen=0.5, roughness=0.75, weave=0.0, 
     return mat
 
 
+TINT_AOV = "TintMask"
+
+
+def enable_tint_aov(view_layer=None):
+    """Register the ``TintMask`` value AOV on the view layer (idempotent).  Its render pass is
+    ``rl.outputs['TintMask']``; save it with ``post.comp_outputs`` as the exact tint mask."""
+    vl = view_layer or bpy.context.view_layer
+    if TINT_AOV not in [a.name for a in vl.aovs]:
+        a = vl.aovs.add()
+        a.name = TINT_AOV
+        a.type = "VALUE"
+    return vl
+
+
 def white_cloth(name="ClothWhite", roughness=0.8):
-    """**Pure white** tintable cloth (albedo exactly 1.0, no sheen, no variation).
+    """**Pure white** tintable cloth (albedo exactly 1.0, no sheen, no variation) that also
+    writes 1.0 into the ``TintMask`` AOV (call :func:`enable_tint_aov` once per scene).
 
     The runtime multiplies these pixels by the faction colour, so any hue here would shift the
-    faction colour.  Shading (grey shadows) is fine and desired.
+    faction colour.  Shading (grey shadows) is fine and desired; ``post.neutralize(img, mask)``
+    forces R = G = B inside the mask after grading.
     """
     mat, nb, created = new(name)
     if created:
         p = nb.principled(Base_Color=(1, 1, 1, 1), Roughness=roughness, Specular_IOR_Level=0.2)
         nb.output(p.outputs[0])
+        aov = nb.node("ShaderNodeOutputAOV")
+        aov.aov_name = TINT_AOV
+        aov.inputs["Value"].default_value = 1.0
     return mat
 
 
@@ -409,19 +445,23 @@ def iron(name="Iron", color="iron", roughness=0.42, metallic=0.85, vary=0.12):
     return mat
 
 
-def lamellar(name="Lamellar", color="iron", lacing="lacing_red", plate=(0.026, 0.055),
-             metallic=0.75, roughness=0.42, bump=0.8, vary=0.15, specular=0.5):
-    """Lamellar armour: staggered rows of small plates (UV metres; u around, v down) with
-    coloured lacing showing in the gaps.  ``color`` 'iron' / 'bronze' / '#hex'."""
+def lamellar(name="Lamellar", color="iron", lacing="lacing_red", plate=(0.008, 0.016),
+             metallic=0.75, roughness=0.32, bump=0.8, vary=0.15, specular=0.5, lacing_width=0.035,
+             band_every=5, band_color="bronze"):
+    """Lamellar armour: staggered rows of small plates (UV metres; u around, v down; alternate rows
+    offset by half a plate) with thin coloured lacing in the gaps and a bronze edge band every
+    ``band_every`` rows (0 = none).  ``color`` 'iron' / 'bronze' / '#hex'.  At portrait scale
+    use plates of 8 x 16 mm so they read as scales, not tiles."""
     mat, nb, created = new(name)
     if not created:
         return mat
     uv = nb.coord("UV")
     br = nb.node("ShaderNodeTexBrick", inputs={
-        "Scale": 1.0, "Mortar Size": plate[0] * 0.07, "Mortar Smooth": 0.5, "Bias": 0.0,
+        "Scale": 1.0, "Mortar Size": plate[0] * lacing_width, "Mortar Smooth": 0.5, "Bias": 0.0,
         "Brick Width": plate[0], "Row Height": plate[1],
         "Color1": (1, 1, 1, 1), "Color2": (0.8, 0.8, 0.8, 1), "Mortar": (0, 0, 0, 1)})
     br.offset = 0.5
+    br.offset_frequency = 2
     nb.link(uv, br.inputs["Vector"])
     # plate shading: each plate is slightly convex and the lower edge overlaps the next row
     sep = nb.node("ShaderNodeSeparateXYZ")
@@ -430,32 +470,52 @@ def lamellar(name="Lamellar", color="iron", lacing="lacing_red", plate=(0.026, 0
     slope = nb.maprange(vrow, 0.0, 1.0, 0.0, 1.0)
     height = nb.math("MULTIPLY", nb.math("SUBTRACT", 1.0, br.outputs["Fac"]), slope)
     plate_col = _vary(nb, color, vary, 9.0)
-    tone = nb.mix((0.55, 0.55, 0.55, 1), (1.0, 1.0, 1.0, 1), br.outputs["Color"])
+    tone = nb.mix((0.62, 0.62, 0.62, 1), (1.0, 1.0, 1.0, 1), br.outputs["Color"])
     plate_col = nb.mix(plate_col, tone, 1.0, blend="MULTIPLY")
-    col = nb.mix(lacing, plate_col, nb.math("SUBTRACT", 1.0, br.outputs["Fac"]))
     metal = nb.math("MULTIPLY", nb.math("SUBTRACT", 1.0, br.outputs["Fac"]), metallic)
+    if band_every and band_every > 0:
+        # every N-th row is a bronze edge band (row index = floor(v / plate_h))
+        row = nb.math("FLOOR", nb.math("DIVIDE", sep.outputs["Y"], plate[1]))
+        m = nb.math("FLOORED_MODULO", row, float(band_every))
+        isband = nb.math("LESS_THAN", m, 0.5)
+        plate_col = nb.mix(plate_col, band_color, isband)
+    col = nb.mix(lacing, plate_col, nb.math("SUBTRACT", 1.0, br.outputs["Fac"]))
     p = nb.principled(Base_Color=col, Metallic=metal, Roughness=roughness,
-                      Specular_IOR_Level=specular, Normal=nb.bump(height, bump, 0.004))
+                      Specular_IOR_Level=specular, Normal=nb.bump(height, bump, 0.003))
     nb.output(p.outputs[0])
     return mat
 
 
-def parchment(name="Parchment", color="paper", fibre=0.5, stain=0.12, roughness=0.92):
-    """Warm paper: fibres + soft stains (Object coords, works without UVs)."""
+def parchment(name="Parchment", color="paper", fibre=0.5, stain=0.12, roughness=0.92,
+              calib=None):
+    """Aged paper: isotropic fibre mottling (no directional streaks - those read as wood veneer)
+    + soft low-frequency stains (Object coords, works without UVs).
+
+    The noise is zero-mean around ``color`` so the *average* field lands on the token: with the
+    calibrated UI rig (``lights.rig_ui``) the mean of a flat field is within 3 levels of ``color``
+    per channel (measured & asserted by the UI style frame).  ``calib`` (r, g, b linear multipliers)
+    corrects a measured residual if a recipe changes the rig.
+    """
     mat, nb, created = new(name)
     if not created:
         return mat
     obj = nb.coord("Object")
-    f = nb.noise(nb.mapping(obj, scale=(40, 6, 40)), scale=6.0, detail=8, roughness=0.7)
-    st = nb.noise(obj, scale=1.4, detail=4)
     lin = palette.lin(color)
-    col = nb.ramp(st.outputs["Fac"], [(0.35, tuple(c * (1 - stain * 1.5) for c in lin) + (1,)),
-                                      (0.6, palette.lin4(color)),
-                                      (0.8, tuple(min(1, c * 1.03) for c in lin) + (1,))])
-    fib = nb.ramp(f.outputs["Fac"], [(0.4, (1 - 0.08 * fibre,) * 3 + (1,)), (0.6, (1, 1, 1, 1))])
-    col = nb.mix(col, fib, 1.0, blend="MULTIPLY")
+    if calib:
+        lin = tuple(c * k for c, k in zip(lin, calib))
+    # fine isotropic mottling (paper fibres seen from reading distance) - symmetric around 1.0
+    f = nb.noise(nb.mapping(obj, scale=(140, 140, 140)), scale=1.0, detail=6, roughness=0.6)
+    fib = nb.ramp(f.outputs["Fac"], [(0.30, (1 - 0.05 * fibre,) * 3 + (1,)),
+                                     (0.70, (1 + 0.05 * fibre,) * 3 + (1,))])
+    # soft stains: slightly darker & warmer patches, also centred on 1.0
+    st = nb.noise(nb.mapping(obj, scale=(9, 9, 9)), scale=1.0, detail=3)
+    stc = nb.ramp(st.outputs["Fac"], [(0.30, (1 - stain * 0.8, 1 - stain, 1 - stain * 1.4, 1)),
+                                      (0.50, (1, 1, 1, 1)),
+                                      (0.70, (1 + stain * 0.4, 1 + stain * 0.4, 1 + stain * 0.4, 1))])
+    col = nb.mix(tuple(lin) + (1,), fib, 1.0, blend="MULTIPLY", clamp=False)
+    col = nb.mix(col, stc, 1.0, blend="MULTIPLY", clamp=False)
     p = nb.principled(Base_Color=col, Roughness=roughness, Specular_IOR_Level=0.15,
-                      Normal=nb.bump(f.outputs["Fac"], 0.05, 0.002))
+                      Normal=nb.bump(f.outputs["Fac"], 0.03, 0.002))
     nb.output(p.outputs[0])
     return mat
 
@@ -538,7 +598,7 @@ def rock(name="Rock", color="rock", vary=0.2):
 # people
 # ---------------------------------------------------------------------------------------------
 def skin(name="Skin", color="skin", sss=0.25, roughness=0.48, blush=0.25, vary=0.06,
-         pores=0.05, blush_attr="blush"):
+         pores=0.05, blush_attr="blush", pore_scale=160.0):
     """Warm skin with subsurface.  ``blush_attr`` (mesh float attribute 0..1, optional) reddens
     cheeks/nose/ears; missing attributes read as 0 so it is safe to leave."""
     mat, nb, created = new(name)
@@ -548,7 +608,7 @@ def skin(name="Skin", color="skin", sss=0.25, roughness=0.48, blush=0.25, vary=0
     base = _vary(nb, color, vary, 6.0, vec=obj)
     bl = nb.attr(blush_attr).outputs["Fac"]
     base = nb.mix(base, "#B0584A", nb.math("MULTIPLY", bl, blush))
-    pn = nb.noise(obj, scale=160.0, detail=2)
+    pn = nb.noise(obj, scale=pore_scale, detail=3)
     p = nb.principled(Base_Color=base, Roughness=roughness, Specular_IOR_Level=0.45,
                       Subsurface_Weight=sss, Subsurface_Radius=(1.0, 0.4, 0.25),
                       Subsurface_Scale=0.006, Normal=nb.bump(pn.outputs["Fac"], pores, 0.001))
@@ -674,3 +734,41 @@ def paint_all(amount=0.35, size=0.85, smooth=0.12, skip=("Eye",)):
     for m in bpy.data.materials:
         if m.use_nodes and not m.name.startswith(tuple(skip)):
             paint(m, amount, size, smooth)
+
+
+# ---------------------------------------------------------------------------------------------
+# material sets (slot names used by the geometry builders)
+# ---------------------------------------------------------------------------------------------
+def architecture_set(ground=("#A09678", "#AEA286"), roof_paint=(0.65, 0.62, 0.06)):
+    """Every slot :func:`ironart.geometry.walled_city` / gate towers / houses use, tuned for the
+    96 px city sprites under ``rig_sprite`` (big 1.0 x 0.5 m blocks, low bump, light coping,
+    light ridge caps, packed-earth courtyards so cast shadows stay readable, and the Toon "paint"
+    banding on the tiles - ``roof_paint`` = (amount, size, smooth) - so roof slopes split into a lit
+    and a shadow plane like a painted icon)."""
+    m = _architecture_set(ground)
+    if roof_paint:
+        paint(m["RoofTile"], *roof_paint)
+    return m
+
+
+def _architecture_set(ground):
+    return {
+        "Stone": stone_wall("Stone", "stone", block=(1.0, 0.5), bump=0.1, vary=0.1),
+        "StoneTop": principled("StoneTop", "#B4AE9E", 0.85, vary=0.05),
+        "StoneDark": principled("StoneDark", "stone_dark", 0.9, vary=0.1),
+        "RoofTile": roof_tiles("RoofTile", "#5A6A6E", channel=0.2, course=0.24, glaze=0.0,
+                               roughness=0.7, bump=0.3, specular=0.25),
+        "RoofRidge": principled("RoofRidge", "#8A9494", 0.6, vary=0.03),
+        "PillarRed": lacquer("PillarRed", "pillar_red", roughness=0.45, coat=0.3,
+                             coat_roughness=0.25),
+        "GateDoor": lacquer("GateDoor", "pillar_red", roughness=0.5, coat=0.2, coat_roughness=0.3,
+                            vary=0.04),
+        "Plaster": plaster("Plaster", "plaster"),
+        "Timber": dark_wood("Timber", "timber"),
+        "DoorDark": principled("DoorDark", "#241913", 0.8),
+        "Gold": gold_leaf("Gold"),
+        "Ground": grass_ground("Ground", ground[0], ground[1], scale=0.6),
+        "Foliage": foliage("Foliage", "#4C6A3E", translucency=0.05),
+        "FoliageDark": foliage("FoliageDark", "#3A5536", translucency=0.05),
+        "Trunk": principled("Trunk", "trunk", 0.8),
+    }

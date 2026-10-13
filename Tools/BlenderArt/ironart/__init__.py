@@ -18,9 +18,13 @@ Modules
     geometry   MeshBuilder + procedural builders (roofs, walls, gate towers, trees, hexes, frames...)
     ink        Freestyle brush-ink outlines (with the empty-scene line-style fix)
     post       compositor graphs (Kuwahara painterly...) and numpy/Pillow post-processing helpers
+    terrain    relief-map heightfields, biome albedo painting, terrain build, forest scatter
+    figure     portrait kit: sculpted head, lids/eyes, hair-curve beards/brows/plumes, helmet,
+               armour, scarf, cape
     run        the single headless entry point (timing, logging, error exit codes)
 
-``post`` and ``palette`` import without ``bpy`` so they can also be used from the system python3.
+``post``, ``palette`` and the numpy half of ``terrain`` import without ``bpy`` so they can also be
+used from the system python3.
 See ``Tools/BlenderArt/STYLE.md`` for the numbers (angles, energies, samples, radii, naming).
 """
 

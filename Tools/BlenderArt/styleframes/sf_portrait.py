@@ -15,7 +15,6 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 
-import bpy  # noqa: E402
 import numpy as np  # noqa: E402
 
 from ironart import cameras, figure as F, lights, materials as M, post, scene  # noqa: E402
@@ -30,7 +29,8 @@ SEED = 21
 
 def portrait_materials():
     return {
-        "Skin": M.skin("Skin", "#A26A4C", sss=0.15, roughness=0.6, blush=0.45),
+        "Skin": M.skin("Skin", "#A26A4C", sss=0.15, roughness=0.6, blush=0.6, vary=0.12,
+                       pores=0.12, pore_scale=90.0),
         "Eye": M.eye("Eye", iris="#2E1C10", sclera="#CFC3B2"),
         "Brow": M.hair_mesh("Brow", "#1C1714", strand_scale=400, direction="X"),
         "Beard": M.hair_mesh("Beard", "#17120F", strand_scale=260, direction="Z", roughness=0.6),
@@ -79,7 +79,7 @@ def build_general(rng):
     gb = F.geo.MeshBuilder()
     F.beard(gb, lm, length=0.12, fullness=0.55, style="full", strands=0, rng=rng)
     helm = F.helmet(gb, lm, plume=False, rng=rng)
-    F.torso(gb, lm, shoulder_w=0.44, chest_d=0.24, slope=1.5)
+    F.torso(gb, lm, shoulder_w=0.44, chest_d=0.24, slope=1.5, collar=0.05)
     F.neck_scarf(gb, lm)
     F.cape(gb, lm, shoulder_w=0.44, mat="Cape")
     F.pauldrons(gb, lm, shoulder_w=0.44, tiers=3)

@@ -645,7 +645,7 @@ FReply SIronStrategyScreen::OnKeyDown(const FGeometry& MyGeometry, const FKeyEve
 	return SCompoundWidget::OnKeyDown(MyGeometry, InKeyEvent);
 }
 
-FReply SIronStrategyScreen::OnPreviewKeyDown(const FGeometry& MyGeometry, const FKeyEvent& InKeyEvent)
+FReply SIronStrategyScreen::OnPreviewKeyDown(const FGeometry& /*MyGeometry*/, const FKeyEvent& InKeyEvent)
 {
 	if (InKeyEvent.GetKey() == EKeys::SpaceBar && HandleSpaceKey())
 	{
@@ -732,7 +732,7 @@ void SIronStrategyScreen::SyncFlowWithGame()
 	}
 }
 
-EActiveTimerReturnType SIronStrategyScreen::HandleTick(double InCurrentTime, float InDeltaTime)
+EActiveTimerReturnType SIronStrategyScreen::HandleTick(double /*InCurrentTime*/, float InDeltaTime)
 {
 	if (!Session.IsValid() || !Session->HasGame())
 	{

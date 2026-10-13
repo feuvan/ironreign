@@ -51,3 +51,11 @@ jobs:
         # --warn-missing: untranslated keys are warnings while the zh-Hans/zh-Hant/ja/ko pass is in progress;
         # placeholder mismatches and stale English tables still fail. Drop the flag once translations are complete.
         run: python3 Tools/Localization/check_localization.py --warn-missing
+
+      # The Unreal import itself (Tools/Unreal/build_assets.sh) needs the engine and runs locally; this checks its
+      # inputs (ArtSource/ glTF models and terrain textures, Content/Data/Art3D) and the editor scripts' syntax.
+      # It passes without ArtSource/.
+      - name: Check 3D art sources and editor import scripts
+        run: |
+          python3 -m py_compile Content/Python/*.py Tools/Unreal/*.py
+          python3 Tools/Unreal/check_art_source.py

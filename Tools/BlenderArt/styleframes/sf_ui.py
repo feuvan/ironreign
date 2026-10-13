@@ -11,14 +11,10 @@ cleanly - the preview sheet proves it.
 Scene scale: 1 target pixel = 1 mm.
 """
 
-import math
 import os
-import random
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
-
-import numpy as np  # noqa: E402
 
 from ironart import cameras, geometry as geo, ink, lights, materials as M, post, scene  # noqa: E402
 

@@ -71,6 +71,16 @@ def reset(seed=0):
     sc = bpy.context.scene
     sc.unit_settings.system = "METRIC"
     sc.frame_set(1)
+    # the factory state renders EEVEE (crashes headless) and keeps a Freestyle line set without
+    # a line style (segfaults): switch to Cycles now and drop the dangling line sets, so a script
+    # that forgets setup_cycles()/ink.enable() fails loudly in render() instead of crashing.
+    sc.render.engine = "CYCLES"
+    sc.cycles.device = "CPU"
+    sc.render.use_freestyle = False
+    for vl in sc.view_layers:
+        fs = vl.freestyle_settings
+        while len(fs.linesets) > 0:
+            fs.linesets.remove(fs.linesets[0])
     seed_all(seed)
     sc["ironart_seed"] = seed
     return sc
@@ -84,8 +94,8 @@ def setup_cycles(samples=64, transparent=False, preset="sprite", view="Standard"
     samples            max samples per pixel (adaptive sampling stops earlier on flat areas)
     transparent        film transparency (RGBA output with alpha) - sprites, icons, UI pieces
     preset             light-path preset key of :data:`LIGHT_PATHS`
-    view, look         colour management ('Standard' keeps palette colours exact; 'Filmic' with
-                       'Medium High Contrast' for portraits/terrain highlight roll-off)
+    view, look         colour management: 'Standard' (palette colours exact; map, sprites, UI)
+                       or 'Filmic' + 'Medium Contrast' (portraits); see :data:`VIEW_LOOKS`
     clamp_indirect     fireflies clamp (we have no denoiser)
     threads            fixed thread count, or ``$IRONART_THREADS``, or auto
     """
@@ -135,7 +145,22 @@ def setup_cycles(samples=64, transparent=False, preset="sprite", view="Standard"
     return sc
 
 
+#: allowed view transforms and the looks that belong to them (Blender accepts a Filmic look on
+#: the Standard view silently - we do not).  AgX exists in this build but is not a studio view.
+VIEW_LOOKS = {
+    "Standard": ("None",),
+    "Filmic": ("None", "Very Low Contrast", "Low Contrast", "Medium Low Contrast",
+               "Medium Contrast", "Medium High Contrast", "High Contrast", "Very High Contrast"),
+}
+
+
 def set_color_management(view="Standard", look="None", exposure=0.0, gamma=1.0, scene=None):
+    """Display sRGB, view ``Standard`` or ``Filmic``; ``look`` must belong to the view."""
+    if view not in VIEW_LOOKS:
+        raise ValueError("view %r not allowed (use %s)" % (view, ", ".join(VIEW_LOOKS)))
+    if look not in VIEW_LOOKS[view]:
+        raise ValueError("look %r does not belong to view %r (allowed: %s)"
+                         % (look, view, ", ".join(VIEW_LOOKS[view])))
     sc = scene or bpy.context.scene
     sc.display_settings.display_device = "sRGB"
     sc.view_settings.view_transform = view
@@ -150,6 +175,10 @@ def set_resolution(width, height, supersample=2, scene=None):
 
     Returns the actual render size. Downsample afterwards with ``post.downsample(img, supersample)``.
     """
+    if int(supersample) != supersample or supersample < 1:
+        raise ValueError("supersample must be a positive integer (got %r): a fractional factor "
+                         "renders a size the downsample silently rounds" % (supersample,))
+    supersample = int(supersample)
     sc = scene or bpy.context.scene
     sc.render.resolution_x = int(round(width * supersample))
     sc.render.resolution_y = int(round(height * supersample))
@@ -157,13 +186,14 @@ def set_resolution(width, height, supersample=2, scene=None):
     sc.render.pixel_aspect_x = 1.0
     sc.render.pixel_aspect_y = 1.0
     sc["ironart_target"] = (int(width), int(height))
-    sc["ironart_supersample"] = float(supersample)
+    sc["ironart_supersample"] = supersample
     return sc.render.resolution_x, sc.render.resolution_y
 
 
 def supersample_factor(scene=None):
+    """Integer supersample factor set by :func:`set_resolution` (1 if never set)."""
     sc = scene or bpy.context.scene
-    return float(sc.get("ironart_supersample", 1.0))
+    return int(sc.get("ironart_supersample", 1))
 
 
 def render(path, scene=None, quiet=False):
@@ -173,8 +203,7 @@ def render(path, scene=None, quiet=False):
     their passes next to ``path`` (see :func:`ironart.post.comp_outputs`).
     """
     sc = scene or bpy.context.scene
-    if sc.camera is None:
-        raise RuntimeError("scene has no camera")
+    check_render_settings(sc)
     d = os.path.dirname(os.path.abspath(path))
     os.makedirs(d, exist_ok=True)
     sc.render.filepath = path
@@ -186,6 +215,30 @@ def render(path, scene=None, quiet=False):
             os.path.basename(path), sc.render.resolution_x, sc.render.resolution_y,
             sc.cycles.samples, secs))
     return secs
+
+
+def check_render_settings(scene=None):
+    """Assert the only render configuration that works on this machine (called by :func:`render`):
+    Cycles on CPU, no denoiser, Standard/Filmic view, Freestyle line sets all have a line style."""
+    sc = scene or bpy.context.scene
+    if sc.camera is None:
+        raise RuntimeError("scene has no camera")
+    if sc.render.engine != "CYCLES":
+        raise RuntimeError("render engine is %s: only CYCLES works headless (call "
+                           "scene.setup_cycles)" % sc.render.engine)
+    if sc.cycles.device != "CPU":
+        raise RuntimeError("Cycles device must be CPU")
+    if sc.cycles.use_denoising:
+        raise RuntimeError("denoising is on but this build has no OpenImageDenoise")
+    vt = sc.view_settings.view_transform
+    if vt not in VIEW_LOOKS or sc.view_settings.look not in VIEW_LOOKS[vt]:
+        raise RuntimeError("colour management %r / %r not allowed" % (vt, sc.view_settings.look))
+    if sc.render.use_freestyle:
+        for vl in sc.view_layers:
+            for ls in vl.freestyle_settings.linesets:
+                if ls.linestyle is None:
+                    raise RuntimeError("Freestyle line set %r has no line style (segfaults): use "
+                                       "ink.enable()" % ls.name)
 
 
 @contextlib.contextmanager

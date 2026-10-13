@@ -317,7 +317,7 @@ def beard(mb, lm, length=0.16, width=1.0, fullness=1.0, mat="Beard", style="full
     """
     rng = rng or random.Random(7)
     V = lm["verts"]
-    rx, rzb = lm["rx"], lm["rz_bot"]
+    rzb = lm["rz_bot"]
     chin = lm["chin"]
     mouth = lm["mouth"]
     top_z = {"full": lm["nose_tip"].z - 0.004, "chin": mouth.z - 0.004, "long": mouth.z - 0.01}[style]
@@ -419,7 +419,7 @@ def helmet(mb, lm, style="dome", plume=True, mat="Iron", trim="Gold", plume_mat=
         z = bz + (rzt + 0.012 - bz) * (math.sin(a) ** 0.85) + 0.008 * t ** 6
         prof.append((r, z))
     s = mb.n
-    rings = mb.lathe(prof, mat, 48, center=(cx, cy, 0), smooth=True, scale_xy=(sx, sy))
+    mb.lathe(prof, mat, 48, center=(cx, cy, 0), smooth=True, scale_xy=(sx, sy))
     # ribs: raised gold/iron strips along meridians
     for i in range(ribs):
         a = TAU * i / ribs
@@ -436,7 +436,6 @@ def helmet(mb, lm, style="dome", plume=True, mat="Iron", trim="Gold", plume_mat=
         rr = 1.0 + 0.11 * v * math.cos((-1 + 2 * u) * 1.4)
         return (cx + math.cos(a) * sx * rr, cy + math.sin(a) * sy * rr, bz - 0.008 - 0.004 * v)
     mb.grid(peak, 16, 2, trim, smooth=True)
-    mb.grid(peak, 16, 2, trim, smooth=True, flip=True)
     # front crest plate (small gold flame/ruyi shape)
     top_front = Vector((0, cy - sy * 0.98, bz + 0.03))
     mb.sphere(top_front + Vector((0, -0.002, 0)), 0.008, trim, 12, 8, scale=(1.0, 0.35, 1.4))
@@ -465,7 +464,6 @@ def helmet(mb, lm, style="dome", plume=True, mat="Iron", trim="Gold", plume_mat=
         z = bz - 0.008 - 0.075 * v
         return (cx + math.cos(a) * sx * rr, cy + math.sin(a) * sy * rr, z)
     mb.grid(guard, 40, 6, neck_guard, lambda u, v: (u * 0.5, v * 0.09), smooth=True)
-    mb.grid(guard, 40, 6, neck_guard, lambda u, v: (u * 0.5, v * 0.09), smooth=True, flip=True)
     mb.tube([guard(u, 1.0) for u in np.linspace(0, 1, 40)], 0.0025, trim, 5)
     return {"start": s, "finial_z": tz + 0.022, "brim_z": bz}
 
@@ -485,7 +483,8 @@ def topknot(mb, lm, mat="Hair", pin="Gold"):
 # ---------------------------------------------------------------------------------------------
 # torso: armour & robes
 # ---------------------------------------------------------------------------------------------
-def torso(mb, lm, shoulder_w=0.44, chest_d=0.24, mat="Lamellar", segments=48, slope=1.0):
+def torso(mb, lm, shoulder_w=0.44, chest_d=0.24, mat="Lamellar", segments=48, slope=1.0,
+          collar=0.0, collar_mat=None, trim="Bronze"):
     """Upper body: neck base -> sloping trapezius -> rounded shoulders -> chest, as stacked
     superellipse rings (boxy but soft).  Returns the shoulder-line z."""
     top = lm["neck"].z - 0.045
@@ -506,6 +505,12 @@ def torso(mb, lm, shoulder_w=0.44, chest_d=0.24, mat="Lamellar", segments=48, sl
         rings.append(ring)
     for k in range(len(rings) - 1):
         mb.quad_strip(rings[k + 1], rings[k], mat, True, True)     # outward winding
+    if collar > 0:
+        # high stand-up collar (lamellar neck guard) hiding the neck: ``collar`` = height in m
+        mb.lathe([(0.074, top - 0.01), (0.078, top + collar * 0.5), (0.074, top + collar)],
+                 collar_mat or mat, 40, center=(0, 0.02, 0), scale_xy=(1.0, 0.92))
+        mb.lathe([(0.072, top + collar), (0.077, top + collar + 0.004), (0.07, top + collar + 0.007)],
+                 trim, 40, center=(0, 0.02, 0), scale_xy=(1.0, 0.92))
     return top - 0.055 * slope
 
 
@@ -561,7 +566,6 @@ def cape(mb, lm, shoulder_w=0.44, mat="Silk", length=0.4, folds=7, spread=1.0):
         z = top + 0.02 - length * v - 0.03 * math.cos(math.pi * (u - 0.5)) * (1 - v)
         return (x, y, z)
     mb.grid(fn, 40, 10, mat, smooth=True)
-    mb.grid(fn, 40, 10, mat, smooth=True, flip=True)
 
 
 def pauldrons(mb, lm, shoulder_w=0.44, tiers=3, mat="Lamellar", trim="Bronze", size=1.0):
@@ -583,8 +587,6 @@ def pauldrons(mb, lm, shoulder_w=0.44, tiers=3, mat="Lamellar", trim="Bronze", s
                         c.z + R.z * math.cos(th))
             mb.grid(fn, 20, 5, mat, lambda u, v: (u * 0.25, v * 0.06), smooth=True,
                     flip=(sgn < 0))
-            mb.grid(fn, 20, 5, mat, lambda u, v: (u * 0.25, v * 0.06), smooth=True,
-                    flip=(sgn > 0))
             mb.tube([fn(u, 1.0) for u in np.linspace(0, 1, 20)], 0.0032, trim, 5)
 
 

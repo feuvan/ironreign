@@ -27,8 +27,10 @@ public class IronReign : ModuleRules
 		PrivateDependencyModuleNames.AddRange(new[]
 		{
 			"UMG",
-			// Runtime PNG decoding for Content/Data/Art (FIronAssets).
-			"ImageWrapper"
+			// Runtime PNG decoding for Content/Data/Art (FIronAssets) and the 3D terrain heightmap (World/IronTerrain).
+			"ImageWrapper",
+			// Runtime-built terrain, sea and water meshes of the 3D campaign map (World/IronTerrain).
+			"ProceduralMeshComponent"
 		});
 	}
 }

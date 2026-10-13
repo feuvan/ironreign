@@ -455,12 +455,12 @@ void SIronMapView::UpdateHover(const FVector2f& LocalPos)
 	}
 }
 
-FVector2D SIronMapView::ComputeDesiredSize(float LayoutScaleMultiplier) const
+FVector2D SIronMapView::ComputeDesiredSize(float /*LayoutScaleMultiplier*/) const
 {
 	return FVector2D(800.0, 600.0);
 }
 
-int32 SIronMapView::OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const
+int32 SIronMapView::OnPaint(const FPaintArgs& /*Args*/, const FGeometry& AllottedGeometry, const FSlateRect& /*MyCullingRect*/, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool /*bParentEnabled*/) const
 {
 	LastViewSize = IronMapViewDetail::ToVec2f(AllottedGeometry.GetLocalSize());
 
@@ -1062,7 +1062,7 @@ void SIronMapView::OnMouseLeave(const FPointerEvent& MouseEvent)
 	}
 }
 
-FReply SIronMapView::OnKeyDown(const FGeometry& MyGeometry, const FKeyEvent& InKeyEvent)
+FReply SIronMapView::OnKeyDown(const FGeometry& /*MyGeometry*/, const FKeyEvent& InKeyEvent)
 {
 	const FKey Key = InKeyEvent.GetKey();
 	const float Step = 120.0f / FMath::Max(Zoom, 0.1f);
@@ -1104,7 +1104,7 @@ FReply SIronMapView::OnKeyDown(const FGeometry& MyGeometry, const FKeyEvent& InK
 	return FReply::Handled();
 }
 
-FCursorReply SIronMapView::OnCursorQuery(const FGeometry& MyGeometry, const FPointerEvent& CursorEvent) const
+FCursorReply SIronMapView::OnCursorQuery(const FGeometry& /*MyGeometry*/, const FPointerEvent& /*CursorEvent*/) const
 {
 	if (bDragging)
 	{

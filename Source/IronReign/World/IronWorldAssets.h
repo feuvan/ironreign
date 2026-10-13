@@ -5,6 +5,7 @@
 
 class UMaterialInstanceDynamic;
 class UMaterialInterface;
+class UMaterialParameterCollection;
 class UObject;
 class UStaticMesh;
 class UStaticMeshComponent;
@@ -24,8 +25,9 @@ DECLARE_LOG_CATEGORY_EXTERN(LogIronWorld, Log, All);
  *
  * Paths (docs/DESIGN.md 12.3 / 12.5):
  *   /Game/IronReign/Models/SM_<Name>        imported models (City_1..3, Sect, Banner, Flag, Tree_*, Unit_*, Hex_*)
- *   /Game/IronReign/Materials/<Name>        M_IronTerrain / MI_IronTerrain, M_IronWater, M_IronTint, M_IronHighlight,
- *                                           M_IronInk, MI_IronClouds
+ *   /Game/IronReign/Materials/<Name>        M_IronTerrain / MI_IronTerrain, M_IronWater / MI_IronWater, M_IronTint,
+ *                                           M_IronHighlight, M_IronInk, MI_IronClouds, MPC_IronSeason
+ *   (all created by Content/Python/ironreign_import.py)
  *   Content/Data/Art3D/                     runtime JSON + heightmap (read with FFileHelper)
  */
 namespace IronWorld
@@ -51,7 +53,7 @@ namespace IronWorld
 
 	/** Engine content used as fallbacks (present in editor builds; cooked only when referenced). */
 	inline const TCHAR* const EngineBasicShapeMaterialPath = TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial");
-	inline const TCHAR* const EngineCylinderPath = TEXT("/Engine/BasicShapes/Cylinder.Cylinder");
+	inline const TCHAR* const EnginePlanePath = TEXT("/Engine/BasicShapes/Plane.Plane");
 	inline const TCHAR* const EngineCloudMaterialPath = TEXT("/Engine/EngineSky/VolumetricClouds/m_SimpleVolumetricCloud_Inst.m_SimpleVolumetricCloud_Inst");
 
 	/** Content/Data/Art3D (relative like FIronSession::DataDir so it also resolves inside .pak files). */
@@ -66,6 +68,10 @@ namespace IronWorld
 	UMaterialInterface* LoadMaterial(const FString& MaterialName);
 	UStaticMesh* LoadEngineMesh(const TCHAR* ObjectPath);
 	UMaterialInterface* LoadEngineMaterial(const TCHAR* ObjectPath);
+	/** MPC_IronSeason (scalars Snow / Autumn / Wetness read by every imported model material). */
+	UMaterialParameterCollection* LoadSeasonCollection();
+	/** 1 m plane with 0..1 UVs: SM_IronPlane (cooked with the game), else the engine's basic plane. */
+	UStaticMesh* LoadPlaneMesh();
 
 	/** Reads a UTF-8 JSON file (BOM tolerated) with the rules engine's parser. Thread-safe. */
 	bool ReadJsonFile(const FString& Path, IronSim::FJson& OutJson, FString& OutError);
@@ -77,9 +83,11 @@ namespace IronWorld
 	FLinearColor FactionColor(const IronSim::FGameState& State, int32 FactionIndex);
 
 	/**
-	 * Gives every material slot whose name starts with "Tint" a dynamic instance with the vector parameter Tint = Color.
-	 * The instance derives from TintBase (M_IronTint) when given, else from the slot's own material. Pass the instance
-	 * returned by an earlier call as Existing to just update the colour. Returns nullptr when the mesh has no Tint slot.
+	 * Gives every "Tint" material slot (slot name starting with "Tint", or a material derived from M_IronTint) one
+	 * dynamic instance with the vector parameter Tint = Color. The instance derives from the slot's own material (the
+	 * importer's M_IronTint instance carrying the model's base texture), or from TintBase when the slot is empty.
+	 * Pass the instance returned by an earlier call as Existing to just update the colour. Returns nullptr when the
+	 * mesh has no Tint slot.
 	 */
 	UMaterialInstanceDynamic* ApplyTint(UStaticMeshComponent* Component, const FLinearColor& Color, UMaterialInstanceDynamic* Existing, UMaterialInterface* TintBase);
 

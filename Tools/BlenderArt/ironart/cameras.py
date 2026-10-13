@@ -16,7 +16,7 @@ can be framed to an exact pixel box and anchored (e.g. bottom-centre at (48, 92)
 import math
 
 import bpy
-from mathutils import Matrix, Vector
+from mathutils import Vector
 
 from . import scene as _scene
 
@@ -87,18 +87,18 @@ def sprite_camera(target=(0.0, 0.0, 0.0), elevation_deg=35.0, azimuth_deg=-20.0,
     return cam
 
 
-def portrait_camera(eye_point, head_height=0.26, yaw_deg=-18.0, pitch_deg=-3.0, focal_mm=85.0,
-                    eye_line=0.38, head_frac=0.47, name="CamPortrait"):
-    """Perspective bust camera.
+def portrait_camera(eye_point, head_height=0.232, yaw_deg=20.0, pitch_deg=-4.0, focal_mm=85.0,
+                    eye_line=0.38, head_frac=0.6, name="CamPortrait"):
+    """Perspective bust camera (studio standard = the defaults).
 
     eye_point    world point between the eyes
     head_height  chin-to-crown height of the model (m) - used to set the distance
-    yaw_deg      camera swing around the head (negative = camera to the subject's left, i.e.
-                 viewer's left, giving the standard Koei 3/4 view with the face turned to the
-                 viewer's left of camera... see STYLE.md)
+    yaw_deg      camera swing around the head; +20 puts the camera on the subject's left so the
+                 face turns towards screen-left, into the top-left key ("short" lighting)
     pitch_deg    camera tilt (negative looks slightly up at the subject = heroic)
     eye_line     fraction from the top of the frame where the eyes land (DESIGN.md: 0.38)
-    head_frac    fraction of the frame height the head occupies
+    head_frac    fraction of the frame height the head occupies (0.6 = Koei bust, helmet crest
+                 may be cropped)
     """
     cam = _new_camera(name, ortho=False)
     cd = cam.data
@@ -150,6 +150,25 @@ def world_to_pixel(cam, co, scene=None):
     return v.x * sc.render.resolution_x, (1.0 - v.y) * sc.render.resolution_y
 
 
+def world_to_target_px(cam, co, scene=None):
+    """World point -> (x, y) in **target** pixels (render pixels / supersample), top-left origin.
+    Use this for anything written into the game (glyph areas, anchors)."""
+    sc = scene or bpy.context.scene
+    x, y = world_to_pixel(cam, co, sc)
+    ss = _scene.supersample_factor(sc)
+    return x / ss, y / ss
+
+
+def target_rect(cam, corners, scene=None):
+    """Axis-aligned bbox (x, y, w, h) in integer target pixels of projected world ``corners``
+    (e.g. the 4 cloth corners :func:`ironart.geometry.banner` returns).  Rounds outward."""
+    import math as _m
+    pts = [world_to_target_px(cam, c, scene) for c in corners]
+    x0 = _m.floor(min(p[0] for p in pts)); y0 = _m.floor(min(p[1] for p in pts))
+    x1 = _m.ceil(max(p[0] for p in pts)); y1 = _m.ceil(max(p[1] for p in pts))
+    return int(x0), int(y0), int(x1 - x0), int(y1 - y0)
+
+
 def pixel_bounds(cam, objs, scene=None):
     """(xmin, ymin, xmax, ymax) render-pixel bounds (top-left origin) of the objects' vertices."""
     sc = scene or bpy.context.scene
@@ -167,7 +186,9 @@ def fit_ortho(cam, objs, margin_px=2.0, anchor="center", anchor_world=None, anch
               units_per_px=None, scene=None):
     """Frame ``objs`` exactly in an orthographic camera. Works in *target* pixels.
 
-    margin_px     free border in target pixels (scaled by the scene supersample factor)
+    margin_px     free border in target pixels (scaled by the scene supersample factor): one
+                  number, or ``(left, top, right, bottom)`` - sprites need more room on the right
+                  and bottom for the ink half-width and the contact shadow (recipes: (2, 2, 5, 4))
     anchor        'center' - content bbox centred;
                   'bottom_center' - bbox centred horizontally, bottom edge on the bottom margin
     anchor_world  optional world point (e.g. the ground centre of a city) that must land on
@@ -180,7 +201,9 @@ def fit_ortho(cam, objs, margin_px=2.0, anchor="center", anchor_world=None, anch
     sc = scene or bpy.context.scene
     ss = _scene.supersample_factor(sc)
     W, H = sc.render.resolution_x, sc.render.resolution_y
-    m = margin_px * ss
+    if isinstance(margin_px, (int, float)):
+        margin_px = (margin_px,) * 4
+    ml, mt, mr, mb = (v * ss for v in margin_px)
     inv = cam.matrix_world.inverted()
     local = [inv @ p for p in _eval_points(objs)]
     if not local:
@@ -188,23 +211,25 @@ def fit_ortho(cam, objs, margin_px=2.0, anchor="center", anchor_world=None, anch
     xmin = min(p.x for p in local); xmax = max(p.x for p in local)
     ymin = min(p.y for p in local); ymax = max(p.y for p in local)
 
+    cxm = (ml + W - mr) / 2.0                     # centre of the free area
+    cym = (mt + H - mb) / 2.0
     if anchor_world is not None:
         a = inv @ Vector(anchor_world)
         ax, ay = a.x, a.y
-        px, py = (anchor_px[0] * ss, anchor_px[1] * ss) if anchor_px else (W / 2.0, H - m)
+        px, py = (anchor_px[0] * ss, anchor_px[1] * ss) if anchor_px else (cxm, H - mb)
     elif anchor == "bottom_center":
         ax, ay = (xmin + xmax) / 2.0, ymin
-        px, py = (anchor_px[0] * ss, anchor_px[1] * ss) if anchor_px else (W / 2.0, H - m)
+        px, py = (anchor_px[0] * ss, anchor_px[1] * ss) if anchor_px else (cxm, H - mb)
     else:
         ax, ay = (xmin + xmax) / 2.0, (ymin + ymax) / 2.0
-        px, py = (anchor_px[0] * ss, anchor_px[1] * ss) if anchor_px else (W / 2.0, H / 2.0)
+        px, py = (anchor_px[0] * ss, anchor_px[1] * ss) if anchor_px else (cxm, cym)
 
     if units_per_px is not None:
         u = units_per_px / ss
     else:
         cands = []
-        for ext, avail in ((ax - xmin, px - m), (xmax - ax, W - m - px),
-                           (ymax - ay, py - m), (ay - ymin, H - m - py)):
+        for ext, avail in ((ax - xmin, px - ml), (xmax - ax, W - mr - px),
+                           (ymax - ay, py - mt), (ay - ymin, H - mb - py)):
             if ext > 1e-9:
                 cands.append(ext / max(avail, 1e-6))
         u = max(cands) if cands else 0.01
@@ -236,3 +261,45 @@ def center_on(cam, objs, x_frac=0.5, scene=None):
     cam.data.shift_x += dx
     bpy.context.view_layer.update()
     return dx
+
+
+def surface_samples(cam, width=None, height=None, scene=None):
+    """Ray-cast one ray per *target* pixel centre of an orthographic camera.
+
+    Returns ``{"hit": HxW bool, "normal": HxWx3 world face normals, "mat": HxW material names
+    ('' = miss), "obj": HxW object names}`` - used by QA to measure plane values (wall tops vs west
+    / south / east faces, lit vs shadow roof slopes) in the finished sprite.
+    """
+    import numpy as np
+    sc = scene or bpy.context.scene
+    tw, th = sc.get("ironart_target", (sc.render.resolution_x, sc.render.resolution_y))
+    W, H = int(width or tw), int(height or th)
+    dg = bpy.context.evaluated_depsgraph_get()
+    m = cam.matrix_world
+    right = m.to_3x3() @ Vector((1, 0, 0))
+    up = m.to_3x3() @ Vector((0, 1, 0))
+    fwd = (m.to_3x3() @ Vector((0, 0, -1))).normalized()
+    rx, ry = sc.render.resolution_x, sc.render.resolution_y
+    scale = cam.data.ortho_scale
+    vw, vh = (scale, scale * ry / rx) if rx >= ry else (scale * rx / ry, scale)
+    centre = m.translation + right * (cam.data.shift_x * scale) + up * (cam.data.shift_y * scale)
+    hit = np.zeros((H, W), bool)
+    nrm = np.zeros((H, W, 3), np.float32)
+    mats = np.full((H, W), "", dtype=object)
+    objs = np.full((H, W), "", dtype=object)
+    for j in range(H):
+        for i in range(W):
+            o = centre + right * ((i + 0.5) / W - 0.5) * vw + up * (0.5 - (j + 0.5) / H) * vh
+            ok, loc, n, idx, ob, _mx = sc.ray_cast(dg, o, fwd)
+            if not ok:
+                continue
+            hit[j, i] = True
+            nrm[j, i] = tuple(n)
+            objs[j, i] = ob.name
+            try:
+                ev = ob.evaluated_get(dg)
+                mi = ev.data.polygons[idx].material_index
+                mats[j, i] = ev.data.materials[mi].name if ev.data.materials[mi] else ""
+            except (AttributeError, IndexError):
+                pass
+    return {"hit": hit, "normal": nrm, "mat": mats, "obj": objs}

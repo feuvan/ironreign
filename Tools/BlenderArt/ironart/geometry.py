@@ -237,7 +237,7 @@ class MeshBuilder:
         d = b - a
         L = d.length
         s = self.n
-        rings = self.lathe([(r0, 0.0), (r1, L)], mat, segments, smooth=smooth,
+        self.lathe([(r0, 0.0), (r1, L)], mat, segments, smooth=smooth,
                            cap_bottom=caps, cap_top=caps and r1 > 1e-6)
         q = d.normalized().to_track_quat("Z", "Y")
         self.transform(s, Matrix.Translation(a) @ q.to_matrix().to_4x4())
@@ -251,7 +251,7 @@ class MeshBuilder:
             t = math.pi * k / rings
             prof.append((math.sin(t), -math.cos(t)))
         s = self.n
-        rr = self.lathe([(max(r, 1e-5) if 0 < k < rings else 0.0, z) for k, (r, z) in enumerate(prof)],
+        self.lathe([(max(r, 1e-5) if 0 < k < rings else 0.0, z) for k, (r, z) in enumerate(prof)],
                         mat, segments, smooth=smooth)
         for i in range(s, self.n):
             v = self.verts[i]
@@ -473,55 +473,58 @@ def chinese_roof(mb, center, width, depth, height, overhang=0.3, lift=0.25, flar
 # ---------------------------------------------------------------------------------------------
 # walls, towers, buildings
 # ---------------------------------------------------------------------------------------------
-def wall_segment(mb, p0, p1, height=1.6, thickness=0.9, mat="Stone", top_mat="StoneDark",
+def wall_segment(mb, p0, p1, height=1.6, thickness=0.9, mat="Stone", top_mat="StoneTop",
                  batter=0.12, crenels=True, merlon=(0.32, 0.22, 0.3), gap=0.26, outer=-1,
                  parapet=0.12):
     """Battered stone wall from p0 to p1 (ground points) with crenellated outer parapet.
 
     outer = -1 puts the merlons on the right-hand side of p0->p1 (the outside when walls are
-    traced counter-clockwise), +1 on the left.
+    traced counter-clockwise), +1 on the left.  ``top_mat`` is the lighter coping/walkway that
+    makes the wall tops the brightest plane of a city sprite.
     """
     a, b = Vector(p0).to_2d(), Vector(p1).to_2d()
     d = b - a
     L = d.length
     ang = math.atan2(d.y, d.x)
     s = mb.n
-    mb.box((L / 2, 0, 0), (L, thickness, height), mat, taper=(0.0, batter))
+    mb.box((L / 2, 0, 0), (L, thickness, height), mat, taper=(0.0, batter), top_mat=top_mat)
     if crenels:
         mw, mt, mh = merlon
         yo = outer * -(thickness / 2 - batter - mt / 2)
         # continuous low parapet + merlons
-        mb.box((L / 2, yo, height), (L, mt, parapet), mat)
+        mb.box((L / 2, yo, height), (L, mt, parapet), mat, top_mat=top_mat)
         n = max(1, int((L + gap) // (mw + gap)))
         pitch = L / n
         for i in range(n):
             x = pitch * (i + 0.5)
-            mb.box((x, yo, height + parapet), (min(mw, pitch * 0.62), mt, mh - parapet), mat)
+            mb.box((x, yo, height + parapet), (min(mw, pitch * 0.62), mt, mh - parapet), mat,
+                   top_mat=top_mat)
     mb.transform(s, Matrix.Translation(Vector((a.x, a.y, Vector(p0).z if len(p0) > 2 else 0.0)))
                  @ Matrix.Rotation(ang, 4, "Z"))
     return s
 
 
 def wall_ring(mb, width, depth, height=1.6, thickness=0.9, gate_gap=2.2, corner_towers=True,
-              tower=1.5, tower_roof=True, mat="Stone", **kw):
+              tower=1.5, tower_roof=True, mat="Stone", top_mat="StoneTop", **kw):
     """Rectangular city wall centred at the origin; the gate gap is in the front (-y) wall."""
     hx, hy = width / 2, depth / 2
     c = [(-hx, -hy), (hx, -hy), (hx, hy), (-hx, hy)]
     # front wall in two halves (gate gap in the middle); others full.  CCW -> outside on right.
     g = gate_gap / 2
-    wall_segment(mb, (-hx, -hy), (-g, -hy), height, thickness, mat, **kw)
-    wall_segment(mb, (g, -hy), (hx, -hy), height, thickness, mat, **kw)
-    wall_segment(mb, (hx, -hy), (hx, hy), height, thickness, mat, **kw)
-    wall_segment(mb, (hx, hy), (-hx, hy), height, thickness, mat, **kw)
-    wall_segment(mb, (-hx, hy), (-hx, -hy), height, thickness, mat, **kw)
+    wall_segment(mb, (-hx, -hy), (-g, -hy), height, thickness, mat, top_mat, **kw)
+    wall_segment(mb, (g, -hy), (hx, -hy), height, thickness, mat, top_mat, **kw)
+    wall_segment(mb, (hx, -hy), (hx, hy), height, thickness, mat, top_mat, **kw)
+    wall_segment(mb, (hx, hy), (-hx, hy), height, thickness, mat, top_mat, **kw)
+    wall_segment(mb, (-hx, hy), (-hx, -hy), height, thickness, mat, top_mat, **kw)
     if corner_towers:
         for (x, y) in c:
-            mb.box((x, y, 0), (tower, tower, height + 0.35), mat, taper=(0.1, 0.1))
+            mb.box((x, y, 0), (tower, tower, height + 0.3), mat, taper=(0.1, 0.1), top_mat=top_mat)
             if tower_roof:
-                mb.box((x, y, height + 0.35), (tower * 0.62, tower * 0.62, 0.55), "Plaster")
-                chinese_roof(mb, (x, y, height + 0.9), tower * 0.62, tower * 0.62, 0.45,
-                             overhang=0.22, lift=0.12, flare=0.06, style="pyramid", thickness=0.04,
-                             res=(8, 5))
+                tw = tower * 0.6
+                mb.box((x, y, height + 0.3), (tw, tw, 0.42), "Plaster")
+                # low pyramid with a gentle lift: reads as a watch-tower roof, never a witch hat
+                chinese_roof(mb, (x, y, height + 0.72), tw, tw, 0.3, overhang=0.18, lift=0.07,
+                             flare=0.035, style="pyramid", thickness=0.04, res=(8, 5), curve=1.4)
 
 
 def arch_door(mb, center, width, height, mat="DoorDark", facing=-1, segments=10, slope=0.0):
@@ -566,18 +569,29 @@ def pavilion(mb, center, width, depth, height, cols=(4, 2), pillar_r=0.07, mat_p
 
 
 def gate_tower(mb, center=(0, 0, 0), width=3.2, depth=1.8, base_h=1.9, hall_h=0.75,
-               two_storey=True, mat="Stone", door=True):
-    """City gate: battered stone base with an arched tunnel + red-pillared tower hall with a
-    double-eave hip-gable roof.  ``center`` is the ground centre (gate faces -y).
-    ``door=False`` gives a keep / drum tower on a solid stone podium."""
+               two_storey=True, mat="Stone", door=True, door_w=1.0, top_mat="StoneTop",
+               roof_h=0.62):
+    """City gate: battered stone base with an arched gateway (dark arch, red-lacquer doors with a
+    gold stud row) + red-pillared tower hall with a double-eave hip-gable roof.  ``center`` is the
+    ground centre (gate faces -y).  ``door=False`` gives a keep / drum tower on a solid podium."""
     cx, cy, cz = center
-    mb.box((cx, cy, cz), (width, depth, base_h), mat, taper=(0.12, 0.1))
+    mb.box((cx, cy, cz), (width, depth, base_h), mat, taper=(0.12, 0.1), top_mat=top_mat)
     if door:
-        arch_door(mb, (cx, cy - depth / 2 - 0.004, cz), width * 0.26, base_h * 0.62, "DoorDark",
-                  slope=0.1 / base_h)
+        dh = min(base_h * 0.68, door_w * 1.25)
+        slope = 0.1 / base_h
+        fy = cy - depth / 2
+        # dark arch surround, then the doors slightly proud of it (but inside the arch)
+        arch_door(mb, (cx, fy - 0.004, cz), door_w, dh, "DoorDark", slope=slope)
+        arch_door(mb, (cx, fy - 0.008, cz), door_w * 0.84, dh * 0.9, "GateDoor", slope=slope)
+        # gold stud row across both leaves at 55 % height
+        zs = cz + dh * 0.5
+        yy = fy - 0.012 - slope * (zs - cz)
+        mb.box((cx, yy, zs), (door_w * 0.8, 0.012, 0.075), "Gold")
+        # centre seam between the two leaves
+        mb.box((cx, yy - 0.002, cz), (0.035, 0.012, dh * 0.82), "DoorDark")
     # walkway platform
     top = cz + base_h
-    mb.box((cx, cy, top), (width - 0.24, depth - 0.2, 0.06), "StoneDark")
+    mb.box((cx, cy, top), (width - 0.24, depth - 0.2, 0.06), top_mat)
     hw, hd = width * 0.72, depth * 0.62
     pavilion(mb, (cx, cy, top + 0.06), hw, hd, hall_h, cols=(4, 2))
     roof_z = top + 0.06 + hall_h
@@ -587,11 +601,11 @@ def gate_tower(mb, center=(0, 0, 0), width=3.2, depth=1.8, base_h=1.9, hall_h=0.
         up_z = roof_z + 0.18
         pavilion(mb, (cx, cy, up_z), hw * 0.78, hd * 0.78, hall_h * 0.62, cols=(3, 2),
                  lattice=False)
-        chinese_roof(mb, (cx, cy, up_z + hall_h * 0.62), hw * 0.78, hd * 0.78, 0.62,
+        chinese_roof(mb, (cx, cy, up_z + hall_h * 0.62), hw * 0.78, hd * 0.78, roof_h,
                      overhang=0.34, lift=0.2, flare=0.12, style="hip_gable", thickness=0.05,
                      res=(16, 7))
     else:
-        chinese_roof(mb, (cx, cy, roof_z), hw, hd, 0.6, overhang=0.32, lift=0.18, flare=0.1,
+        chinese_roof(mb, (cx, cy, roof_z), hw, hd, roof_h, overhang=0.32, lift=0.18, flare=0.1,
                      style="hip_gable", thickness=0.05, res=(16, 7))
 
 
@@ -640,6 +654,79 @@ def pagoda(mb, center, tiers=5, base_w=1.4, tier_h=0.55, taper=0.82, octagonal=F
         mb.sphere((cx, cy, z + base_w * (0.18 + 0.15 * k)), 0.07 - 0.012 * k, "Gold", 8, 5)
 
 
+#: walled-city layouts per manifest tier (City_1 town, City_2 walled city, City_3 great city).
+#: Walls are kept low (a 0.95 m wall hides only ~1.35 m of courtyard from the 35 deg camera) so
+#: the roofs, houses and trees inside read as a city, not a fort.
+CITY_TIERS = {
+    1: dict(width=5.0, depth=4.4, wall_h=0.7, thickness=0.55, towers=False, gate_w=2.2,
+            gate_h=1.05, gate_two_storey=False, keep=False, keep_h=0.0, hall=True, pagoda=False,
+            houses=4, trees=3),
+    2: dict(width=6.4, depth=5.6, wall_h=0.95, thickness=0.7, towers=True, gate_w=3.0,
+            gate_h=1.35, gate_two_storey=True, keep=True, keep_h=1.8, hall=False, pagoda=False,
+            houses=4, trees=3),
+    3: dict(width=7.6, depth=6.6, wall_h=1.1, thickness=0.8, towers=True, gate_w=3.4,
+            gate_h=1.5, gate_two_storey=True, keep=True, keep_h=2.1, hall=True, pagoda=True,
+            houses=4, trees=4),
+}
+
+
+def walled_city(mb, rng, size=2, **overrides):
+    """Koei map city for manifest tier ``size`` (1 town, 2 walled city, 3 great city).
+
+    Layout rules (STYLE.md section 11): low stone ring with a lighter coping, gate tower on the
+    front centre line, the keep on a tall podium at the back so the roofs step up front -> back
+    (keep ridge ~20-30 % above the gate ridge: the classic Koei two-roof silhouette), houses and
+    tree clumps in the visible middle band of the courtyard so it reads as a city, not a fort.
+    Ground centre at the origin, gate facing -y.  Material slots:
+    :func:`ironart.materials.architecture_set`.  Returns the tier dict used.
+    """
+    t = dict(CITY_TIERS[size])
+    t.update(overrides)
+    W, D, wh = t["width"], t["depth"], t["wall_h"]
+    mb.box((0, 0, 0), (W - 0.4, D - 0.4, 0.04), "Ground")
+    wall_ring(mb, W, D, height=wh, thickness=t["thickness"], gate_gap=t["gate_w"] * 0.62,
+              corner_towers=t["towers"], tower=min(1.1, W * 0.17),
+              merlon=(0.3, 0.2, 0.24), gap=0.22, batter=0.08)
+    gate_tower(mb, (0, -D / 2, 0), width=t["gate_w"], depth=1.4 if size > 1 else 1.1,
+               base_h=t["gate_h"], hall_h=0.65 if size > 1 else 0.55,
+               two_storey=t["gate_two_storey"], door_w=0.95 if size > 1 else 0.8,
+               roof_h=0.5 if size > 1 else 0.42)
+    if t["keep"]:
+        gate_tower(mb, (0, D * 0.24, 0.04), width=t["gate_w"] * 0.86, depth=1.5,
+                   base_h=t["keep_h"], hall_h=0.72, door=False, two_storey=True, roof_h=0.62)
+    if t["hall"]:
+        hx = W * 0.2 if size == 3 else 0.0
+        hy = D * 0.24 if size == 1 else -D * 0.02
+        hall(mb, (hx, hy, 0.04), width=1.8 if size == 1 else 1.4, depth=1.0, height=0.5,
+             roof_h=0.48, platform=0.18)
+    if t["pagoda"]:
+        # rear-left: clear of the pennant keep-out box (upper right of the icon)
+        pagoda(mb, (-W * 0.3, D * 0.26, 0.04), tiers=5, base_w=0.7, tier_h=0.4)
+    # houses: middle band, long side to the camera
+    slots = [(-W * 0.3, -D * 0.02, 0.0), (W * 0.3, -D * 0.02, 0.0),
+             (-W * 0.3, D * 0.3, 0.0), (W * 0.3, D * 0.3, 0.0)]
+    if size == 1:
+        slots = [(-W * 0.27, -D * 0.06, 0.0), (W * 0.27, -D * 0.06, 0.0),
+                 (-W * 0.27, D * 0.3, math.pi / 2), (W * 0.27, D * 0.3, math.pi / 2)]
+    for (x, y, rot) in slots[:t["houses"]]:
+        if t["pagoda"] and x < 0 and y > 0:
+            continue
+        if size == 3 and x > 0 and abs(y) < 0.5:
+            continue                                   # the hall stands there
+        house(mb, (x, y, 0.04), width=rng.uniform(1.0, 1.15), depth=0.72, height=0.48,
+              roof_h=0.36, rot_z=rot, lift=0.05)
+    # tree clumps in the courtyards (Koei cities are green inside)
+    spots = [(-W * 0.13, -D * 0.04), (W * 0.14, -D * 0.06), (W * 0.36, D * 0.12),
+             (-W * 0.36, D * 0.12)]
+    for (x, y) in spots[:t["trees"]]:
+        for k in range(3):
+            a = TAU * k / 3 + rng.uniform(-0.4, 0.4)
+            tree_broadleaf(mb, (x + math.cos(a) * 0.2, y + math.sin(a) * 0.2, 0.04),
+                           height=rng.uniform(0.6, 0.8), radius=rng.uniform(0.2, 0.25), rng=rng,
+                           leaf=rng.choice(("Foliage", "FoliageDark")), blobs=4, detail=0)
+    return t
+
+
 # ---------------------------------------------------------------------------------------------
 # nature
 # ---------------------------------------------------------------------------------------------
@@ -684,7 +771,6 @@ def tree_pine(mb, base, height=1.2, radius=0.35, rng=None, leaf="FoliageDark", t
         z0 = bz + height * (0.22 + 0.5 * f)
         r = radius * (1.0 - 0.55 * f)
         h = height * (0.5 - 0.12 * f)
-        s = mb.n
         ring = []
         for k in range(seg):
             a = TAU * k / seg + rng.uniform(-0.15, 0.15)
@@ -752,7 +838,9 @@ def banner(mb, base, pole_h=2.4, cloth_w=0.9, cloth_h=1.3, wave=0.08, waves=1.5,
            cloth_mat="ClothWhite", pole_mat="DarkWood", finial_mat="Gold", phase=0.0):
     """Army banner: pole + rectangular cloth hanging from a top crossbar, gentle wave.
 
-    Returns the cloth's (x0, z0, x1, z1) rectangle in local metres (for glyph placement).
+    Returns the cloth's 4 world-space corners [top-left, top-right, bottom-right, bottom-left]
+    (Vectors).  The glyph area for ``BannerGlyphArea.txt`` is
+    ``cameras.target_rect(cam, corners)`` written as integer 'x y w h' (spaces, target pixels).
     """
     bx, by, bz = base
     mb.cylinder((bx, by, bz), (bx, by, bz + pole_h), 0.03, 0.025, pole_mat, segments=8)
@@ -769,8 +857,7 @@ def banner(mb, base, pole_h=2.4, cloth_w=0.9, cloth_h=1.3, wave=0.08, waves=1.5,
 
     nu, nv = segments
     mb.grid(fn, nu, nv, cloth_mat, lambda u, v: (u * cloth_w, -v * cloth_h), smooth=True)
-    mb.grid(fn, nu, nv, cloth_mat, lambda u, v: (u * cloth_w, -v * cloth_h), smooth=True, flip=True)
-    return (bx + 0.03, top - 0.02 - cloth_h, bx + 0.03 + cloth_w, top - 0.02)
+    return [Vector(fn(0, 0)), Vector(fn(1, 0)), Vector(fn(1, 1)), Vector(fn(0, 1))]
 
 
 def hex_points(r=1.0, flat_top=True):

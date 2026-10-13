@@ -33,12 +33,22 @@ def _patch_freestyle():
     """Make Freestyle's thickness setters tolerate FEdgeSmooth border edges (see module doc)."""
     import os
     import sys
+    if tuple(bpy.app.version[:2]) != (4, 0):
+        raise RuntimeError("ink._patch_freestyle targets Blender 4.0's Freestyle python (found %s):"
+                           " re-check parameter_editor.ThicknessModifierMixIn / "
+                           "ThicknessBlenderMixIn before bumping this check"
+                           % bpy.app.version_string)
     p = os.path.join(bpy.utils.system_resource("SCRIPTS"), "freestyle", "modules")
     if p not in sys.path:
         sys.path.append(p)
     import parameter_editor as pe
     if getattr(pe, "_ironart_patched", False):
         return
+    for cls, meth in (("ThicknessModifierMixIn", "set_thickness"),
+                      ("ThicknessBlenderMixIn", "blend_thickness_asymmetric")):
+        if not hasattr(getattr(pe, cls, None), meth):
+            raise RuntimeError("Freestyle parameter_editor.%s.%s not found: the crash patch no "
+                               "longer applies to this Blender build" % (cls, meth))
     orig_set = pe.ThicknessModifierMixIn.set_thickness
     orig_asym = pe.ThicknessBlenderMixIn.blend_thickness_asymmetric
 
@@ -129,10 +139,11 @@ def _lineset(fs, name, style, silhouette, border, crease, contour, external_cont
     return ls
 
 
-def enable(thickness_px=1.0, color="Ink", alpha=1.0, inner_scale=0.55, inner_alpha=0.7,
+def enable(thickness_px=0.9, color="Ink", alpha=1.0, inner_scale=0.5, inner_alpha=0.5,
            inner_color=None, crease_angle=135.0, border=False, crease=True,
            material_boundary=False, taper=True, calligraphy=0.5, pressure_noise=0.25, wobble=0.0,
-           smooth=True, as_pass=False, collection=None, exclude_collection=None, scene=None):
+           smooth=True, as_pass=False, collection=None, exclude_collection=None,
+           outer_select="external_contour", scene=None):
     """Enable Freestyle with the studio two-weight brush ink.
 
     Line set "Outer": the external contour (sprite/figure silhouette against the background) at
@@ -146,6 +157,10 @@ def enable(thickness_px=1.0, color="Ink", alpha=1.0, inner_scale=0.55, inner_alp
     wobble           geometric noise amplitude in target pixels (0 = clean)
     as_pass          render lines into a separate "Freestyle" pass instead of the beauty image
                      (``post.comp_painterly(ink=True)`` lays it over the painted colour)
+    outer_select     'external_contour' (sprite silhouette against the background),
+                     'contour' (each object's outer outline against other objects: the canopy
+                     mass of a forest object on a hex ground), or 'silhouette' (every fold of
+                     every blob - heavy; avoid on foliage)
     collection       restrict lines to objects in this collection (others get no lines)
     exclude_collection  objects in this collection get no lines
     Returns ``{"outer": lineset, "inner": lineset or None}``.
@@ -176,7 +191,12 @@ def enable(thickness_px=1.0, color="Ink", alpha=1.0, inner_scale=0.55, inner_alp
                                 material_boundary, collection, exclude_collection)
     st = _style("InkOuter", color, alpha, thickness_px, ss, taper, calligraphy, pressure_noise,
                 wobble, smooth, seed)
-    out["outer"] = _lineset(fs, "Outer", st, False, False, False, False, True, False, collection,
+    if outer_select not in ("external_contour", "silhouette", "contour"):
+        raise ValueError("outer_select must be external_contour / silhouette / contour")
+    sil = outer_select == "silhouette"
+    con = outer_select == "contour"
+    out["outer"] = _lineset(fs, "Outer", st, sil, False, False, con,
+                            outer_select == "external_contour", False, collection,
                             exclude_collection)
     return out
 
@@ -187,17 +207,16 @@ def disable(scene=None):
     bpy.context.view_layer.use_freestyle = False
 
 
-def thickness_for(target_px):
-    """Recommended base ink thickness (target px) for an asset whose short side is ``target_px``.
+#: Outer ink weight (target px) by output short side - the approved style-frame weights
+#: (sprites 0.9, hex canopies 0.8 via their recipe, UI 1.0).  ``recipes.RECIPES[family]["ink"]``
+#: is authoritative per family; this table is the fallback for new families.
+THICKNESS_BY_SIZE = ((64, 0.75), (128, 0.9), (256, 1.0), (720, 1.6), (1e9, 2.0))
 
-    Keeps the outline weight visually consistent across families (see STYLE.md table).
-    """
-    if target_px <= 64:
-        return 0.75
-    if target_px <= 128:
-        return 1.0
-    if target_px <= 256:
-        return 1.25
-    if target_px <= 720:
-        return 1.6
-    return 2.0
+
+def thickness_for(target_px):
+    """Recommended outer ink thickness (target px) for an asset whose short side is
+    ``target_px`` (see :data:`THICKNESS_BY_SIZE` / STYLE.md section 6)."""
+    for limit, t in THICKNESS_BY_SIZE:
+        if target_px <= limit:
+            return t
+    return THICKNESS_BY_SIZE[-1][1]

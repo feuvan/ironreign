@@ -1,10 +1,15 @@
-"""Style frame (b): 96x96 walled city sprite with a gate tower, transparent, bottom-centre anchored.
+"""Style frame (b): 96x96 walled city sprite (City_2), transparent, ground-centre anchored.
 
-    Tools/BlenderArt/render.sh Tools/BlenderArt/styleframes/sf_city.py [out_dir]
+    Tools/BlenderArt/render.sh Tools/BlenderArt/styleframes/sf_city.py [out_dir] [--size N]
 
-Pipeline: build (MeshBuilder) -> 3/4 ortho camera fitted to the pixel frame -> sprite light rig ->
-Cycles 4x supersample + Freestyle ink pass + shadow catcher -> compositor painterly (Kuwahara) ->
-numpy: Lanczos downsample, grade, alpha clean-up -> 96x96 PNG.
+Pipeline (recipe "sprite"): ``geometry.walled_city`` -> 3/4 ortho camera fitted with margins
+(2, 2, 5, 4) and the ground centre on (48, 72) -> ``rig_sprite`` -> Cycles 4x + Freestyle ink
+pass -> compositor: straight-alpha Kuwahara (1.5 target px) + ink over -> numpy: Lanczos
+downsample, grade, unsharp, footprint contact shadow towards 315 deg, alpha clean-up -> 96x96.
+
+QA (asserted): plane values measured per target pixel by ray casting (wall tops / west / south
+faces - east and north faces are not visible from the sprite camera - and lit / shadow roof
+slopes), clear 1 px border, pennant keep-out box clear.
 """
 
 import os
@@ -13,85 +18,130 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 
-import bpy  # noqa: E402
+import numpy as np  # noqa: E402
 
-from ironart import cameras, geometry as geo, ink, lights, materials as M, post, scene  # noqa: E402
+from ironart import cameras, geometry as geo, materials as M, post, recipes, scene  # noqa: E402
 
 SIZE = 96
-SS = 4
+#: City_N tier rendered by this frame (City_2 = the walled city)
+TIER = int(sys.argv[sys.argv.index("--size") + 1]) if "--size" in sys.argv else 2
+#: the UI draws Flag.png over this box of the 96 px canvas (SIronMapView.cpp: x = 48 + 0.08 * 96,
+#: w = 0.42 * 96 * 32/48, y from -0.45 * FlagH) - keep tall structures out of it
+PENNANT_KEEPOUT = (56, 0, 83, 23)
 
 
-def city_materials():
-    """Material slots used by the architecture builders (names are the builder defaults)."""
-    return {
-        "Stone": M.stone_wall("Stone", "stone", block=(0.5, 0.25), bump=0.25),
-        "StoneDark": M.principled("StoneDark", "stone_dark", 0.9, vary=0.1),
-        "RoofTile": M.roof_tiles("RoofTile", "roof_tile", channel=0.2, course=0.24, glaze=0.1,
-                                 roughness=0.55, bump=0.4),
-        "RoofRidge": M.principled("RoofRidge", "roof_ridge", 0.55, vary=0.05),
-        "PillarRed": M.lacquer("PillarRed", "pillar_red", roughness=0.45, coat=0.3,
-                               coat_roughness=0.25),
-        "Plaster": M.plaster("Plaster", "plaster"),
-        "Timber": M.dark_wood("Timber", "timber"),
-        "DoorDark": M.principled("DoorDark", "#2A1D15", 0.7),
-        "Gold": M.gold_leaf("Gold"),
-        "Ground": M.grass_ground("Ground", "#8C8466", "#9C8E6C", scale=0.6),
-    }
+def erode(m):
+    """1 px erosion: measure plane interiors, not the ink/anti-aliased boundaries."""
+    p = np.pad(m, 1)
+    return m & p[:-2, 1:-1] & p[2:, 1:-1] & p[1:-1, :-2] & p[1:-1, 2:]
 
 
-def build_city(mb, rng, width=6.8, depth=5.6, wall_h=1.5):
-    """Walled city (City_2 scale): wall ring + corner towers, hero gate tower, a keep on a stone
-    podium at the back and a few houses.  Tall elements are kept on the centre line so the
-    silhouette reads at 96 px."""
-    geo.wall_ring(mb, width, depth, height=wall_h, thickness=0.85, gate_gap=2.6, tower=1.2,
-                  merlon=(0.3, 0.22, 0.3), gap=0.22, batter=0.12)
-    geo.gate_tower(mb, (0, -depth / 2, 0), width=3.4, depth=1.8, base_h=wall_h + 0.7,
-                   hall_h=0.85)
-    mb.box((0, 0, 0), (width - 0.6, depth - 0.6, 0.05), "Ground")
-    geo.gate_tower(mb, (0, depth * 0.22, 0.05), width=2.6, depth=1.6, base_h=0.9, hall_h=0.8,
-                   door=False)
-    for (x, y, rot) in [(-2.15, -0.6, 1.5708), (2.15, -0.6, 1.5708), (-2.0, 1.4, 0.0),
-                        (2.0, 1.4, 0.0)]:
-        geo.house(mb, (x, y, 0.05), width=rng.uniform(1.1, 1.3), depth=0.85,
-                  height=0.6, roof_h=0.45, rot_z=rot, lift=0.06)
+def plane_values(img, samples, lights_dir):
+    """Median luma (8-bit) of stone planes by orientation and of roof slopes by N.L (plane
+    interiors only - each class mask is eroded by 1 px)."""
+    lum = post.luma8(img)
+    n = samples["normal"]
+    mat = samples["mat"]
+    stone = np.isin(mat, ["Stone", "StoneTop"]) & (img[..., 3] > 0.9)
+    roof = (mat == "RoofTile") & (img[..., 3] > 0.9)
+    out = {}
+    for name, m in (("tops", stone & (n[..., 2] > 0.8)),
+                    ("west", stone & (n[..., 0] < -0.7)),
+                    ("south", stone & (n[..., 1] < -0.7))):
+        m = erode(m)
+        out[name] = float(np.median(lum[m])) if m.sum() >= 4 else float("nan")
+        out[name + "_n"] = int(m.sum())
+    ndl = (n * np.array(lights_dir, np.float32)).sum(-1)
+    # lit = the top quarter of the visible roof by N.L, shadow = the bottom 15 % (east hips,
+    # north slopes): the two planes a painted roof must separate
+    if roof.any():
+        q_lo, q_hi = np.percentile(ndl[roof], [15, 75])
+    else:
+        q_lo, q_hi = -1, 2
+    lit = erode(roof & (ndl >= q_hi))
+    shd = roof & (ndl <= q_lo)
+    out["roof_ndl_pct"] = [round(float(v), 2) for v in np.percentile(ndl[roof], [5, 25, 50, 75, 95])] if roof.any() else []
+    ground = erode((mat == "Ground") & (img[..., 3] > 0.9))
+    out["ground_p10"] = float(np.percentile(lum[ground], 10)) if ground.sum() >= 10 else float("nan")
+    ws = stone & (n[..., 0] < -0.7) & (img[..., 3] > 0.9)
+    out["west_p10"] = float(np.percentile(lum[ws], 10)) if ws.sum() >= 10 else float("nan")
+    out["roof_lit"] = post.region_mean(img, mask=lit)
+    out["roof_shadow"] = post.region_mean(img, mask=shd)
+    return out
 
 
 def main():
-    out = scene.args()[0] if scene.args() else os.path.join(os.environ["IRONART_OUT"], "styleframes")
+    a = [x for x in scene.args() if not x.startswith("--")]
+    a = [x for x in a if not x.isdigit()]
+    out = a[0] if a else os.path.join(os.environ["IRONART_OUT"], "styleframes")
     os.makedirs(out, exist_ok=True)
     times = {}
-    sc = scene.reset(seed=11)
+    scene.reset(seed=11)
     rng = random.Random(11)
-    scene.setup_cycles(samples=64, transparent=True, preset="sprite", view="Standard")
-    scene.set_resolution(SIZE, SIZE, SS)
+    recipes.setup("sprite", SIZE, SIZE)
     with scene.timer("build", times):
-        mats = city_materials()
+        mats = M.architecture_set()
         mb = geo.MeshBuilder()
-        build_city(mb, rng)
+        geo.walled_city(mb, rng, size=TIER)
         city = mb.build("City", mats)
-    cam = cameras.sprite_camera(elevation_deg=35, azimuth_deg=-20)
-    cameras.fit_ortho(cam, [city], margin_px=1.5, anchor="bottom_center")
-    lights.rig_sprite(cam)
-    ink.enable(thickness_px=0.6, alpha=0.85, inner_scale=0.6, inner_alpha=0.6, as_pass=True,
-               crease_angle=125, calligraphy=0.3, pressure_noise=0.15)
-    post.comp_painterly(size=4, sharpness=0.7, eccentricity=0.8, amount=0.6, saturation=1.0,
-                        ink_opacity=0.9)
-    raw = os.path.join(out, "city_raw_%dx.png" % SS)
+    cam = recipes.camera("sprite")
+    recipes.frame("sprite", cam, [city])
+    rig = recipes.light("sprite", cam)
+    recipes.ink("sprite")
+    recipes.paint("sprite")
+    raw = os.path.join(out, "city%d_raw_4x.png" % TIER)
     times["render"] = scene.render(raw)
+    with scene.timer("qa_rays", times):
+        samples = cameras.surface_samples(cam)
+        from mathutils import Vector
+        key_dir = tuple((rig["key"].matrix_world.to_3x3() @ Vector((0, 0, 1))).normalized())
     with scene.timer("post", times):
-        img = post.load(raw)
-        img = post.downsample(img, SS)
-        img = post.grade(img, saturation=0.95, contrast=1.05, warmth=0.015)
-        img = post.unsharp(img, 0.8, 0.3)
-        img = post.drop_shadow(img, offset=(2.0, 1.2), blur_px=1.5, opacity=0.35, squash=0.5)
-        img = post.alpha_cleanup(img)
-        final = os.path.join(out, "sf_city_96.png")
+        img_noshadow = recipes.finish("sprite", raw, shadow=None, alpha=None)
+        img = recipes.finish("sprite", raw)
+        suffix = "" if TIER == 2 else "_%d" % TIER
+        final = os.path.join(out, "sf_city%s_96.png" % suffix)
         post.save(img, final)
-        sheet = post.contact_sheet([(img, "96x96"), (post.resize(img, (192, 192), "nearest"), "x2"),
-                                    (post.over(img, post.solid(96, 96, "#A9A86A")), "on plain")],
-                                   cols=3, scale=1)
-        post.save(sheet, os.path.join(out, "sf_city_sheet.png"))
+        pv = plane_values(img_noshadow, samples, key_dir)
+        # QA visual: which pixels were measured as tops / west / south / roof lit / roof shadow
+        n, m = samples["normal"], samples["mat"]
+        stone = np.isin(m, ["Stone", "StoneTop"])
+        cls = np.zeros((SIZE, SIZE, 4), np.float32)
+        cls[..., 3] = samples["hit"] * 0.35
+        for col, mk in (((1, 1, 0.2), stone & (n[..., 2] > 0.8)), ((0.2, 0.6, 1), stone & (n[..., 0] < -0.7)),
+                        ((1, 0.3, 0.3), stone & (n[..., 1] < -0.7)), ((0.2, 1, 0.3), (m == "RoofTile"))):
+            cls[mk, :3] = col
+            cls[mk, 3] = 1.0
+        post.save(post.contact_sheet([(post.resize(img_noshadow, (192, 192), "nearest"), "img"),
+                                      (post.resize(cls, (192, 192), "nearest"), "classes")], cols=2),
+                  os.path.join(out, "city%d_qa_classes.png" % TIER))
+        on_map = post.solid(SIZE, SIZE, "#97A26E")
+        sheet = post.contact_sheet(
+            [(img, "96x96"), (post.resize(img, (192, 192), "nearest"), "x2"),
+             (post.over(img, on_map), "on plain #97A26E"),
+             (post.over(post.resize(img, (58, 58)), post.solid(58, 58, "#97A26E")), "58 px (UI)")],
+            cols=4, scale=1)
+        post.save(sheet, os.path.join(out, "sf_city%s_sheet.png" % suffix))
+    qa = post.QA("city%d" % TIER)
+    qa.range("wall tops luma", pv["tops"], 178, 205)
+    qa.range("west faces luma", pv["west"], 140, 165)
+    qa.range("south faces luma", pv["south"], 92, 118)
+    rl_ = float(np.dot(pv["roof_lit"], (0.2126, 0.7152, 0.0722)))
+    rs_ = float(np.dot(pv["roof_shadow"], (0.2126, 0.7152, 0.0722)))
+    qa.range("roof lit slope luma", rl_, 105, 140)
+    qa.range("roof shadow slope luma", rs_, 45, 75)
+    qa.range("roof lit / shadow ratio", rl_ / max(rs_, 1.0), 1.6, 3.0)
+    qa.range("courtyard in shadow (p10 luma)", pv["ground_p10"], 58, 140)
+    qa.range("west face in cast shadow (p10)", pv["west_p10"], 50, 140)
+    qa.max("border alpha (1 px ring)", post.border_alpha_max(img), 0.0)
+    x0, y0, x1, y1 = PENNANT_KEEPOUT
+    qa.max("pennant keep-out alpha", float(img[y0:y1, x0:x1, 3].max()), 0.1)
+    print("[ironart] planes", {k: (round(v, 1) if isinstance(v, float) else v) for k, v in pv.items()
+                               if not isinstance(v, (tuple, list))},
+          "roof N.L pct", pv["roof_ndl_pct"], "roof lit", tuple(round(c, 1) for c in pv["roof_lit"]),
+          "roof shadow", tuple(round(c, 1) for c in pv["roof_shadow"]))
     print("[ironart] TIMES", {k: round(v, 2) for k, v in times.items()})
+    qa.check()
 
 
-main()
+if __name__ == "__main__":
+    main()

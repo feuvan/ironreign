@@ -841,7 +841,7 @@ int32 SIronHexView::DrawTooltip(FSlateWindowElementList& OutDrawElements, int32 
 	return Layer + 1;
 }
 
-int32 SIronHexView::OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const
+int32 SIronHexView::OnPaint(const FPaintArgs& /*Args*/, const FGeometry& AllottedGeometry, const FSlateRect& /*MyCullingRect*/, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& /*InWidgetStyle*/, bool /*bParentEnabled*/) const
 {
 	namespace Detail = IronHexViewDetail;
 	const FVector2f LocalSize = Detail::HexVec(AllottedGeometry.GetLocalSize());
