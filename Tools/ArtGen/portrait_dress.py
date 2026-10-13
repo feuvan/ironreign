@@ -80,7 +80,7 @@ def finish(cv, rng):
     cv.rgb *= vig[..., None]
     # mute: pull saturation down a little toward warm grey
     g = cv.rgb.mean(axis=2, keepdims=True)
-    cv.rgb = mix(cv.rgb, g * np.array([1.04, 0.99, 0.9], np.float32), 0.12)
+    cv.rgb = mix(cv.rgb, g * np.array([1.04, 0.99, 0.9], np.float32), 0.05)
 
 
 # ----------------------------------------------------------------------
@@ -125,6 +125,23 @@ class Body:
                          (rx + 0.3 * hu + out, ry + 0.1 * hu - out), (rx + out, ry - out * 0.5)], 6)
         bottom = [(slx - 0.3 * hu - out, H + 20), (srx + 0.3 * hu + out, H + 20)]
         return pts_l + [bottom[0], bottom[1]] + pts_r
+
+    def shoulder_curve(self, side, out=0.0, n=8):
+        """Top contour of the near (side=-1) or far (side=+1) shoulder, neck -> arm."""
+        hu = self.hu
+        if side < 0:
+            lx, ly = self.neck_l
+            sx, sy = self.sh_l
+            pts = [(lx - out, ly - out * 0.5), (lx - 0.35 * hu - out, ly + 0.14 * hu - out),
+                   (sx * 0.5 + lx * 0.5 - out, sy * 0.55 + ly * 0.45 - out * 0.6),
+                   (sx - out, sy - out * 0.2), (sx - 0.25 * hu - out, sy + 0.45 * hu)]
+        else:
+            rx, ry = self.neck_r
+            sx, sy = self.sh_r
+            pts = [(rx + out, ry - out * 0.5), (rx + 0.3 * hu + out, ry + 0.1 * hu - out),
+                   (sx * 0.5 + rx * 0.5 + out, sy * 0.6 + ry * 0.4 - out * 0.6),
+                   (sx + out, sy - out * 0.2), (sx + 0.25 * hu + out, sy + 0.45 * hu)]
+        return catmull(pts, n)
 
     def neck_poly(self, extra_down=0.0):
         hu = self.hu
@@ -507,15 +524,15 @@ def beard_mass(head, fp, style, length):
                     (far[0] + 0.04 * hu, far[1] - 0.05 * hu)], 8)
 
 
-def draw_beard(cv, head, fp, surf, rng, colors, style='full', length=0.5):
+def draw_beard(cv, head, fp, surf, rng, colors, style='full', length=0.5, thin=False):
     from portrait_face import beard_region
     hu = head.hu
     my, mu = fp['mouth_y'], fp['mouth_u']
-    if style == 'goatee':
+    if style == 'goatee' or thin:
         face_part = np.zeros((HH, WW), np.float32)
     else:
         face_part = beard_region(head, fp, surf, top_off=0.08 if style == 'full' else 0.04) * surf['fmask']
-    below = poly(beard_mass(head, fp, style, length))
+    below = poly(beard_mass(head, fp, 'goatee' if thin else style, length))
     m = np.maximum(face_part, below)
     # keep the lower lip clear
     mx, myy = head.pt(0, my + 0.04, 0.03 * hu)

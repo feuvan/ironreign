@@ -35,7 +35,7 @@ def skin_palette(base_hex):
     base = hexc(base_hex)
     deep = base * np.array([0.42, 0.30, 0.27]) + np.array([0.03, 0.01, 0.01])
     shade = base * np.array([0.72, 0.56, 0.50])
-    lite = mix(base, hexc('#F6E2C8'), 0.45)
+    lite = mix(base, hexc('#F4DCC0'), 0.35)
     return deep.astype(np.float32), shade.astype(np.float32), base, lite.astype(np.float32)
 
 
@@ -118,26 +118,30 @@ def render_skin(cv, head, fp, rng, surf=None):
     z = z[idx[0], idx[1]]
     z = blur(z, 1.2)
     hf = face_heightfield(head, fp)
-    htot = z + hf
+    htot = z + 1.45 * hf
     nx, ny, nz = normals_from_height(htot)
-    lit = lambert(nx, ny, nz, wrap=0.35)
+    lit = 0.14 + 0.86 * lambert(nx, ny, nz, wrap=0.4)
     sh = shadow_map(hf, LIGHT, steps=12, max_dist=0.14 * head.hu)
     sh = blur(sh, 1.5)
     ao = clamp01((blur(hf, 3.0) - hf) / (0.03 * head.hu))
-    v = lit * (1 - 0.14 * sh) - 0.12 * ao
-    # paint texture
-    v += 0.035 * value_noise(rng, 10, 3)
+    # broad occlusion where the face turns under (jaw, chin underside)
+    v = lit * (1 - 0.2 * sh) - 0.2 * ao
+    # paint texture: soft blotches plus a faint directional brush drag
+    v += 0.04 * value_noise(rng, 9, 3) + 0.015 * fiber_noise(rng, 2.5, -0.9)
     v = clamp01(v)
     deep, shade, base, lite = skin_palette(fp['skin'])
     t = v[..., None]
-    # 4-stop ramp: deep (0) -> shade (0.35) -> base (0.62) -> lite (1)
-    c = np.where(t < 0.35, mix(deep, shade, clamp01(t / 0.35)),
-                 np.where(t < 0.62, mix(shade, base, clamp01((t - 0.35) / 0.27)),
-                          mix(base, lite, clamp01((t - 0.62) / 0.38))))
+    # 4-stop ramp: deep (0) -> shade (0.34) -> base (0.68) -> lite (1)
+    c = np.where(t < 0.34, mix(deep, shade, clamp01(t / 0.34)),
+                 np.where(t < 0.68, mix(shade, base, clamp01((t - 0.34) / 0.34)),
+                          mix(base, lite, clamp01((t - 0.68) / 0.32))))
     c = c.astype(np.float32)
     # warm the terminator a touch
     term = np.exp(-((v - 0.36) / 0.12) ** 2)[..., None]
-    c = c + term * np.array([0.04, -0.005, -0.02], np.float32)
+    c = c + term * np.array([0.035, -0.005, -0.02], np.float32)
+    # cool rim light on the far edge
+    rim = clamp01(nx) * clamp01(1 - nz) ** 1.5 * surf['face']
+    c = c + (rim * 0.12)[..., None] * np.array([0.7, 0.75, 0.8], np.float32)
     # rosy cheeks / nose / ears
     rosy = np.zeros((HH, WW), np.float32)
     for sgn, k in ((-1, 1.0), (1, 0.8)):
@@ -147,12 +151,14 @@ def render_skin(cv, head, fp, rng, surf=None):
     rosy += gbump(tx, ty, 0.07 * head.hu, 0.06 * head.hu, 0.7)
     rosy *= fp.get('rosy', 0.5)
     c = mix(c, c * np.array([1.04, 0.86, 0.84], np.float32), clamp01(rosy)[..., None] * 0.6)
-    # beard shadow (men)
+    # beard shadow (men): subtle cool tint plus fine speckle
     stub = fp.get('stubble', 0.0)
     if stub > 0:
-        u, yu = surf['u'], surf['yu']
-        bm = beard_region(head, fp, surf, top_off=0.0)
-        c = mix(c, c * np.array([0.82, 0.84, 0.86], np.float32), (bm * stub)[..., None])
+        bm = blur(beard_region(head, fp, surf, top_off=0.06), 1.5)
+        dots = clamp01(value_noise(rng, 0.7, 1) * 0.8 + 0.3)
+        k = (bm * stub)[..., None]
+        c = mix(c, c * np.array([0.86, 0.88, 0.92], np.float32), k * 0.7)
+        c = c * (1 - 0.12 * k * dots[..., None])
     # forehead slightly lighter/yellower, jaw cooler
     cv.paint(mask, c)
     return mask, v, hf, surf

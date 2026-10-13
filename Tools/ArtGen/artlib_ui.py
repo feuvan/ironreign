@@ -544,46 +544,76 @@ class Painting:
         return base - lift - rough * n * hfac - jag * j
 
     def mountain(self, ridge, dark, light, fade=120.0, texture=0.35, edge=0.6, edge_w=2.5,
-                 seed=0, lit=0.12, alpha=1.0, streak_cell=40.0, base_fade=None, mist_col=None):
-        """Paint an ink-wash mountain strip below ridge(x). Darkest at the ridge, washing out
-        towards `light` with depth, vertical 'cun' texture strokes, darker ridge outline and
-        lighter left-facing slopes (light from the top-left)."""
+                 seed=0, lit=0.12, alpha=1.0, streak_cell=40.0, folds=0, fold_depth=(25, 140),
+                 fold_strength=0.45, mist_col=None, mist_from=None):
+        """Paint an ink-wash mountain strip below ridge(x): darkest at the ridge and washing out
+        towards `light` with depth; ridged 'cun' texture strokes near the top; extra fold lines
+        (overlapping inner ridges) for form; darker brushed ridge outline; left-facing slopes lit
+        (light from the top-left). mist_from=(y0, y1) dissolves the strip into mist_col."""
         rng = np.random.default_rng(seed)
         H, W, s = self.H, self.W, self.s
+        y_top = max(0, int((ridge.min() - 4) * s))
+        Y = self.Y[y_top:]
         r = ridge[None, :]
-        depth = self.Y - r                       # output px below the ridge
+        depth = Y - r
         cov = clamp01(depth * s + 0.5)
-        t = smoothstep(0, fade, depth) ** 0.85
+        t = smoothstep(0, fade, depth) ** 0.8
         col = mix(dark, light, t)
-        # vertical brush texture, strongest near the top of the strip
-        streak = fbm(H, W, streak_cell * s, rng, octaves=4, aniso=(5.0, 0.35)) - 0.5
-        blot = fbm(H, W, streak_cell * 2.5 * s, rng, octaves=3) - 0.5
-        tex = (streak * 1.2 + blot * 0.8) * texture * (1 - 0.7 * t)
-        col = col * (1 + tex[..., None] * 0.9)
+        hh = H - y_top
+        # tonal blots (wash unevenness)
+        blot = fbm(hh, W, streak_cell * 3.0 * s, rng, octaves=3) - 0.5
+        col = col * (1 + (blot * texture * 0.6 * (1 - 0.5 * t))[..., None])
+        # ridged texture strokes ('cun'), concentrated near the ridge
+        n = fbm(hh, W, streak_cell * s, rng, octaves=3, aniso=(2.8, 0.42))
+        ridged = 1 - np.abs(2 * n - 1)
+        cun = clamp01((ridged - 0.86) * 6.0) * np.exp(-depth / (fade * 0.4))
+        n2 = fbm(hh, W, streak_cell * 0.45 * s, rng, octaves=2, aniso=(2.4, 0.45))
+        cun2 = clamp01(((1 - np.abs(2 * n2 - 1)) - 0.88) * 7.0) * np.exp(-depth / (fade * 0.28))
+        presence = clamp01((fbm(hh, W, streak_cell * 2.0 * s, rng, octaves=2) - 0.35) * 2.5)
+        col = mix(col, np.asarray(dark) * 0.85, clamp01((cun + cun2 * 0.7) * presence * texture * 1.4))
+        # fold lines: shifted inner ridges, dark at their top and washing out below
+        for k in range(folds):
+            dk = fold_depth[0] + (fold_depth[1] - fold_depth[0]) * (k + 0.5) / folds
+            nk = noise1d(W, (80 + 40 * k) * s, rng, octaves=4, gain=0.55)
+            rk = ridge + dk * (0.55 + 0.9 * clamp01(nk * 0.8 + 0.5))
+            # follow the outer silhouette loosely
+            rk = ndimage.gaussian_filter1d(rk, 10 * s) * 0.6 + (ridge + dk) * 0.4
+            dd = Y - rk[None, :]
+            g = np.where(dd > 0, np.exp(-dd / (fade * 0.18)), 0.0) * clamp01(dd * s + 0.5)
+            vis = clamp01(noise1d(W, 60 * s, rng, octaves=3) * 1.6 + 0.35)
+            g *= (fold_strength * (1 - smoothstep(0, fade * 1.4, rk - ridge)) * vis)[None, :]
+            col = mix(col, np.asarray(dark) * 0.9, clamp01(g))
         # slope lighting (left-facing slopes lit)
         slope = np.gradient(ndimage.gaussian_filter1d(ridge, 6 * s)) * s
         litm = np.clip(-slope * 1.5, -1, 1)[None, :] * np.exp(-depth / (fade * 0.45))
         col = col + (np.asarray(light) - col) * (clamp01(litm) * lit * 3)[..., None]
         col = col * (1 - clamp01(-litm) * lit)[..., None]
-        # ridge outline with brush pressure variation
-        wvar = 0.55 + 0.9 * clamp01(noise1d(W, 50 * s, rng, octaves=3) * 0.7 + 0.5)
+        # brushed ridge outline
+        wvar = 0.5 + 1.0 * clamp01(noise1d(W, 40 * s, rng, octaves=3) * 0.8 + 0.5)
         ew = edge_w * wvar[None, :]
         line = np.exp(-np.maximum(depth, 0) / np.maximum(ew, 0.3)) * edge
-        col = mix(col, np.asarray(dark) * 0.75, clamp01(line))
+        col = mix(col, np.asarray(dark) * 0.7, clamp01(line))
         a = cov * alpha
-        if base_fade is not None:
-            a = a * (1 - smoothstep(base_fade[0], base_fade[1], depth))
-        self.paint(np.clip(col, 0, 1), a)
+        if mist_from is not None and mist_col is not None:
+            col = mix(col, mist_col, smoothstep(mist_from[0], mist_from[1], Y))
+        sub = self.rgb[y_top:]
+        self.rgb[y_top:] = sub + (np.clip(col, 0, 1) - sub) * a[..., None]
         return self
 
     def mist(self, y, height, color, opacity=0.8, seed=0, cell=160.0, streak=True):
         """Horizontal mist band centred at y with soft ragged edges."""
         rng = np.random.default_rng(seed)
         H, W, s = self.H, self.W, self.s
-        n = fbm(H, W, cell * s, rng, octaves=5, aniso=(0.35, 2.2) if streak else (1, 1))
-        d = (self.Y - y) / (height / 2.0)
+        y0 = max(0, int((y - height * 1.6) * s))
+        y1 = min(H, int((y + height * 1.6) * s) + 1)
+        if y1 <= y0:
+            return self
+        n = fbm(y1 - y0, W, cell * s, rng, octaves=5, aniso=(0.35, 2.2) if streak else (1, 1))
+        d = (self.Y[y0:y1] - y) / (height / 2.0)
         m = np.exp(-d ** 2 * 1.6) * clamp01((n - 0.25) * 1.6)
-        return self.paint(color, clamp01(m), opacity)
+        sub = self.rgb[y0:y1]
+        self.rgb[y0:y1] = sub + (np.asarray(color, np.float32) - sub) * (clamp01(m) * opacity)[..., None]
+        return self
 
     def haze(self, y0, y1, color, opacity=0.6):
         """Flat atmospheric haze increasing towards y1 (e.g. valley fog)."""
@@ -606,40 +636,70 @@ class Painting:
             m.ellipse(x, yy - hh * 0.6, ww, hh)
         return self.paint(color, m.arr(), opacity)
 
+    @staticmethod
+    def pine_pad(m, cx, cy, w, h, rng, needle_w=None):
+        """Pine needle cluster: overlapping flattened lobes with fine needle strokes radiating
+        from their upper edges. (cx, cy) is the base centre of the pad."""
+        k = int(rng.integers(3, 6))
+        nw = needle_w if needle_w is not None else max(0.45, h * 0.035)
+        lobes = []
+        for i in range(k):
+            t = (i + 0.5) / k
+            ex = cx - w / 2 + w * t + rng.uniform(-w, w) * 0.04
+            eh = h * (0.55 + 0.45 * math.sin(math.pi * t)) * rng.uniform(0.85, 1.1)
+            ew = w / k * rng.uniform(0.7, 0.95) + h * 0.2
+            ey = cy - eh * 0.45
+            m.ellipse(ex, ey, ew, eh * 0.55)
+            lobes.append((ex, ey, ew, eh * 0.55))
+        for (ex, ey, ew, eh) in lobes:
+            nn = int(ew * 1.4) + 6
+            for j in range(nn):
+                a = math.pi + math.pi * (j + rng.uniform(0, 1)) / nn
+                px, py = ex + math.cos(a) * ew * 0.92, ey + math.sin(a) * eh * 0.92
+                ang = math.atan2(math.sin(a) * ew, math.cos(a) * eh)
+                L = h * rng.uniform(0.18, 0.34)
+                m.line([(px, py), (px + math.cos(ang) * L, py + math.sin(ang) * L)], nw, round_caps=False)
+        return m
+
     def pine(self, m, x, y, height, lean=0.0, seed=0, pads=None, spread=1.0):
-        """Draw a stylised Chinese pine silhouette into Mask m (trunk base at x, y)."""
+        """Stylised Chinese pine silhouette into Mask m (trunk base at x, y): gnarled tapered trunk,
+        angular near-horizontal limbs and bristly layered needle pads."""
         rng = np.random.default_rng(seed)
         h = height
-        # trunk as a gently curved tapered stroke
         pts = []
-        for i in range(12):
-            t = i / 11.0
-            px = x + lean * h * t + math.sin(t * 3.1 + seed) * h * 0.04
+        b1 = rng.uniform(-0.08, 0.08)
+        for i in range(16):
+            t = i / 15.0
+            px = x + lean * h * t + math.sin(t * 2.6 + seed) * h * 0.05 + b1 * h * t * t * 3
             pts.append((px, y - h * t))
-        m.brush(pts, h * 0.075, h * 0.02)
+        m.brush(pts, h * 0.07, h * 0.022)
+        # root flare
+        m.poly([(x - h * 0.09, y + 1), (x - h * 0.02, y - h * 0.08), (x + h * 0.03, y - h * 0.08), (x + h * 0.1, y + 1)])
         top = pts[-1]
         npads = pads or int(rng.integers(4, 7))
         for k in range(npads):
-            t = 0.42 + 0.58 * k / max(1, npads - 1) + rng.uniform(-0.04, 0.04)
-            t = min(t, 1.0)
-            ix = int(t * 11)
+            t = 0.35 + 0.62 * k / max(1, npads - 1) + rng.uniform(-0.03, 0.03)
+            t = min(t, 0.97)
+            ix = int(t * 15)
             bx, by = pts[ix]
             side = -1 if (k + seed) % 2 == 0 else 1
-            blen = h * spread * (0.18 + 0.24 * (1 - t)) * rng.uniform(0.8, 1.2)
+            if k == npads - 1:
+                side = -1 if lean > 0 else 1
+            blen = h * spread * (0.16 + 0.30 * (1 - t)) * rng.uniform(0.8, 1.15)
             ex = bx + side * blen
-            ey = by - h * rng.uniform(0.0, 0.06)
-            m.brush([(bx, by), ((bx + ex) / 2, by - h * 0.03), (ex, ey)], h * 0.03, h * 0.012)
-            # needle pad: flattened cluster of ellipses
-            pw = blen * rng.uniform(0.75, 1.05)
-            ph = h * rng.uniform(0.055, 0.08)
-            cx = ex - side * pw * 0.15
-            for j in range(5):
-                ox = rng.uniform(-pw * 0.55, pw * 0.55)
-                oy = rng.uniform(-ph * 0.4, ph * 0.3)
-                m.ellipse(cx + ox, ey + oy, pw * rng.uniform(0.3, 0.5), ph * rng.uniform(0.5, 0.8))
+            ey = by - h * rng.uniform(-0.02, 0.06)
+            kx = bx + side * blen * 0.45
+            ky = by + h * rng.uniform(-0.02, 0.03)
+            m.brush([(bx, by), (kx, ky), (ex, ey)], h * 0.028, h * 0.01)
+            # pads: a main bristly dome plus one or two overlapping smaller ones
+            pw = blen * rng.uniform(0.85, 1.15) + h * 0.07
+            ph = h * rng.uniform(0.075, 0.095)
+            cx = ex - side * pw * 0.12
+            self.pine_pad(m, cx, ey + ph * 0.25, pw, ph * 1.3, rng)
+            if rng.random() < 0.7:
+                self.pine_pad(m, cx + side * pw * 0.18, ey - ph * 0.55, pw * 0.6, ph * 1.0, rng)
         # crown
-        m.ellipse(top[0], top[1] + h * 0.02, h * 0.16 * spread, h * 0.05)
-        m.ellipse(top[0] - h * 0.05, top[1] + h * 0.05, h * 0.12 * spread, h * 0.045)
+        self.pine_pad(m, top[0], top[1] + h * 0.05, h * 0.3 * spread, h * 0.11, rng)
         return m
 
     def grass_tufts(self, m, x0, x1, ybase, rng, density=0.3, hmin=3, hmax=10):
@@ -732,62 +792,117 @@ def pavilion(m, cx, ybase, w, tiers=2, story_h=None, roof_h=None, body=True, roo
     return parts
 
 
-def figure(m, x, yf, h, pose="stand", hat="topknot", weapon=None, facing=1, robe=True):
-    """Ink silhouette of a person (feet at yf, height h) into Mask m."""
+POSES = {
+    # joints relative to the feet (x right = facing direction, y up), in units of height h:
+    # hip, shoulder, head, front/back foot, front/back knee, front/back hand
+    "stand": dict(hip=(0, .47), sh=(0, .79), head=(0.01, .91), ff=(.05, 0), bf=(-.05, 0), fk=(.03, .24), bk=(-.03, .24),
+                  fh=(.07, .5), bh=(-.07, .5)),
+    "walk": dict(hip=(0, .46), sh=(.02, .78), head=(.04, .9), ff=(.15, 0), bf=(-.13, 0), fk=(.09, .24), bk=(-.05, .22),
+                 fh=(.12, .52), bh=(-.1, .5)),
+    "run": dict(hip=(0, .44), sh=(.08, .74), head=(.12, .85), ff=(.2, .04), bf=(-.2, .06), fk=(.16, .26), bk=(-.06, .18),
+                fh=(.2, .6), bh=(-.14, .48)),
+    "bow": dict(hip=(0, .45), sh=(.24, .6), head=(.33, .54), ff=(.04, 0), bf=(-.06, 0), fk=(.03, .23), bk=(-.04, .23),
+                fh=(.3, .32), bh=(.24, .3)),
+    "kneel": dict(hip=(-.06, .27), sh=(.1, .5), head=(.17, .55), ff=(.12, 0), bf=(-.2, 0), fk=(.14, .03), bk=(.0, .02),
+                  fh=(.24, .1), bh=(.2, .08)),
+    "stance": dict(hip=(0, .4), sh=(.03, .71), head=(.05, .83), ff=(.2, 0), bf=(-.18, 0), fk=(.15, .2), bk=(-.12, .2),
+                   fh=(.24, .78), bh=(-.18, .55)),
+    "salute": dict(hip=(0, .47), sh=(0, .79), head=(0.01, .91), ff=(.05, 0), bf=(-.05, 0), fk=(.03, .24), bk=(-.03, .24),
+                   fh=(.1, .66), bh=(.08, .66)),
+    "point": dict(hip=(0, .47), sh=(0, .79), head=(0.02, .91), ff=(.05, 0), bf=(-.06, 0), fk=(.03, .24), bk=(-.03, .24),
+                  fh=(.24, 1.02), bh=(-.06, .5)),
+}
+
+
+def figure(m, x, yf, h, pose="stand", hat="topknot", weapon=None, facing=1, robe=False, cloak=False):
+    """Ink silhouette of a person (feet at yf, height h) into Mask m.
+
+    pose: stand walk run bow kneel stance salute point. hat: topknot straw guan helmet hood none.
+    robe: long robe to the ankles (officials, scholars); otherwise tunic + trousers.
+    weapon: spear sword_up staff banner pole (carrying pole on the shoulder) fan."""
+    J = POSES[pose]
     f = facing
-    head_r = h * 0.075
-    hx, hy = x + f * h * 0.01, yf - h + head_r * 1.2
-    if pose == "kneel":
-        hy = yf - h * 0.62 + head_r
-        hx = x + f * h * 0.08
-        m.circle(hx, hy, head_r)
-        m.poly([(x - f * h * 0.18, yf), (x - f * h * 0.15, yf - h * 0.28), (hx - f * h * 0.05, hy + head_r * 0.6),
-                (hx + f * h * 0.1, hy + head_r * 1.2), (x + f * h * 0.2, yf - h * 0.2), (x + f * h * 0.26, yf)])
-    elif pose == "bow":
-        hx = x + f * h * 0.2
-        hy = yf - h * 0.72
-        m.circle(hx, hy, head_r)
-        m.poly([(x - f * h * 0.14, yf), (x - f * h * 0.1, yf - h * 0.55), (x + f * h * 0.02, yf - h * 0.78),
-                (hx + f * head_r * 0.2, hy + head_r * 1.1), (x + f * h * 0.08, yf - h * 0.42), (x + f * h * 0.16, yf)])
+
+    def P(k):
+        jx, jy = J[k]
+        return (x + f * jx * h, yf - jy * h)
+    hip, sh, head = P("hip"), P("sh"), P("head")
+    lw = h * 0.065
+    # legs
+    for foot, knee in (("bf", "bk"), ("ff", "fk")):
+        m.brush([hip, P(knee), P(foot)], lw * 1.2, lw * 0.8)
+        fx, fy = P(foot)
+        m.ellipse(fx + f * h * 0.02, fy - h * 0.012, h * 0.04, h * 0.018)
+    # torso
+    tw_s, tw_h = h * 0.085, h * 0.07
+    dx, dy = sh[0] - hip[0], sh[1] - hip[1]
+    L = math.hypot(dx, dy) + 1e-6
+    nx, ny = -dy / L, dx / L
+    m.poly([(hip[0] + nx * tw_h, hip[1] + ny * tw_h), (sh[0] + nx * tw_s, sh[1] + ny * tw_s),
+            (sh[0] - nx * tw_s, sh[1] - ny * tw_s), (hip[0] - nx * tw_h, hip[1] - ny * tw_h)])
+    m.circle(sh[0], sh[1], tw_s * 0.95)
+    # skirt: tunic to the knees, robe to the ankles
+    if pose != "kneel":
+        bot = yf - (0.04 if robe else 0.25) * h
+        spread = (0.17 if robe else 0.12) * h
+        kx = (P("fk")[0] + P("bk")[0]) / 2
+        m.poly([(hip[0] - tw_h * 1.1, hip[1] - h * 0.02), (hip[0] + tw_h * 1.1, hip[1] - h * 0.02),
+                (kx + spread, bot), (kx - spread, bot)])
     else:
-        m.circle(hx, hy, head_r)
-        neck = hy + head_r
-        sw = h * 0.13
-        if pose == "walk":
-            m.poly([(x - sw, neck + h * 0.06), (x + sw, neck + h * 0.06), (x + sw * 0.9, yf - h * 0.38),
-                    (x - sw * 0.9, yf - h * 0.38)])
-            m.brush([(x - sw * 0.3, yf - h * 0.4), (x - f * h * 0.14, yf - h * 0.2), (x - f * h * 0.2, yf)], h * 0.07, h * 0.05)
-            m.brush([(x + sw * 0.3, yf - h * 0.4), (x + f * h * 0.1, yf - h * 0.2), (x + f * h * 0.18, yf)], h * 0.07, h * 0.05)
-            m.poly([(x - sw * 1.05, yf - h * 0.42), (x + sw * 1.05, yf - h * 0.42), (x + sw * 1.4, yf - h * 0.2),
-                    (x - sw * 1.3, yf - h * 0.2)])
-        else:
-            flare = 1.5 if robe else 1.0
-            m.poly([(x - sw, neck + h * 0.06), (x + sw, neck + h * 0.06), (x + sw * flare, yf),
-                    (x - sw * flare, yf)])
-            m.ellipse(x, neck + h * 0.09, sw * 1.05, h * 0.05)
+        m.poly([(hip[0] - h * 0.1, hip[1] - h * 0.02), (hip[0] + h * 0.08, hip[1] - h * 0.06), (P("fk")[0] + h * 0.04, yf),
+                (P("bf")[0], yf)])
+    if cloak:
+        m.poly([(sh[0] - f * tw_s * 1.4, sh[1] - h * 0.02), (sh[0] + f * tw_s * 0.4, sh[1] - h * 0.04),
+                (hip[0] - f * h * 0.08, yf - h * 0.2), (hip[0] - f * h * 0.22, yf - h * 0.16)])
+    # arms
+    for hand in ("bh", "fh"):
+        hx, hy = P(hand)
+        ex, ey = (sh[0] + hx) / 2 - f * h * 0.02, (sh[1] + hy) / 2 + h * 0.02
+        m.brush([sh, (ex, ey), (hx, hy)], lw * 1.05, lw * 0.75)
+        if robe:
+            m.brush([(ex, ey), (hx, hy)], lw * 1.7, lw * 1.5)
+    # neck and head
+    m.brush([sh, head], lw * 0.9, lw * 0.9)
+    hr = h * 0.062
+    hx, hy = head
+    m.ellipse(hx, hy, hr * 0.95, hr * 1.05)
     if hat == "straw":
-        m.poly([(hx - head_r * 2.6, hy - head_r * 0.2), (hx, hy - head_r * 1.9), (hx + head_r * 2.6, hy - head_r * 0.2)])
+        m.poly([(hx - hr * 2.7, hy - hr * 0.1), (hx, hy - hr * 2.0), (hx + hr * 2.7, hy - hr * 0.1), (hx, hy - hr * 0.5)])
     elif hat == "guan":
-        m.rect(hx - head_r * 0.6, hy - head_r * 2.1, hx + head_r * 0.6, hy - head_r * 0.4)
-        m.rect(hx - head_r * 1.6, hy - head_r * 2.2, hx + head_r * 1.6, hy - head_r * 1.8)
+        m.poly([(hx - hr * 0.8, hy - hr * 0.6), (hx - hr * 0.7, hy - hr * 2.0), (hx + hr * 0.7, hy - hr * 2.0), (hx + hr * 0.8, hy - hr * 0.6)])
+        m.brush([(hx - hr * 2.0, hy - hr * 1.6), (hx + hr * 2.0, hy - hr * 1.6)], hr * 0.35, hr * 0.35)
     elif hat == "helmet":
-        m.poly([(hx - head_r * 1.25, hy + head_r * 0.2), (hx - head_r * 1.1, hy - head_r * 1.0), (hx, hy - head_r * 1.9),
-                (hx + head_r * 1.1, hy - head_r * 1.0), (hx + head_r * 1.25, hy + head_r * 0.2)])
-        m.brush([(hx, hy - head_r * 1.8), (hx - f * head_r * 0.5, hy - head_r * 3.0)], head_r * 0.5, head_r * 0.15)
+        m.poly([(hx - hr * 1.2, hy + hr * 0.5), (hx - hr * 1.15, hy - hr * 0.8), (hx, hy - hr * 1.6),
+                (hx + hr * 1.15, hy - hr * 0.8), (hx + hr * 1.2, hy + hr * 0.5)])
+        m.brush([(hx, hy - hr * 1.5), (hx - f * hr * 0.6, hy - hr * 2.8)], hr * 0.55, hr * 0.15)
     elif hat == "topknot":
-        m.circle(hx - f * head_r * 0.1, hy - head_r * 1.05, head_r * 0.5)
+        m.circle(hx - f * hr * 0.15, hy - hr * 1.15, hr * 0.5)
+    elif hat == "hood":
+        m.poly([(hx - hr * 1.3, hy + hr * 1.6), (hx - hr * 1.25, hy - hr * 0.6), (hx - f * hr * 0.2, hy - hr * 1.5),
+                (hx + hr * 1.2, hy - hr * 0.5), (hx + hr * 1.3, hy + hr * 1.6)])
+    # weapons / props held in the front hand
+    fx_, fy_ = P("fh")
     if weapon == "spear":
-        m.line([(x + f * h * 0.2, yf + h * 0.02), (x + f * h * 0.3, yf - h * 1.35)], max(0.8, h * 0.02), round_caps=False)
-        tipx, tipy = x + f * h * 0.3, yf - h * 1.35
-        m.poly([(tipx - h * 0.025, tipy + h * 0.02), (tipx + f * h * 0.012, tipy - h * 0.1), (tipx + h * 0.025, tipy + h * 0.02)])
+        m.line([(fx_ - f * h * 0.02, fy_ + h * 0.45), (fx_ + f * h * 0.06, fy_ - h * 0.85)], max(0.6, h * 0.018), round_caps=False)
+        tx, ty = fx_ + f * h * 0.06, fy_ - h * 0.85
+        m.poly([(tx - h * 0.018, ty + h * 0.01), (tx + f * h * 0.006, ty - h * 0.09), (tx + h * 0.018, ty + h * 0.01)])
     elif weapon == "sword_up":
-        m.brush([(x + f * h * 0.12, yf - h * 0.62), (x + f * h * 0.28, yf - h * 0.9)], h * 0.05, h * 0.04)
-        m.brush([(x + f * h * 0.28, yf - h * 0.9), (x + f * h * 0.45, yf - h * 1.3)], h * 0.03, h * 0.008)
+        m.brush([(fx_, fy_), (fx_ + f * h * 0.14, fy_ - h * 0.42)], h * 0.022, h * 0.008)
+        m.brush([(fx_ - f * h * 0.03, fy_ + h * 0.01), (fx_ + f * h * 0.04, fy_ - h * 0.02)], h * 0.02, h * 0.02)
+    elif weapon == "sword":
+        m.brush([(fx_, fy_), (fx_ + f * h * 0.38, fy_ + h * 0.05)], h * 0.022, h * 0.008)
     elif weapon == "staff":
-        m.line([(x + f * h * 0.16, yf), (x + f * h * 0.22, yf - h * 1.1)], max(0.8, h * 0.025))
+        m.line([(fx_ + f * h * 0.02, yf), (fx_ - f * h * 0.01, fy_ - h * 0.4)], max(0.6, h * 0.022), round_caps=False)
     elif weapon == "banner":
-        px = x + f * h * 0.18
-        m.line([(px, yf), (px, yf - h * 1.7)], max(0.8, h * 0.025), round_caps=False)
+        m.line([(fx_, yf), (fx_, yf - h * 1.6)], max(0.6, h * 0.022), round_caps=False)
+    elif weapon == "pole":
+        m.line([(sh[0] - f * h * 0.42, sh[1] - h * 0.02), (sh[0] + f * h * 0.42, sh[1] - h * 0.02)], max(0.6, h * 0.022))
+        for sx in (-1, 1):
+            bx = sh[0] + sx * f * h * 0.38
+            m.line([(bx, sh[1]), (bx, sh[1] + h * 0.25)], max(0.4, h * 0.01), round_caps=False)
+            m.poly([(bx - h * 0.09, sh[1] + h * 0.25), (bx + h * 0.09, sh[1] + h * 0.25), (bx + h * 0.07, sh[1] + h * 0.38), (bx - h * 0.07, sh[1] + h * 0.38)])
+    elif weapon == "fan":
+        m.poly([(fx_, fy_)] + arc_pts(fx_, fy_, h * 0.14, h * 0.14, -120 if f > 0 else -60, -30 if f > 0 else -150, 8))
     return m
 
 

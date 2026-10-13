@@ -63,6 +63,13 @@ namespace IronSim
 			return !IsPlayerFaction(State, Data.Owner) || Data.bDelegated;
 		}
 
+		FOrderCheck DenyCheck(FOrderCheck Check, const std::string& Reason)
+		{
+			Check.bAllowed = false;
+			Check.Reason = Reason;
+			return Check;
+		}
+
 		int AffinityDistance(int AffinityA, int AffinityB)
 		{
 			const int Delta = std::abs(AffinityA - AffinityB) % 150;

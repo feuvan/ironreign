@@ -112,6 +112,8 @@ namespace IronSim
 		/** Owner is an AI faction, or the player delegated the city. */
 		bool IsAIControlledCity(const FGameState& State, int City);
 
+		/** Returns Check marked as not allowed with Reason. */
+		FOrderCheck DenyCheck(FOrderCheck Check, const std::string& Reason);
 		int AffinityDistance(int AffinityA, int AffinityB);
 		int StatOf(const FOfficer& Officer, EStat Stat);
 		void GainExp(FOfficer& Officer, EStat Stat, int Amount);

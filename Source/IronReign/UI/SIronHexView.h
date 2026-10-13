@@ -2,14 +2,13 @@
 
 #include "CoreMinimal.h"
 #include "Sim/IronBattle.h"
+#include "Fonts/SlateFontInfo.h"
 #include "Widgets/DeclarativeSyntaxSupport.h"
 #include "Widgets/SLeafWidget.h"
 
 #include <string>
 
 class FIronSession;
-class FPaintArgs;
-class FSlateWindowElementList;
 struct FSlateBrush;
 
 /** A hex of the board was clicked with the left mouse button. */

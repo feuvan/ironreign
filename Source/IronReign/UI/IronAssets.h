@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Engine/Texture2D.h"
 #include "Styling/SlateBrush.h"
 #include "UObject/StrongObjectPtr.h"
 

@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Sim/IronGame.h"
+#include "Templates/Function.h"
 
 class SWidget;
 
@@ -23,6 +24,8 @@ namespace IronStrategy
 	/** Faction name, or "Independent" for -1. */
 	FText FactionName(const IronSim::FGameState& State, int32 Faction);
 	FText SectName(const IronSim::FGameState& State, int32 Sect);
+	/** Localized banner glyph ("faction.<key>.glyph", falling back to the scenario glyph). */
+	FString FactionGlyph(const IronSim::FGameState& State, int32 Faction);
 	/** Portrait id of an officer ("unknown" when missing). */
 	FString OfficerPortrait(const IronSim::FGameState& State, int32 Officer);
 	/** Comma separated technique names. */
@@ -62,6 +65,11 @@ namespace IronStrategy
 	TSharedRef<SWidget> MakeSectionTitle(const TAttribute<FText>& Text, float Size = 17.0f);
 	/** Standard parchment dialog: title, divider, body (fills), footer. Width/Height <= 0 means "size to content". */
 	TSharedRef<SWidget> MakeDialogFrame(const TAttribute<FText>& Title, const TSharedRef<SWidget>& Body, const TSharedRef<SWidget>& Footer, float Width, float Height);
+	/**
+	 * Amount editor row: label, slider, numeric spin box and a "Max" button, clamped to 0..GetMax() and rounded to Step.
+	 * ValuePtr must outlive the widget (point at a member of the owning dialog). OnChanged runs after every edit.
+	 */
+	TSharedRef<SWidget> MakeAmountEditor(const FText& Label, TFunction<int32()> GetMax, int32* ValuePtr, int32 Step, TFunction<void()> OnChanged = nullptr);
 	/** Wrapped body text. */
 	TSharedRef<SWidget> MakeWrappedText(const TAttribute<FText>& Text, float Size = 14.0f, const FLinearColor& Color = FLinearColor(0.02f, 0.015f, 0.01f));
 }

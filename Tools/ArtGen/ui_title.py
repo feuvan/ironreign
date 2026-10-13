@@ -41,7 +41,9 @@ def fortress(p, ridge, x0, x1, wall_h, towers, banners_every=46, seed=3, body_co
     rid = ndimage.gaussian_filter1d(rid, 6 * scale)
     top = rid - wall_h
     body = p.mask()
-    wall = [(x, t) for x, t in zip(xs, top)] + [(x, r + wall_h * 0.6) for x, r in zip(xs[::-1], rid[::-1])]
+    raw = np.array([ridge[min(p.W - 1, int(x * s))] for x in xs], np.float32)
+    base_y = np.maximum(raw, rid) + 4 * scale
+    wall = [(x, t) for x, t in zip(xs, top)] + [(x, b) for x, b in zip(xs[::-1], base_y[::-1])]
     body.poly(wall)
     # crenellations
     step = 9 * scale
@@ -108,14 +110,18 @@ def title_background():
     p = Painting(1920, 1080, ss=ss, seed=101)
     W, H = 1920, 1080
     # dusk sky
-    p.vgradient([(0.0, hexc("4F4A57")), (0.22, hexc("7C6E72")), (0.45, hexc("C59C80")),
+    p.vgradient([(0.0, hexc("454757")), (0.22, hexc("7C6E72")), (0.45, hexc("C59C80")),
                  (0.58, hexc("E9BE8A")), (0.66, hexc("EFCB98")), (1.0, hexc("D8B488"))])
     # setting sun and glow
     sx, sy = 1180, 548
     p.glow(sx, sy, 520, hexc("F6C27A"), 0.55, power=1.4)
     p.glow(sx, sy, 160, hexc("FFE0A0"), 0.55, power=1.6)
-    p.disc(sx, sy, 58, hexc("EE8E5A"), 0.95, soft=2.0)
-    p.glow(sx, sy, 64, hexc("FFD9A0"), 0.35, power=4)
+    dsun = np.hypot(p.X - sx, p.Y - sy)
+    sun_col = mix(hexc("F6B276"), hexc("E2724A"), smoothstep(0, 58, dsun))
+    p.paint(sun_col, clamp01((58 - dsun) * p.s / 2.0 + 0.5), 0.95)
+    p.glow(sx, sy, 64, hexc("FFD9A0"), 0.3, power=4)
+    p.mist(sy + 22, 18, hexc("E9C49A"), 0.55, seed=5, cell=120)
+    p.mist(sy - 18, 10, hexc("D9A88A"), 0.35, seed=6, cell=90)
     # long cloud streaks, lit from below near the sun
     rng = np.random.default_rng(7)
     for (cy, ch, op, col) in ((150, 70, 0.35, hexc("3E3946")), (260, 60, 0.30, hexc("5A4B52")),
@@ -132,66 +138,64 @@ def title_background():
 
     mist_col = hexc("E7CDA4")
     # far range 1 (very pale karst peaks)
-    r1 = p.ridge(640, [(120, 120, 140, "karst"), (380, 80, 120, "karst"), (700, 160, 110, "sharp"),
-                       (860, 220, 90, "karst"), (980, 150, 110, "karst"), (1400, 240, 90, "karst"),
-                       (1540, 300, 80, "karst"), (1660, 200, 100, "sharp"), (1850, 260, 120, "karst")],
-                 rough=18, rough_cell=70, jag=2, seed=11)
-    p.mountain(r1, hexc("A08C94"), mist_col, fade=150, texture=0.18, edge=0.25, edge_w=2.0, seed=12, lit=0.05)
-    p.mist(650, 90, mist_col, 0.85, seed=13, cell=220)
+    r1 = p.ridge(650, [(120, 110, 140, "karst"), (380, 70, 120, "karst"), (700, 150, 100, "sharp"),
+                       (860, 210, 85, "karst"), (980, 140, 100, "karst"), (1400, 230, 85, "karst"),
+                       (1545, 290, 75, "karst"), (1660, 190, 95, "sharp"), (1850, 250, 110, "karst")],
+                 rough=16, rough_cell=70, jag=2, seed=11)
+    p.mountain(r1, hexc("9C8E8C"), mist_col, fade=170, texture=0.25, edge=0.3, edge_w=1.8, seed=12, lit=0.05,
+               folds=2, fold_depth=(30, 110), fold_strength=0.25, mist_col=mist_col, mist_from=(600, 700))
+    p.mist(660, 90, mist_col, 0.85, seed=13, cell=220)
     # far range 2
-    r2 = p.ridge(720, [(60, 200, 120, "karst"), (260, 120, 100, "round"), (560, 90, 140, "round"),
-                       (930, 150, 120, "karst"), (1120, 110, 110, "round"), (1330, 260, 85, "karst"),
-                       (1470, 190, 90, "karst"), (1760, 330, 95, "karst"), (1900, 220, 90, "karst")],
-                 rough=20, rough_cell=60, jag=2.5, seed=21)
-    p.mountain(r2, hexc("7E6E78"), hexc("D7BC9A"), fade=160, texture=0.25, edge=0.35, edge_w=2.2, seed=22, lit=0.08)
-    p.tree_dots(r2, hexc("5A4C55"), density=0.06, size=1.6, xr=(1200, 1920), seed=23, opacity=0.6)
-    p.mist(760, 110, mist_col, 0.9, seed=24, cell=240)
+    r2 = p.ridge(730, [(60, 190, 115, "karst"), (260, 110, 100, "round"), (560, 80, 140, "round"),
+                       (930, 140, 110, "karst"), (1120, 100, 110, "round"), (1330, 250, 80, "karst"),
+                       (1470, 180, 85, "karst"), (1760, 320, 90, "karst"), (1900, 210, 85, "karst")],
+                 rough=18, rough_cell=60, jag=2.5, seed=21)
+    p.mountain(r2, hexc("6C6260"), hexc("D2B898"), fade=170, texture=0.35, edge=0.4, edge_w=2.0, seed=22, lit=0.08,
+               folds=3, fold_depth=(25, 140), fold_strength=0.35, mist_col=mist_col, mist_from=(700, 800))
+    p.tree_dots(r2, hexc("4E4446"), density=0.06, size=1.6, xr=(1200, 1920), seed=23, opacity=0.6)
+    p.mist(770, 110, mist_col, 0.9, seed=24, cell=240)
     # the fortress ridge (mid ground, right)
-    r3 = p.ridge(860, [(1060, 120, 220, "round"), (1330, 300, 220, "dome"), (1560, 320, 260, "dome"),
-                       (1790, 300, 220, "dome"), (700, 60, 180, "round")],
+    r3 = p.ridge(870, [(1060, 110, 220, "round"), (1330, 300, 210, "dome"), (1560, 318, 250, "dome"),
+                       (1790, 300, 210, "dome"), (700, 50, 180, "round")],
                  rough=14, rough_cell=50, jag=1.5, seed=31, smooth=20)
-    p.mountain(r3, hexc("3C3438"), hexc("B39A88"), fade=210, texture=0.4, edge=0.6, edge_w=2.6, seed=32, lit=0.12)
-    p.tree_dots(r3, hexc("2A2428"), density=0.10, size=2.2, xr=(980, 1290), seed=33, opacity=0.85)
-    p.tree_dots(r3, hexc("2A2428"), density=0.10, size=2.2, xr=(1790, 1920), seed=34, opacity=0.85)
+    p.mountain(r3, hexc("383130"), hexc("B09884"), fade=230, texture=0.5, edge=0.65, edge_w=2.4, seed=32, lit=0.14,
+               folds=4, fold_depth=(30, 220), fold_strength=0.5, mist_col=mist_col, mist_from=(820, 930))
+    p.tree_dots(r3, hexc("272121"), density=0.10, size=2.2, xr=(960, 1290), seed=33, opacity=0.85)
+    p.tree_dots(r3, hexc("272121"), density=0.10, size=2.2, xr=(1795, 1920), seed=34, opacity=0.85)
     fortress(p, r3, 1290, 1800, 30, [(1340, 70, 2), (1545, 118, 3), (1730, 76, 2)], seed=35,
-             body_col=hexc("2E282B"), roof_col=hexc("1F1B1F"), rim_col=hexc("F2B276"),
+             body_col=hexc("2C2626"), roof_col=hexc("1D1A1C"), rim_col=hexc("F2B276"),
              banner_col=hexc("A82A26"), window_col=hexc("F3B060"))
     # valley mist and river
-    p.mist(890, 120, mist_col, 0.85, seed=41, cell=260)
-    p.haze(820, 1000, hexc("E2C49A"), 0.35)
-    # river band reflecting the sun
+    p.mist(900, 120, mist_col, 0.85, seed=41, cell=260)
+    p.haze(840, 1000, hexc("E2C49A"), 0.3)
     rv = p.mask()
-    rv.poly([(0, 948), (420, 930), (800, 918), (1180, 912), (1500, 916), (1920, 926), (1920, 958),
-             (1500, 948), (1180, 944), (800, 952), (420, 966), (0, 990)])
+    rv.poly([(0, 958), (420, 940), (800, 928), (1180, 922), (1500, 926), (1920, 936), (1920, 966),
+             (1500, 956), (1180, 952), (800, 960), (420, 974), (0, 996)])
     rvm = blur(rv.arr(), 2 * ss)
-    p.paint(hexc("E4C79A"), rvm, 0.75)
+    p.paint(hexc("E8CDA0"), rvm, 0.7)
     rng = np.random.default_rng(42)
     st = p.mask()
-    for _ in range(140):
-        x = rng.normal(sx, 160)
-        y = rng.uniform(912, 958)
-        L = rng.uniform(8, 40) * (1 - min(1, abs(x - sx) / 500))
+    for _ in range(160):
+        x = rng.normal(sx, 170)
+        y = rng.uniform(922, 966)
+        L = rng.uniform(8, 44) * (1 - min(1, abs(x - sx) / 520))
         if L > 3:
             st.brush([(x - L / 2, y), (x + L / 2, y)], 1.4, 0.6)
-    p.paint(hexc("FFE3B0"), st.arr() * rvm, 0.8)
-    # near hills (left low and soft, right darker)
-    r4 = p.ridge(1000, [(160, 70, 260, "round"), (560, 40, 200, "round"), (1500, 60, 280, "round"),
-                        (1850, 150, 220, "round")], rough=10, rough_cell=60, jag=1.2, seed=51, smooth=20)
-    p.mountain(r4, hexc("4A3E3A"), hexc("A88C72"), fade=120, texture=0.35, edge=0.5, edge_w=2.4, seed=52, lit=0.1)
-    # foreground rocks right + big pine
-    r5 = p.ridge(1100, [(1760, 190, 220, "dome"), (1950, 260, 160, "dome")], rough=12, rough_cell=40, jag=1.5,
+    p.paint(hexc("FFE6B8"), st.arr() * rvm, 0.75)
+    # near banks: low and soft on the left, darker on the right
+    r4 = p.ridge(1110, [(230, 120, 330, "round"), (900, 40, 260, "round"), (1300, 70, 280, "round"),
+                        (1600, 120, 260, "round"), (1850, 190, 220, "round")], rough=8, rough_cell=60, jag=1.0, seed=51, smooth=20)
+    p.mountain(r4, hexc("4A3E38"), hexc("9C8268"), fade=90, texture=0.4, edge=0.5, edge_w=2.2, seed=52, lit=0.1,
+               folds=1, fold_depth=(15, 40), fold_strength=0.3)
+    # foreground rocks right + pines
+    r5 = p.ridge(1120, [(1760, 170, 230, "dome"), (1960, 250, 170, "dome")], rough=12, rough_cell=40, jag=1.5,
                  seed=61, smooth=15)
-    p.mountain(r5, hexc("221C1C"), hexc("5A4A42"), fade=160, texture=0.45, edge=0.7, edge_w=3.0, seed=62, lit=0.15)
+    p.mountain(r5, hexc("211B1A"), hexc("54443C"), fade=150, texture=0.55, edge=0.7, edge_w=3.0, seed=62, lit=0.16,
+               folds=3, fold_depth=(20, 120), fold_strength=0.5)
     pm = p.mask()
-    p.pine(pm, 1735, 925, 380, lean=-0.22, seed=4, pads=7, spread=1.3)
-    p.pine(pm, 1868, 905, 300, lean=-0.05, seed=9, pads=6, spread=1.1)
-    p.paint(hexc("1A1716"), pm.arr())
-    # grass at the very bottom left, very soft
-    gm = p.mask()
-    p.grass_tufts(gm, 0, 700, lambda x: 1080 - 30 + 18 * math.sin(x / 90.0), np.random.default_rng(5),
-                  density=0.08, hmin=10, hmax=26)
-    p.paint(hexc("4A3E36"), gm.arr(), 0.55)
-
+    p.pine(pm, 1775, 965, 300, lean=-0.30, seed=4, pads=6, spread=1.25)
+    p.pine(pm, 1880, 925, 240, lean=-0.08, seed=9, pads=5, spread=1.0)
+    p.paint(hexc("191615"), pm.arr())
     # calm the left side: lift towards warm haze, reduce contrast
     calm = smoothstep(0.52, 0.12, p.X / W) * (0.55 + 0.45 * smoothstep(1000, 400, p.Y))
     p.paint(hexc("D9BE98"), calm, 0.32)
@@ -214,33 +218,33 @@ def title_logo():
 
     # --- calligraphy ---
     cal = Mask(W, H, S)
-    chars = [("铁", 150, 150, 230, -3), ("血", 382, 148, 222, 2), ("王", 604, 146, 214, -1), ("座", 838, 150, 236, 3)]
+    chars = [("铁", 148, 128, 236, -4), ("血", 376, 140, 204, 3), ("王", 590, 126, 200, -2), ("座", 820, 134, 238, 3)]
     for ch, cx, cy, size, ang in chars:
         f = font(FONT_BRUSH, size * S)
         g = Mask(int(size * 1.6 * S), int(size * 1.6 * S), S)
         g.text((size * 0.8, size * 0.8), ch, f)
         ga = g.im.rotate(ang, resample=3)
         cal.im.paste(ga, (int((cx - size * 0.8) * S), int((cy - size * 0.8) * S)), ga)
-    cm = cal.arr()
-    # dry brush streaks near stroke edges
+    cm = clamp01(dilate(cal.arr(), 1.6 * S))
+    cm = blur(cm, 0.6 * S)
+    # dry brush ('flying white') streaks near the stroke edges, running with the brush
     d = inner_dist(cm) / S
-    streak = fbm(H, W, 7 * S, rng, octaves=3, aniso=(0.12, 1.0)) - 0.5
-    streak2 = fbm(H, W, 9 * S, rng, octaves=3, aniso=(1.0, 0.15)) - 0.5
-    dry = clamp01((np.maximum(streak, streak2) - 0.12) * 5) * clamp01(1 - d / 7.0)
-    ink_a = cm * (1 - 0.85 * dry)
+    streak = fbm(H, W, 10 * S, rng, octaves=3, aniso=(0.10, 1.0)) - 0.5
+    dry = clamp01((streak - 0.16) * 6) * clamp01(1 - d / 6.0)
+    ink_a = cm * (1 - 0.8 * dry)
     # splatter
     sp = Mask(W, H, S)
     for _ in range(26):
         x = rng.uniform(60, 980)
-        y = rng.uniform(40, 270)
+        y = rng.uniform(20, 250)
         r = rng.exponential(2.0) + 0.6
         sp.circle(x, y, r)
     spm = sp.arr() * (1 - cm)
     near = blur(cm, 22 * S)
     spm = spm * clamp01(near * 6)
     # pale mist glow behind the calligraphy so it reads over the painting
-    glow = blur(dilate(cm, 10 * S), 18 * S)
-    lay.paint(hexc("F2E3C4"), clamp01(glow * 1.3), 0.55)
+    glow = blur(dilate(cm, 4 * S), 26 * S)
+    lay.paint(hexc("F2E3C4"), clamp01(glow * 1.6) ** 1.5, 0.45)
     ink = hexc("1A1410")
     tone = (fbm(H, W, 30 * S, rng, octaves=3) - 0.5)[..., None] * 0.25
     lay.paint(np.clip(ink * (1 + tone) + 0.02, 0, 1), clamp01(ink_a + spm * 0.9))
@@ -253,7 +257,7 @@ def title_logo():
     widths = [f.getlength(c) / S for c in letters]
     total = sum(widths) + track * (len(letters) - 1)
     x = 520 - total / 2
-    ty = 338
+    ty = 356
     for c, cw in zip(letters, widths):
         txt.d.text((x * S, ty * S), c, font=f, fill=255, anchor="ls")
         x += cw + track
@@ -289,7 +293,7 @@ def title_logo():
     out = lay.reduced(S)
     # seal at the end of the calligraphy
     seal = make_seal(150, seed=8, rot=-4)
-    sx, sy = 1020, 66
+    sx, sy = 1000, 40
     big = Layer(w, h)
     big.c[sy:sy + 150, sx:sx + 150] = seal.c
     big.a[sy:sy + 150, sx:sx + 150] = seal.a

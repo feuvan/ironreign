@@ -11,13 +11,6 @@ namespace IronSim
 	{
 		namespace OrdersDetail
 		{
-			FOrderCheck Deny(FOrderCheck Check, const std::string& Reason)
-			{
-				Check.bAllowed = false;
-				Check.Reason = Reason;
-				return Check;
-			}
-
 			int PendingDraft(const FGameState& State, int City)
 			{
 				int Total = 0;
@@ -713,19 +706,18 @@ namespace IronSim
 
 		FOrderCheck CheckOrderRules(const FGameState& State, const FOrder& Order)
 		{
-			using OrdersDetail::Deny;
 			FOrderCheck Check;
 			if (State.Phase != EPhase::Planning)
 			{
-				return Deny(Check, Loc("order.reason.notPlanning", "Orders can only be given during the planning phase."));
+				return DenyCheck(Check, Loc("order.reason.notPlanning", "Orders can only be given during the planning phase."));
 			}
 			if (!ValidCity(State, Order.City))
 			{
-				return Deny(Check, Loc("order.reason.noCity", "Choose a city."));
+				return DenyCheck(Check, Loc("order.reason.noCity", "Choose a city."));
 			}
 			if (!ValidOfficer(State, Order.Officer))
 			{
-				return Deny(Check, Loc("order.reason.noOfficer", "Choose an officer."));
+				return DenyCheck(Check, Loc("order.reason.noOfficer", "Choose an officer."));
 			}
 			const FOfficer& Officer = At(State.Officers, Order.Officer);
 			const FCity& City = At(State.Cities, Order.City);
@@ -733,15 +725,15 @@ namespace IronSim
 			const std::string Where = NameOf(City);
 			if (Officer.Status != EOfficerStatus::Serving || City.Owner < 0 || Officer.Faction != City.Owner)
 			{
-				return Deny(Check, LocF("order.reason.notServing", "{officer} does not serve the lord of {city}.", {{"officer", Who}, {"city", Where}}));
+				return DenyCheck(Check, LocF("order.reason.notServing", "{officer} does not serve the lord of {city}.", {{"officer", Who}, {"city", Where}}));
 			}
 			if (Officer.Army >= 0 || Officer.City != Order.City)
 			{
-				return Deny(Check, LocF("order.reason.notInCity", "{officer} is not in {city}.", {{"officer", Who}, {"city", Where}}));
+				return DenyCheck(Check, LocF("order.reason.notInCity", "{officer} is not in {city}.", {{"officer", Who}, {"city", Where}}));
 			}
 			if (State.OfficerOrder(Order.Officer) != nullptr)
 			{
-				return Deny(Check, LocF("order.reason.busy", "{officer} already has orders this month.", {{"officer", Who}}));
+				return DenyCheck(Check, LocF("order.reason.busy", "{officer} already has orders this month.", {{"officer", Who}}));
 			}
 			const int Faction = City.Owner;
 			switch (Order.Type)
@@ -753,7 +745,7 @@ namespace IronSim
 				Check.Preview = LocF("order.preview.farm", "Farmland +{amount}", {{"amount", ToText(std::max(0, Gain))}});
 				if (Gain <= 0)
 				{
-					return Deny(Check, Loc("order.reason.farmMax", "The farmland is fully developed."));
+					return DenyCheck(Check, Loc("order.reason.farmMax", "The farmland is fully developed."));
 				}
 				break;
 			}
@@ -764,7 +756,7 @@ namespace IronSim
 				Check.Preview = LocF("order.preview.commerce", "Commerce +{amount}", {{"amount", ToText(std::max(0, Gain))}});
 				if (Gain <= 0)
 				{
-					return Deny(Check, Loc("order.reason.commerceMax", "Commerce is fully developed."));
+					return DenyCheck(Check, Loc("order.reason.commerceMax", "Commerce is fully developed."));
 				}
 				break;
 			}
@@ -775,7 +767,7 @@ namespace IronSim
 				Check.Preview = LocF("order.preview.walls", "Defense +{amount}", {{"amount", ToText(std::max(0, Gain))}});
 				if (Gain <= 0)
 				{
-					return Deny(Check, Loc("order.reason.wallsMax", "The walls are already as strong as they can be."));
+					return DenyCheck(Check, Loc("order.reason.wallsMax", "The walls are already as strong as they can be."));
 				}
 				break;
 			}
@@ -786,7 +778,7 @@ namespace IronSim
 				Check.Preview = LocF("order.preview.patrol", "Public order +{amount}", {{"amount", ToText(std::max(0, Gain))}});
 				if (Gain <= 0)
 				{
-					return Deny(Check, Loc("order.reason.orderMax", "Public order is already perfect."));
+					return DenyCheck(Check, Loc("order.reason.orderMax", "Public order is already perfect."));
 				}
 				break;
 			}
@@ -799,15 +791,15 @@ namespace IronSim
 				Check.Preview = LocF("order.preview.draft", "Troops +{amount}, public order -{order}", {{"amount", ToText(Amount)}, {"order", ToText(Balance::DraftOrderLoss)}});
 				if (Amount <= 0)
 				{
-					return Deny(Check, Loc("order.reason.draftAmount", "Choose how many troops to draft."));
+					return DenyCheck(Check, Loc("order.reason.draftAmount", "Choose how many troops to draft."));
 				}
 				if (Amount > Limit)
 				{
-					return Deny(Check, LocF("order.reason.draftLimit", "{officer} can raise at most {amount} troops in one month.", {{"officer", Who}, {"amount", ToText(Limit)}}));
+					return DenyCheck(Check, LocF("order.reason.draftLimit", "{officer} can raise at most {amount} troops in one month.", {{"officer", Who}, {"amount", ToText(Limit)}}));
 				}
 				if (Amount > Capacity)
 				{
-					return Deny(Check, LocF("order.reason.draftCapacity", "{city} can provide only {amount} more recruits this month.", {{"city", Where}, {"amount", ToText(Capacity)}}));
+					return DenyCheck(Check, LocF("order.reason.draftCapacity", "{city} can provide only {amount} more recruits this month.", {{"city", Where}, {"amount", ToText(Capacity)}}));
 				}
 				break;
 			}
@@ -818,11 +810,11 @@ namespace IronSim
 				Check.Preview = LocF("order.preview.train", "Training +{amount}", {{"amount", ToText(std::max(0, Gain))}});
 				if (City.Troops <= 0)
 				{
-					return Deny(Check, Loc("order.reason.noTroops", "There are no troops to train."));
+					return DenyCheck(Check, Loc("order.reason.noTroops", "There are no troops to train."));
 				}
 				if (Gain <= 0)
 				{
-					return Deny(Check, Loc("order.reason.trainingMax", "The troops are already fully trained."));
+					return DenyCheck(Check, Loc("order.reason.trainingMax", "The troops are already fully trained."));
 				}
 				break;
 			}
@@ -838,19 +830,19 @@ namespace IronSim
 				Check.Cost = Balance::RecruitCost;
 				if (!ValidOfficer(State, Order.TargetOfficer))
 				{
-					return Deny(Check, Loc("order.reason.noRecruitTarget", "Choose an officer to recruit."));
+					return DenyCheck(Check, Loc("order.reason.noRecruitTarget", "Choose an officer to recruit."));
 				}
 				const std::string Target = OfficerLabel(State, Order.TargetOfficer);
 				const std::vector<int> Targets = RecruitTargetsOf(State, Order.City, Faction);
 				if (std::find(Targets.begin(), Targets.end(), Order.TargetOfficer) == Targets.end())
 				{
-					return Deny(Check, LocF("order.reason.recruitUnreachable", "{target} cannot be approached from {city}.", {{"target", Target}, {"city", Where}}));
+					return DenyCheck(Check, LocF("order.reason.recruitUnreachable", "{target} cannot be approached from {city}.", {{"target", Target}, {"city", Where}}));
 				}
 				Check.SuccessChance = RecruitChanceOf(State, Order.Officer, Order.TargetOfficer);
 				Check.Preview = LocF("order.preview.chance", "Success {chance}%", {{"chance", ToText(Check.SuccessChance)}});
 				if (IsRecruitTargeted(State, Order.TargetOfficer))
 				{
-					return Deny(Check, LocF("order.reason.recruitTaken", "Someone is already trying to recruit {target} this month.", {{"target", Target}}));
+					return DenyCheck(Check, LocF("order.reason.recruitTaken", "Someone is already trying to recruit {target} this month.", {{"target", Target}}));
 				}
 				break;
 			}
@@ -858,7 +850,7 @@ namespace IronSim
 			{
 				if (!ValidCity(State, Order.TargetCity) || Order.TargetCity == Order.City || At(State.Cities, Order.TargetCity).Owner != Faction)
 				{
-					return Deny(Check, Loc("order.reason.moveTarget", "Choose another city under your control."));
+					return DenyCheck(Check, Loc("order.reason.moveTarget", "Choose another city under your control."));
 				}
 				Check.Preview = LocF("order.preview.move", "Move to {city}", {{"city", CityLabel(State, Order.TargetCity)}});
 				break;
@@ -867,31 +859,31 @@ namespace IronSim
 			{
 				if (!ValidCity(State, Order.TargetCity) || Order.TargetCity == Order.City || At(State.Cities, Order.TargetCity).Owner != Faction)
 				{
-					return Deny(Check, Loc("order.reason.transportTarget", "Choose another city under your control to supply."));
+					return DenyCheck(Check, Loc("order.reason.transportTarget", "Choose another city under your control to supply."));
 				}
 				const std::string Target = CityLabel(State, Order.TargetCity);
 				Check.Preview = LocF("order.preview.transport", "Deliver {gold} gold, {food} food and {troops} troops to {city}", {{"gold", ToText(std::max(0, Order.Gold))}, {"food", ToText(std::max(0, Order.Food))}, {"troops", ToText(std::max(0, Order.Troops))}, {"city", Target}});
 				if (Order.Gold < 0 || Order.Food < 0 || Order.Troops < 0 || Order.Gold + Order.Food + Order.Troops <= 0)
 				{
-					return Deny(Check, Loc("order.reason.transportEmpty", "Choose what to transport."));
+					return DenyCheck(Check, Loc("order.reason.transportEmpty", "Choose what to transport."));
 				}
 				if (Order.Gold > City.Gold)
 				{
-					return Deny(Check, LocF("order.reason.transportGold", "{city} has only {amount} gold.", {{"city", Where}, {"amount", ToText(City.Gold)}}));
+					return DenyCheck(Check, LocF("order.reason.transportGold", "{city} has only {amount} gold.", {{"city", Where}, {"amount", ToText(City.Gold)}}));
 				}
 				if (Order.Food > City.Food)
 				{
-					return Deny(Check, LocF("order.reason.transportFood", "{city} has only {amount} food.", {{"city", Where}, {"amount", ToText(City.Food)}}));
+					return DenyCheck(Check, LocF("order.reason.transportFood", "{city} has only {amount} food.", {{"city", Where}, {"amount", ToText(City.Food)}}));
 				}
 				if (Order.Troops > City.Troops)
 				{
-					return Deny(Check, LocF("order.reason.transportTroops", "{city} has only {amount} troops.", {{"city", Where}, {"amount", ToText(City.Troops)}}));
+					return DenyCheck(Check, LocF("order.reason.transportTroops", "{city} has only {amount} troops.", {{"city", Where}, {"amount", ToText(City.Troops)}}));
 				}
 				std::vector<int> Path;
 				int Tenths = 0;
 				if (!FindRoute(State, Faction, Order.City, Order.TargetCity, Path, Tenths))
 				{
-					return Deny(Check, LocF("order.reason.transportRoute", "There is no safe road from {city} to {target}.", {{"city", Where}, {"target", Target}}));
+					return DenyCheck(Check, LocF("order.reason.transportRoute", "There is no safe road from {city} to {target}.", {{"city", Where}, {"target", Target}}));
 				}
 				break;
 			}
@@ -900,13 +892,13 @@ namespace IronSim
 				Check.Cost = Balance::SectTrainingCost;
 				if (!ValidSect(State, Order.TargetSect))
 				{
-					return Deny(Check, Loc("order.reason.noSect", "Choose a sect."));
+					return DenyCheck(Check, Loc("order.reason.noSect", "Choose a sect."));
 				}
 				const FSect& Sect = At(State.Sects, Order.TargetSect);
 				const std::vector<int> Near = SectsNearOf(State, Order.City);
 				if (std::find(Near.begin(), Near.end(), Order.TargetSect) == Near.end())
 				{
-					return Deny(Check, LocF("order.reason.sectFar", "The {sect} is too far from {city}.", {{"sect", NameOf(Sect)}, {"city", Where}}));
+					return DenyCheck(Check, LocF("order.reason.sectFar", "The {sect} is too far from {city}.", {{"sect", NameOf(Sect)}, {"city", Where}}));
 				}
 				const std::vector<int> Learnable = OrdersDetail::LearnableTechniques(State, Order.Officer, Order.TargetSect);
 				if (OrdersDetail::SectFavor(State, Order.TargetSect, Faction) >= Balance::SectTechniqueFavor && !Learnable.empty())
@@ -927,7 +919,7 @@ namespace IronSim
 				const int Target = Order.TargetFaction;
 				if (!IsAliveFaction(State, Target) || Target == Faction)
 				{
-					return Deny(Check, Loc("order.reason.noFaction", "Choose another faction."));
+					return DenyCheck(Check, Loc("order.reason.noFaction", "Choose another faction."));
 				}
 				const std::string Theirs = FactionLabel(State, Target);
 				if (Order.Type == EOrderType::Alliance)
@@ -937,7 +929,7 @@ namespace IronSim
 					Check.Preview = LocF("order.preview.chance", "Success {chance}%", {{"chance", ToText(Check.SuccessChance)}});
 					if (State.AreAllied(Faction, Target))
 					{
-						return Deny(Check, LocF("order.reason.allied", "You are already allied with the {faction}.", {{"faction", Theirs}}));
+						return DenyCheck(Check, LocF("order.reason.allied", "You are already allied with the {faction}.", {{"faction", Theirs}}));
 					}
 				}
 				else if (Order.Type == EOrderType::Truce)
@@ -947,11 +939,11 @@ namespace IronSim
 					Check.Preview = LocF("order.preview.chance", "Success {chance}%", {{"chance", ToText(Check.SuccessChance)}});
 					if (State.AreAllied(Faction, Target))
 					{
-						return Deny(Check, LocF("order.reason.allied", "You are already allied with the {faction}.", {{"faction", Theirs}}));
+						return DenyCheck(Check, LocF("order.reason.allied", "You are already allied with the {faction}.", {{"faction", Theirs}}));
 					}
 					if (State.HaveTruce(Faction, Target))
 					{
-						return Deny(Check, LocF("order.reason.truce", "A truce with the {faction} is already in force.", {{"faction", Theirs}}));
+						return DenyCheck(Check, LocF("order.reason.truce", "A truce with the {faction} is already in force.", {{"faction", Theirs}}));
 					}
 				}
 				else
@@ -960,21 +952,21 @@ namespace IronSim
 					Check.Preview = LocF("order.preview.gift", "Trust +{amount}", {{"amount", ToText(GiftTrustGain(Officer, Order.Gold))}});
 					if (Order.Gold <= 0)
 					{
-						return Deny(Check, Loc("order.reason.giftAmount", "Choose how much gold to send."));
+						return DenyCheck(Check, Loc("order.reason.giftAmount", "Choose how much gold to send."));
 					}
 				}
 				if (OrdersDetail::HasEnvoy(State, Faction, Target))
 				{
-					return Deny(Check, LocF("order.reason.envoyBusy", "An envoy is already on the way to the {faction}.", {{"faction", Theirs}}));
+					return DenyCheck(Check, LocF("order.reason.envoyBusy", "An envoy is already on the way to the {faction}.", {{"faction", Theirs}}));
 				}
 				break;
 			}
 			case EOrderType::Count:
-				return Deny(Check, Loc("order.reason.unknown", "Unknown order."));
+				return DenyCheck(Check, Loc("order.reason.unknown", "Unknown order."));
 			}
 			if (City.Gold < Check.Cost)
 			{
-				return Deny(Check, LocF("order.reason.noGold", "Not enough gold: {cost} needed, {gold} in {city}.", {{"cost", ToText(Check.Cost)}, {"gold", ToText(City.Gold)}, {"city", Where}}));
+				return DenyCheck(Check, LocF("order.reason.noGold", "Not enough gold: {cost} needed, {gold} in {city}.", {{"cost", ToText(Check.Cost)}, {"gold", ToText(City.Gold)}, {"city", Where}}));
 			}
 			Check.bAllowed = true;
 			Check.Reason.clear();

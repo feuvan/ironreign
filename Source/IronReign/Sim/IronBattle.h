@@ -370,8 +370,6 @@ namespace IronSim
 		std::vector<FReachableHex> ComputeReach(int UnitId) const;
 		/** Gate slot (0/1) of an intact gate adjacent to Hex with the lowest HP, or -1. */
 		int AdjacentIntactGate(FHex Hex) const;
-		FHex GateSlotHex(int Slot) const;
-		int GateSlotHp(int Slot) const;
 		double DefenseMultiplier(FHex Hex, int Side) const;
 		/** Expected attack damage before the target's terrain and the random factor. */
 		double RawDamage(int AttackerId, int AttackerTroops, int AttackerMorale, int TargetId, bool bRanged) const;

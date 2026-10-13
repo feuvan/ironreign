@@ -4,7 +4,9 @@
 #include "Fonts/SlateFontInfo.h"
 #include "Input/Reply.h"
 #include "Styling/SlateTypes.h"
+#include "Widgets/Input/SButton.h"
 
+class FIronSession;
 class SButton;
 class SWidget;
 
@@ -77,4 +79,18 @@ namespace IronStyle
 	IRONREIGN_API TSharedRef<SWidget> MakeIconValue(const FString& IconName, const TAttribute<FText>& Value, float IconSize = 24.0f, const FLinearColor& TextColor = FLinearColor(0.02f, 0.015f, 0.01f));
 	/** Faction banner: tinted Art/Map/Banner.png with the faction glyph in the brush font. */
 	IRONREIGN_API TSharedRef<SWidget> MakeBanner(int32 FactionIndex, float Height = 64.0f);
+
+	// ----- Additions (UE framework engineer) -----
+	/** Session whose game provides faction colours and glyphs (set by FIronSession::Initialize; weakly held). */
+	IRONREIGN_API void SetSession(const TSharedPtr<FIronSession>& Session);
+	/** Font of a specific culture regardless of the active one (e.g. each entry of a language menu in its own script). */
+	IRONREIGN_API FSlateFontInfo FontForCulture(const FString& Culture, EFont Kind, float Size);
+	/** Banner for an explicit colour and glyph, e.g. scenario factions on the New Game screen before a game exists. */
+	IRONREIGN_API TSharedRef<SWidget> MakeBannerFor(const FLinearColor& Color, const FText& Glyph, float Height = 64.0f);
+	/** Localized banner glyph ("faction.<key>.glyph"), falling back to DefaultGlyph. */
+	IRONREIGN_API FText FactionGlyph(const FString& FactionKey, const FString& DefaultGlyph);
+	/** Ornamental horizontal rule (Art/UI/Divider.png, or a thin gold line when the art is missing). */
+	IRONREIGN_API TSharedRef<SWidget> MakeDivider(float Height = 12.0f);
+	/** Selectable pill used for option rows (language, speed, difficulty): Tab_Active style when bActive. */
+	IRONREIGN_API TSharedRef<SButton> MakeChoiceButton(const FText& Label, bool bActive, FOnClicked OnClicked, const FSlateFontInfo& LabelFont);
 }

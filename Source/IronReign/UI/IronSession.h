@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Delegates/Delegate.h"
+#include "Misc/DateTime.h"
 #include "Sim/IronGame.h"
 
 /** A scenario file found under Content/Data/Scenarios. */
@@ -18,6 +19,7 @@ struct FIronSaveSlot
 	bool bUsed = false;
 	/** e.g. "Iron Banner - Year 213, Month 4". */
 	FText Summary;
+	/** Last write time of the save file, in local time. */
 	FDateTime Timestamp;
 };
 
@@ -79,6 +81,20 @@ public:
 	void NotifyStateChanged() { OnStateChanged.Broadcast(); }
 	/** Broadcast after the language changed; screens rebuild their text. */
 	FSimpleMulticastDelegate OnCultureChanged;
+
+	// ----- Additions (UE framework engineer) -----
+	/** True if any save slot (including the autosave) holds a file. Cheap: does not parse the saves. */
+	bool HasAnySave() const;
+	/** Reads a UTF-8 JSON file (BOM tolerated) into the rules engine's DOM. */
+	static bool LoadJsonFile(const FString& Path, IronSim::FJson& OutJson, FText& OutError);
+	/** Maps any culture name ("zh-CN", "ja_JP", "zh-Hant-TW"...) to a supported culture, or "" if unsupported. */
+	static FString NormalizeCulture(const FString& CultureName);
+	/**
+	 * Resets IronSim::FLocale::Active() to InCulture and loads Localization/en/*.json followed by
+	 * Localization/<InCulture>/*.json. Returns the number of tables loaded; files that fail to parse are
+	 * reported in OutErrors (and logged). Does not touch fonts or settings (see SetCulture).
+	 */
+	static int32 LoadCultureStrings(const FString& InCulture, TArray<FString>* OutErrors = nullptr);
 
 private:
 	void LoadSettings();
