@@ -82,6 +82,9 @@ namespace IronSim
 	std::string TitleOf(const FEventDef& Event);
 	std::string TextOf(const FEventDef& Event);
 	std::string ChoiceLabelOf(const FEventDef& Event, int ChoiceIndex);
+	/** Text of a Message effect: key "event.<key>.effect.<j>" for world-event effects (ChoiceIndex < 0)
+	 *  or "event.<key>.choice.<i>.effect.<j>" for choice effects. */
+	std::string EffectTextOf(const FEventDef& Event, int ChoiceIndex, int EffectIndex);
 	std::string ScenarioNameOf(const FGameState& State);
 	std::string ScenarioDescriptionOf(const FGameState& State);
 	std::string MapLabelOf(const FGameState& State, int LabelIndex);

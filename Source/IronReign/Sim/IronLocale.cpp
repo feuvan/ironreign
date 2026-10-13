@@ -147,6 +147,27 @@ namespace IronSim
 		return LocaleDetail::Lookup(LocaleDetail::EntityKey("event", Event.Key, Field.c_str()), Event.Choices[static_cast<size_t>(ChoiceIndex)].Label);
 	}
 
+	std::string EffectTextOf(const FEventDef& Event, int ChoiceIndex, int EffectIndex)
+	{
+		const std::vector<FEffect>* Effects = &Event.Effects;
+		std::string Field;
+		if (ChoiceIndex >= 0)
+		{
+			if (ChoiceIndex >= static_cast<int>(Event.Choices.size()))
+			{
+				return std::string();
+			}
+			Effects = &Event.Choices[static_cast<size_t>(ChoiceIndex)].Effects;
+			Field = "choice." + std::to_string(ChoiceIndex) + ".";
+		}
+		if (EffectIndex < 0 || EffectIndex >= static_cast<int>(Effects->size()))
+		{
+			return std::string();
+		}
+		Field += "effect." + std::to_string(EffectIndex);
+		return LocaleDetail::Lookup(LocaleDetail::EntityKey("event", Event.Key, Field.c_str()), (*Effects)[static_cast<size_t>(EffectIndex)].Text);
+	}
+
 	std::string ScenarioNameOf(const FGameState& State) { return LocaleDetail::Lookup("scenario." + State.ScenarioKey + ".name", State.ScenarioName); }
 	std::string ScenarioDescriptionOf(const FGameState& State) { return LocaleDetail::Lookup("scenario." + State.ScenarioKey + ".description", State.ScenarioDescription); }
 
@@ -200,10 +221,20 @@ namespace IronSim
 		{
 			AddIfSet(Table, EntityKey("event", Event.Key, "title"), Event.Title);
 			AddIfSet(Table, EntityKey("event", Event.Key, "text"), Event.Text);
+			for (size_t Effect = 0; Effect < Event.Effects.size(); ++Effect)
+			{
+				const std::string Field = "effect." + std::to_string(Effect);
+				AddIfSet(Table, EntityKey("event", Event.Key, Field.c_str()), Event.Effects[Effect].Text);
+			}
 			for (size_t Choice = 0; Choice < Event.Choices.size(); ++Choice)
 			{
 				const std::string Field = "choice." + std::to_string(Choice);
 				AddIfSet(Table, EntityKey("event", Event.Key, Field.c_str()), Event.Choices[Choice].Label);
+				for (size_t Effect = 0; Effect < Event.Choices[Choice].Effects.size(); ++Effect)
+				{
+					const std::string EffectField = Field + ".effect." + std::to_string(Effect);
+					AddIfSet(Table, EntityKey("event", Event.Key, EffectField.c_str()), Event.Choices[Choice].Effects[Effect].Text);
+				}
 			}
 		}
 		return Table;

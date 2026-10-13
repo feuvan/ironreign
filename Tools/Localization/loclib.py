@@ -82,8 +82,12 @@ def scenario_strings(scenario: dict) -> dict:
     for e in scenario.get("events", []):
         add(f"event.{e['key']}.title", e.get("title"))
         add(f"event.{e['key']}.text", e.get("text"))
+        for j, effect in enumerate(e.get("effects", [])):
+            add(f"event.{e['key']}.effect.{j}", effect.get("text"))
         for i, choice in enumerate(e.get("choices", [])):
             add(f"event.{e['key']}.choice.{i}", choice.get("label"))
+            for j, effect in enumerate(choice.get("effects", [])):
+                add(f"event.{e['key']}.choice.{i}.effect.{j}", effect.get("text"))
     return table
 
 

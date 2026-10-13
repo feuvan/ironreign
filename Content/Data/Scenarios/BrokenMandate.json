@@ -757,7 +757,116 @@
       }
     ]
   },
-  "techniques": [],
+  "techniques": [
+    {
+      "key": "cloud_piercing_sword",
+      "name": "Cloud-Piercing Sword",
+      "nameZh": "穿云剑",
+      "description": "A rising thrust learned on the Cloudpeak ridges, fast enough to part the mist before it closes again.",
+      "kind": "strike",
+      "power": 175,
+      "minMartial": 70
+    },
+    {
+      "key": "drifting_mist_steps",
+      "name": "Drifting Mist Steps",
+      "nameZh": "流雾步",
+      "description": "Footwork that makes the swordsman drift like fog, drawing the enemy's guard to where he no longer stands.",
+      "kind": "feint",
+      "power": 160,
+      "minMartial": 64
+    },
+    {
+      "key": "thousand_peak_guard",
+      "name": "Thousand Peaks Guard",
+      "nameZh": "千峰守",
+      "description": "A layered defence modelled on the mountain ranges: behind every blocked blow waits another ridge.",
+      "kind": "guard",
+      "power": 170,
+      "minMartial": 72
+    },
+    {
+      "key": "falling_star_sword",
+      "name": "Falling Star Sword",
+      "nameZh": "落星剑",
+      "description": "The final art of Cloudpeak, a single descending cut said to have split a boulder in the sect courtyard. Few are strong enough to survive learning it.",
+      "kind": "strike",
+      "power": 210,
+      "minMartial": 88
+    },
+    {
+      "key": "iron_bell_body",
+      "name": "Iron Bell Body",
+      "nameZh": "铁钟罩",
+      "description": "Breath and muscle hardened beneath the monastery's great bell until blades skid off the skin as if striking bronze.",
+      "kind": "guard",
+      "power": 190,
+      "minMartial": 68
+    },
+    {
+      "key": "arhat_palm",
+      "name": "Arhat Palm",
+      "nameZh": "罗汉掌",
+      "description": "The first fighting art taught at Stone Bell: a straight palm strike driven up from the heels, simple and crushing.",
+      "kind": "strike",
+      "power": 165,
+      "minMartial": 62
+    },
+    {
+      "key": "echoing_bell_fist",
+      "name": "Echoing Bell Fist",
+      "nameZh": "钟鸣拳",
+      "description": "A rhythm of blows that rings like the bell and its echo. The opponent answers the first sound and is struck by the second.",
+      "kind": "feint",
+      "power": 175,
+      "minMartial": 75
+    },
+    {
+      "key": "moonshadow_needles",
+      "name": "Moonshadow Needles",
+      "nameZh": "月影针",
+      "description": "Hidden needles flicked from the sleeve in the middle of a courteous bow. Moonwell Hall's most feared and least honourable art.",
+      "kind": "feint",
+      "power": 180,
+      "minMartial": 66
+    },
+    {
+      "key": "still_water_palm",
+      "name": "Still Water Palm",
+      "nameZh": "止水掌",
+      "description": "A yielding guard that swallows force the way a pond swallows a stone, leaving the attacker off balance.",
+      "kind": "guard",
+      "power": 165,
+      "minMartial": 60
+    },
+    {
+      "key": "crescent_moon_blade",
+      "name": "Crescent Moon Blade",
+      "nameZh": "新月刀",
+      "description": "A sweeping saber cut drawn in a perfect arc, practised only by the light of the new moon.",
+      "kind": "strike",
+      "power": 185,
+      "minMartial": 76
+    },
+    {
+      "key": "iron_mountain_cleave",
+      "name": "Mountain-Splitting Cleave",
+      "nameZh": "开山斩",
+      "description": "Yan Tieshan's own art: an overhead blow with a blade forged heavier than any other man can lift. The cut that gave him his name.",
+      "kind": "strike",
+      "power": 220,
+      "minMartial": 88
+    },
+    {
+      "key": "howling_wolf_lance",
+      "name": "Howling Wolf Lance",
+      "nameZh": "狼啸枪",
+      "description": "Tuoba Ying's war cry freezes horse and rider for a single heartbeat, and the lance arrives inside that heartbeat.",
+      "kind": "feint",
+      "power": 200,
+      "minMartial": 85
+    }
+  ],
   "factions": [
     {
       "key": "iron_banner",
@@ -825,19 +934,19 @@
       "size": 3,
       "terrain": "plains",
       "owner": "iron_banner",
-      "population": 280000,
-      "populationMax": 450000,
-      "farm": 600,
-      "farmMax": 1200,
-      "commerce": 600,
-      "commerceMax": 1200,
-      "defense": 700,
+      "population": 260000,
+      "populationMax": 420000,
+      "farm": 520,
+      "farmMax": 1000,
+      "commerce": 680,
+      "commerceMax": 1100,
+      "defense": 800,
       "defenseMax": 1200,
-      "order": 75,
-      "troops": 22000,
-      "training": 65,
-      "gold": 3000,
-      "food": 40000
+      "order": 78,
+      "troops": 24000,
+      "training": 70,
+      "gold": 2800,
+      "food": 36000
     },
     {
       "key": "yanmen",
@@ -849,19 +958,19 @@
       "size": 2,
       "terrain": "mountains",
       "owner": "iron_banner",
-      "population": 150000,
-      "populationMax": 300000,
-      "farm": 400,
-      "farmMax": 900,
-      "commerce": 380,
-      "commerceMax": 900,
-      "defense": 450,
-      "defenseMax": 900,
-      "order": 65,
-      "troops": 12000,
-      "training": 55,
-      "gold": 1500,
-      "food": 20000
+      "population": 90000,
+      "populationMax": 180000,
+      "farm": 260,
+      "farmMax": 600,
+      "commerce": 220,
+      "commerceMax": 600,
+      "defense": 750,
+      "defenseMax": 1000,
+      "order": 70,
+      "troops": 13000,
+      "training": 68,
+      "gold": 900,
+      "food": 22000
     },
     {
       "key": "beiyuan",
@@ -873,19 +982,19 @@
       "size": 2,
       "terrain": "plains",
       "owner": "iron_banner",
-      "population": 150000,
+      "population": 160000,
       "populationMax": 300000,
-      "farm": 400,
+      "farm": 520,
       "farmMax": 900,
-      "commerce": 380,
-      "commerceMax": 900,
-      "defense": 450,
-      "defenseMax": 900,
-      "order": 65,
-      "troops": 12000,
-      "training": 55,
-      "gold": 1500,
-      "food": 20000
+      "commerce": 420,
+      "commerceMax": 850,
+      "defense": 380,
+      "defenseMax": 800,
+      "order": 66,
+      "troops": 10000,
+      "training": 58,
+      "gold": 1600,
+      "food": 24000
     },
     {
       "key": "liangzhou",
@@ -897,19 +1006,19 @@
       "size": 3,
       "terrain": "plains",
       "owner": "wolf_riders",
-      "population": 280000,
-      "populationMax": 450000,
-      "farm": 600,
-      "farmMax": 1200,
-      "commerce": 600,
-      "commerceMax": 1200,
-      "defense": 700,
-      "defenseMax": 1200,
-      "order": 75,
-      "troops": 22000,
-      "training": 65,
-      "gold": 3000,
-      "food": 40000
+      "population": 190000,
+      "populationMax": 320000,
+      "farm": 380,
+      "farmMax": 800,
+      "commerce": 520,
+      "commerceMax": 1000,
+      "defense": 650,
+      "defenseMax": 1100,
+      "order": 72,
+      "troops": 21000,
+      "training": 72,
+      "gold": 2200,
+      "food": 30000
     },
     {
       "key": "yumen",
@@ -921,19 +1030,19 @@
       "size": 1,
       "terrain": "plains",
       "owner": "wolf_riders",
-      "population": 70000,
-      "populationMax": 160000,
-      "farm": 250,
-      "farmMax": 600,
-      "commerce": 200,
-      "commerceMax": 600,
-      "defense": 300,
-      "defenseMax": 600,
-      "order": 60,
-      "troops": 6000,
-      "training": 45,
-      "gold": 800,
-      "food": 10000
+      "population": 50000,
+      "populationMax": 120000,
+      "farm": 150,
+      "farmMax": 450,
+      "commerce": 300,
+      "commerceMax": 650,
+      "defense": 420,
+      "defenseMax": 700,
+      "order": 62,
+      "troops": 7000,
+      "training": 60,
+      "gold": 900,
+      "food": 9000
     },
     {
       "key": "tianshui",
@@ -945,18 +1054,18 @@
       "size": 2,
       "terrain": "hills",
       "owner": "wolf_riders",
-      "population": 150000,
-      "populationMax": 300000,
-      "farm": 400,
-      "farmMax": 900,
-      "commerce": 380,
-      "commerceMax": 900,
-      "defense": 450,
+      "population": 120000,
+      "populationMax": 240000,
+      "farm": 420,
+      "farmMax": 850,
+      "commerce": 280,
+      "commerceMax": 700,
+      "defense": 520,
       "defenseMax": 900,
-      "order": 65,
-      "troops": 12000,
-      "training": 55,
-      "gold": 1500,
+      "order": 64,
+      "troops": 11000,
+      "training": 62,
+      "gold": 1100,
       "food": 20000
     },
     {
@@ -969,19 +1078,19 @@
       "size": 3,
       "terrain": "river",
       "owner": "azure_court",
-      "population": 280000,
-      "populationMax": 450000,
-      "farm": 600,
-      "farmMax": 1200,
-      "commerce": 600,
-      "commerceMax": 1200,
-      "defense": 700,
-      "defenseMax": 1200,
-      "order": 75,
-      "troops": 22000,
-      "training": 65,
-      "gold": 3000,
-      "food": 40000
+      "population": 340000,
+      "populationMax": 500000,
+      "farm": 620,
+      "farmMax": 1100,
+      "commerce": 720,
+      "commerceMax": 1300,
+      "defense": 780,
+      "defenseMax": 1300,
+      "order": 70,
+      "troops": 20000,
+      "training": 58,
+      "gold": 3200,
+      "food": 38000
     },
     {
       "key": "wancheng",
@@ -993,19 +1102,19 @@
       "size": 2,
       "terrain": "plains",
       "owner": "azure_court",
-      "population": 150000,
-      "populationMax": 300000,
-      "farm": 400,
-      "farmMax": 900,
-      "commerce": 380,
-      "commerceMax": 900,
-      "defense": 450,
-      "defenseMax": 900,
-      "order": 65,
-      "troops": 12000,
-      "training": 55,
-      "gold": 1500,
-      "food": 20000
+      "population": 170000,
+      "populationMax": 320000,
+      "farm": 680,
+      "farmMax": 1000,
+      "commerce": 320,
+      "commerceMax": 800,
+      "defense": 400,
+      "defenseMax": 850,
+      "order": 68,
+      "troops": 11000,
+      "training": 52,
+      "gold": 1300,
+      "food": 34000
     },
     {
       "key": "chenliu",
@@ -1017,18 +1126,18 @@
       "size": 2,
       "terrain": "plains",
       "owner": "azure_court",
-      "population": 150000,
-      "populationMax": 300000,
-      "farm": 400,
+      "population": 180000,
+      "populationMax": 320000,
+      "farm": 450,
       "farmMax": 900,
-      "commerce": 380,
-      "commerceMax": 900,
-      "defense": 450,
-      "defenseMax": 900,
-      "order": 65,
-      "troops": 12000,
-      "training": 55,
-      "gold": 1500,
+      "commerce": 560,
+      "commerceMax": 1000,
+      "defense": 380,
+      "defenseMax": 800,
+      "order": 66,
+      "troops": 10000,
+      "training": 50,
+      "gold": 2000,
       "food": 20000
     },
     {
@@ -1041,19 +1150,19 @@
       "size": 3,
       "terrain": "coast",
       "owner": "sea_league",
-      "population": 280000,
-      "populationMax": 450000,
-      "farm": 600,
-      "farmMax": 1200,
-      "commerce": 600,
-      "commerceMax": 1200,
-      "defense": 700,
-      "defenseMax": 1200,
-      "order": 75,
-      "troops": 22000,
-      "training": 65,
-      "gold": 3000,
-      "food": 40000
+      "population": 300000,
+      "populationMax": 460000,
+      "farm": 480,
+      "farmMax": 1000,
+      "commerce": 900,
+      "commerceMax": 1400,
+      "defense": 620,
+      "defenseMax": 1100,
+      "order": 78,
+      "troops": 18000,
+      "training": 60,
+      "gold": 4500,
+      "food": 32000
     },
     {
       "key": "langya",
@@ -1065,19 +1174,19 @@
       "size": 2,
       "terrain": "hills",
       "owner": "sea_league",
-      "population": 150000,
-      "populationMax": 300000,
-      "farm": 400,
-      "farmMax": 900,
-      "commerce": 380,
-      "commerceMax": 900,
-      "defense": 450,
-      "defenseMax": 900,
-      "order": 65,
-      "troops": 12000,
+      "population": 140000,
+      "populationMax": 280000,
+      "farm": 380,
+      "farmMax": 850,
+      "commerce": 520,
+      "commerceMax": 1000,
+      "defense": 480,
+      "defenseMax": 850,
+      "order": 72,
+      "troops": 9000,
       "training": 55,
-      "gold": 1500,
-      "food": 20000
+      "gold": 2000,
+      "food": 18000
     },
     {
       "key": "wujun",
@@ -1089,19 +1198,19 @@
       "size": 2,
       "terrain": "river",
       "owner": "sea_league",
-      "population": 150000,
-      "populationMax": 300000,
-      "farm": 400,
-      "farmMax": 900,
-      "commerce": 380,
-      "commerceMax": 900,
-      "defense": 450,
-      "defenseMax": 900,
-      "order": 65,
-      "troops": 12000,
-      "training": 55,
-      "gold": 1500,
-      "food": 20000
+      "population": 170000,
+      "populationMax": 320000,
+      "farm": 560,
+      "farmMax": 1000,
+      "commerce": 640,
+      "commerceMax": 1100,
+      "defense": 420,
+      "defenseMax": 850,
+      "order": 70,
+      "troops": 10000,
+      "training": 52,
+      "gold": 2400,
+      "food": 26000
     },
     {
       "key": "lianzhou",
@@ -1113,19 +1222,19 @@
       "size": 3,
       "terrain": "river",
       "owner": "southern_lotus",
-      "population": 280000,
-      "populationMax": 450000,
-      "farm": 600,
-      "farmMax": 1200,
-      "commerce": 600,
+      "population": 300000,
+      "populationMax": 480000,
+      "farm": 820,
+      "farmMax": 1300,
+      "commerce": 680,
       "commerceMax": 1200,
-      "defense": 700,
-      "defenseMax": 1200,
-      "order": 75,
-      "troops": 22000,
-      "training": 65,
-      "gold": 3000,
-      "food": 40000
+      "defense": 640,
+      "defenseMax": 1100,
+      "order": 80,
+      "troops": 19000,
+      "training": 62,
+      "gold": 3200,
+      "food": 48000
     },
     {
       "key": "jiangling",
@@ -1139,17 +1248,17 @@
       "owner": "southern_lotus",
       "population": 150000,
       "populationMax": 300000,
-      "farm": 400,
-      "farmMax": 900,
+      "farm": 500,
+      "farmMax": 950,
       "commerce": 380,
-      "commerceMax": 900,
-      "defense": 450,
-      "defenseMax": 900,
-      "order": 65,
-      "troops": 12000,
-      "training": 55,
+      "commerceMax": 850,
+      "defense": 640,
+      "defenseMax": 1000,
+      "order": 70,
+      "troops": 13000,
+      "training": 62,
       "gold": 1500,
-      "food": 20000
+      "food": 26000
     },
     {
       "key": "guiyang",
@@ -1163,17 +1272,17 @@
       "owner": "southern_lotus",
       "population": 70000,
       "populationMax": 160000,
-      "farm": 250,
-      "farmMax": 600,
-      "commerce": 200,
+      "farm": 300,
+      "farmMax": 650,
+      "commerce": 240,
       "commerceMax": 600,
-      "defense": 300,
-      "defenseMax": 600,
-      "order": 60,
+      "defense": 320,
+      "defenseMax": 650,
+      "order": 66,
       "troops": 6000,
-      "training": 45,
+      "training": 50,
       "gold": 800,
-      "food": 10000
+      "food": 12000
     },
     {
       "key": "heishan",
@@ -1185,19 +1294,19 @@
       "size": 2,
       "terrain": "hills",
       "owner": "black_mountain",
-      "population": 150000,
-      "populationMax": 300000,
-      "farm": 400,
-      "farmMax": 900,
-      "commerce": 380,
-      "commerceMax": 900,
-      "defense": 450,
-      "defenseMax": 900,
-      "order": 65,
-      "troops": 12000,
-      "training": 55,
-      "gold": 1500,
-      "food": 20000
+      "population": 120000,
+      "populationMax": 260000,
+      "farm": 300,
+      "farmMax": 750,
+      "commerce": 260,
+      "commerceMax": 700,
+      "defense": 680,
+      "defenseMax": 1000,
+      "order": 58,
+      "troops": 17000,
+      "training": 70,
+      "gold": 1400,
+      "food": 22000
     },
     {
       "key": "xuyang",
@@ -1209,19 +1318,19 @@
       "size": 1,
       "terrain": "plains",
       "owner": "black_mountain",
-      "population": 70000,
-      "populationMax": 160000,
-      "farm": 250,
-      "farmMax": 600,
-      "commerce": 200,
-      "commerceMax": 600,
-      "defense": 300,
+      "population": 80000,
+      "populationMax": 170000,
+      "farm": 300,
+      "farmMax": 650,
+      "commerce": 320,
+      "commerceMax": 650,
+      "defense": 260,
       "defenseMax": 600,
-      "order": 60,
-      "troops": 6000,
-      "training": 45,
-      "gold": 800,
-      "food": 10000
+      "order": 45,
+      "troops": 7000,
+      "training": 55,
+      "gold": 900,
+      "food": 11000
     },
     {
       "key": "hedong",
@@ -1234,17 +1343,17 @@
       "terrain": "river",
       "population": 70000,
       "populationMax": 160000,
-      "farm": 250,
+      "farm": 280,
       "farmMax": 600,
-      "commerce": 200,
+      "commerce": 260,
       "commerceMax": 600,
       "defense": 300,
-      "defenseMax": 600,
-      "order": 55,
-      "troops": 3000,
-      "training": 35,
-      "gold": 800,
-      "food": 10000
+      "defenseMax": 650,
+      "order": 62,
+      "troops": 3500,
+      "training": 40,
+      "gold": 900,
+      "food": 12000
     },
     {
       "key": "qinchuan",
@@ -1255,18 +1364,18 @@
       "y": 900,
       "size": 2,
       "terrain": "mountains",
-      "population": 150000,
-      "populationMax": 300000,
-      "farm": 400,
-      "farmMax": 900,
-      "commerce": 380,
-      "commerceMax": 900,
-      "defense": 450,
-      "defenseMax": 900,
-      "order": 55,
-      "troops": 6000,
-      "training": 35,
-      "gold": 1500,
+      "population": 130000,
+      "populationMax": 260000,
+      "farm": 420,
+      "farmMax": 850,
+      "commerce": 360,
+      "commerceMax": 800,
+      "defense": 620,
+      "defenseMax": 950,
+      "order": 60,
+      "troops": 6500,
+      "training": 50,
+      "gold": 1600,
       "food": 20000
     },
     {
@@ -1278,19 +1387,19 @@
       "y": 1140,
       "size": 1,
       "terrain": "mountains",
-      "population": 70000,
-      "populationMax": 160000,
-      "farm": 250,
-      "farmMax": 600,
+      "population": 60000,
+      "populationMax": 140000,
+      "farm": 220,
+      "farmMax": 550,
       "commerce": 200,
-      "commerceMax": 600,
-      "defense": 300,
-      "defenseMax": 600,
-      "order": 55,
-      "troops": 3000,
-      "training": 35,
-      "gold": 800,
-      "food": 10000
+      "commerceMax": 550,
+      "defense": 600,
+      "defenseMax": 850,
+      "order": 56,
+      "troops": 4500,
+      "training": 45,
+      "gold": 700,
+      "food": 12000
     },
     {
       "key": "xiangnan",
@@ -1301,19 +1410,19 @@
       "y": 1380,
       "size": 1,
       "terrain": "forest",
-      "population": 70000,
-      "populationMax": 160000,
-      "farm": 250,
+      "population": 60000,
+      "populationMax": 150000,
+      "farm": 260,
       "farmMax": 600,
-      "commerce": 200,
-      "commerceMax": 600,
-      "defense": 300,
+      "commerce": 180,
+      "commerceMax": 550,
+      "defense": 260,
       "defenseMax": 600,
-      "order": 55,
-      "troops": 3000,
+      "order": 58,
+      "troops": 2500,
       "training": 35,
-      "gold": 800,
-      "food": 10000
+      "gold": 600,
+      "food": 9000
     },
     {
       "key": "donghai",
@@ -1324,19 +1433,19 @@
       "y": 780,
       "size": 1,
       "terrain": "coast",
-      "population": 70000,
-      "populationMax": 160000,
-      "farm": 250,
-      "farmMax": 600,
-      "commerce": 200,
-      "commerceMax": 600,
-      "defense": 300,
+      "population": 80000,
+      "populationMax": 170000,
+      "farm": 200,
+      "farmMax": 500,
+      "commerce": 340,
+      "commerceMax": 700,
+      "defense": 280,
       "defenseMax": 600,
-      "order": 55,
+      "order": 52,
       "troops": 3000,
-      "training": 35,
-      "gold": 800,
-      "food": 10000
+      "training": 38,
+      "gold": 1100,
+      "food": 9000
     }
   ],
   "roads": [
@@ -1545,8 +1654,2041 @@
       "kind": "road"
     }
   ],
-  "officers": [],
-  "sects": [],
+  "officers": [
+    {
+      "key": "yan_tieshan",
+      "name": "Yan Tieshan",
+      "nameZh": "燕铁山",
+      "epithet": "the Iron Mountain",
+      "bio": "Once marshal of the northern frontier, he melted down his garrison's imperial tablets to forge ten thousand blades on the day the boy emperor died. He trusts iron, discipline and little else, and means to hammer the Nine Provinces back into one piece.",
+      "portrait": "m_warrior_01",
+      "gender": "m",
+      "birth": 166,
+      "martial": 89,
+      "command": 92,
+      "strategy": 62,
+      "politics": 55,
+      "charm": 74,
+      "affinity": 8,
+      "ambition": 92,
+      "bravery": 88,
+      "specialty": "infantry",
+      "status": "serving",
+      "faction": "iron_banner",
+      "city": "tiezhou",
+      "loyalty": 100,
+      "techniques": [
+        "iron_mountain_cleave"
+      ]
+    },
+    {
+      "key": "yan_lie",
+      "name": "Yan Lie",
+      "nameZh": "燕烈",
+      "epithet": "the Young Flame",
+      "bio": "Yan Tieshan's only son, who rode his first charge at fifteen and has not stopped since. Brave to the point of folly; his father despairs of teaching him patience.",
+      "portrait": "m_warrior_02",
+      "gender": "m",
+      "birth": 191,
+      "martial": 84,
+      "command": 68,
+      "strategy": 42,
+      "politics": 35,
+      "charm": 62,
+      "affinity": 9,
+      "ambition": 72,
+      "bravery": 94,
+      "specialty": "cavalry",
+      "status": "serving",
+      "faction": "iron_banner",
+      "city": "tiezhou",
+      "loyalty": 100
+    },
+    {
+      "key": "gao_jingzhe",
+      "name": "Gao Jingzhe",
+      "nameZh": "高惊蛰",
+      "epithet": "the Waking Thunder",
+      "bio": "A border-post clerk who predicted the steppe raids of 208 to the day and was ignored by everyone except Yan Tieshan. He plans campaigns the way a smith works a blade: heat, hammer, quench.",
+      "portrait": "m_scholar_01",
+      "gender": "m",
+      "birth": 178,
+      "martial": 38,
+      "command": 66,
+      "strategy": 84,
+      "politics": 68,
+      "charm": 56,
+      "affinity": 4,
+      "ambition": 60,
+      "bravery": 45,
+      "specialty": "infantry",
+      "status": "serving",
+      "faction": "iron_banner",
+      "city": "tiezhou",
+      "loyalty": 88
+    },
+    {
+      "key": "pei_wenzhao",
+      "name": "Pei Wenzhao",
+      "nameZh": "裴文昭",
+      "epithet": "the Ledger of Tiezhou",
+      "bio": "Keeps the accounts of every forge, mine and granary in the north in a hand so small it needs a magnifying stone. The Iron Banner marches on his ledgers.",
+      "portrait": "m_scholar_02",
+      "gender": "m",
+      "birth": 172,
+      "martial": 20,
+      "command": 35,
+      "strategy": 62,
+      "politics": 82,
+      "charm": 58,
+      "affinity": 16,
+      "ambition": 40,
+      "bravery": 30,
+      "specialty": "infantry",
+      "status": "serving",
+      "faction": "iron_banner",
+      "city": "tiezhou",
+      "loyalty": 85
+    },
+    {
+      "key": "lei_zhen",
+      "name": "Lei Zhen",
+      "nameZh": "雷震",
+      "epithet": "Thunderclap",
+      "bio": "Commander of the Tiezhou crossbow corps, whose volleys sound like a storm breaking over the plain. Gruff, deaf in one ear and utterly reliable.",
+      "portrait": "m_warrior_03",
+      "gender": "m",
+      "birth": 183,
+      "martial": 76,
+      "command": 72,
+      "strategy": 45,
+      "politics": 30,
+      "charm": 40,
+      "affinity": 12,
+      "ambition": 50,
+      "bravery": 80,
+      "specialty": "archer",
+      "status": "serving",
+      "faction": "iron_banner",
+      "city": "tiezhou",
+      "loyalty": 84
+    },
+    {
+      "key": "han_pojun",
+      "name": "Han Pojun",
+      "nameZh": "韩破军",
+      "epithet": "Breaker of Armies",
+      "bio": "Raised as a porter at the Stone Bell Monastery, he left with its iron-bell art and a temper the monks could not cure. He holds Yanmen Pass for Yan Tieshan and boasts that no army has ever pushed him back a single step.",
+      "portrait": "m_warrior_04",
+      "gender": "m",
+      "birth": 180,
+      "martial": 93,
+      "command": 78,
+      "strategy": 40,
+      "politics": 28,
+      "charm": 45,
+      "affinity": 14,
+      "ambition": 65,
+      "bravery": 97,
+      "specialty": "infantry",
+      "status": "serving",
+      "faction": "iron_banner",
+      "city": "yanmen",
+      "loyalty": 82,
+      "techniques": [
+        "iron_bell_body"
+      ]
+    },
+    {
+      "key": "duan_kui",
+      "name": "Duan Kui",
+      "nameZh": "段魁",
+      "epithet": "the Bronze Bull",
+      "bio": "A miner's son who can carry a battering ram on one shoulder. He follows Han Pojun like a shadow and argues with him like a brother.",
+      "portrait": "m_warrior_05",
+      "gender": "m",
+      "birth": 186,
+      "martial": 81,
+      "command": 62,
+      "strategy": 28,
+      "politics": 22,
+      "charm": 38,
+      "affinity": 18,
+      "ambition": 45,
+      "bravery": 92,
+      "specialty": "infantry",
+      "status": "serving",
+      "faction": "iron_banner",
+      "city": "yanmen",
+      "loyalty": 80
+    },
+    {
+      "key": "wei_shoucheng",
+      "name": "Wei Shoucheng",
+      "nameZh": "魏守城",
+      "epithet": "the Old Wall",
+      "bio": "Has held Yanmen against steppe raiders for thirty winters, under three emperors and now one warlord. He says a wall is only as strong as the soup in its soldiers' bowls.",
+      "portrait": "m_elder_01",
+      "gender": "m",
+      "birth": 150,
+      "martial": 68,
+      "command": 82,
+      "strategy": 60,
+      "politics": 52,
+      "charm": 55,
+      "affinity": 147,
+      "ambition": 25,
+      "bravery": 70,
+      "specialty": "archer",
+      "status": "serving",
+      "faction": "iron_banner",
+      "city": "yanmen",
+      "loyalty": 92
+    },
+    {
+      "key": "yan_hongying",
+      "name": "Yan Hongying",
+      "nameZh": "燕红缨",
+      "epithet": "Red Tassel",
+      "bio": "Yan Tieshan's niece, named for the scarlet tassel on the spear she inherited from her mother. She commands the Beiyuan horse and outrides every man in it.",
+      "portrait": "f_warrior_01",
+      "gender": "f",
+      "birth": 190,
+      "martial": 82,
+      "command": 70,
+      "strategy": 52,
+      "politics": 40,
+      "charm": 72,
+      "affinity": 6,
+      "ambition": 55,
+      "bravery": 85,
+      "specialty": "cavalry",
+      "status": "serving",
+      "faction": "iron_banner",
+      "city": "beiyuan",
+      "loyalty": 100
+    },
+    {
+      "key": "murong_xiao",
+      "name": "Murong Xiao",
+      "nameZh": "慕容啸",
+      "epithet": "the Hawk of Beiyuan",
+      "bio": "A horse-lord of the northern plains who knelt to the Iron Banner rather than see his herds requisitioned. Loyal, for now, to whoever keeps the grass green.",
+      "portrait": "m_warrior_06",
+      "gender": "m",
+      "birth": 179,
+      "martial": 75,
+      "command": 80,
+      "strategy": 62,
+      "politics": 45,
+      "charm": 55,
+      "affinity": 20,
+      "ambition": 70,
+      "bravery": 72,
+      "specialty": "cavalry",
+      "status": "serving",
+      "faction": "iron_banner",
+      "city": "beiyuan",
+      "loyalty": 74
+    },
+    {
+      "key": "tan_zhongliang",
+      "name": "Tan Zhongliang",
+      "nameZh": "谭仲良",
+      "epithet": "the Horse Trader",
+      "bio": "Runs the Beiyuan horse fairs, where a good steppe mare costs more than a magistrate. He can price an animal by the sound of its hooves.",
+      "portrait": "m_scholar_03",
+      "gender": "m",
+      "birth": 175,
+      "martial": 30,
+      "command": 40,
+      "strategy": 55,
+      "politics": 74,
+      "charm": 66,
+      "affinity": 2,
+      "ambition": 35,
+      "bravery": 30,
+      "specialty": "cavalry",
+      "status": "serving",
+      "faction": "iron_banner",
+      "city": "beiyuan",
+      "loyalty": 80
+    },
+    {
+      "key": "helian_bo",
+      "name": "Helian Bo",
+      "nameZh": "赫连勃",
+      "epithet": "the Grey Wolf Khan",
+      "bio": "United the nine clans of the western steppe by defeating each of their chieftains in single combat. He has seen the green fields beyond Yanmen Pass and wants them for his grandchildren.",
+      "portrait": "m_warrior_07",
+      "gender": "m",
+      "birth": 170,
+      "martial": 88,
+      "command": 89,
+      "strategy": 58,
+      "politics": 40,
+      "charm": 74,
+      "affinity": 32,
+      "ambition": 95,
+      "bravery": 90,
+      "specialty": "cavalry",
+      "status": "serving",
+      "faction": "wolf_riders",
+      "city": "liangzhou",
+      "loyalty": 100
+    },
+    {
+      "key": "tuoba_ying",
+      "name": "Tuoba Ying",
+      "nameZh": "拓跋鹰",
+      "epithet": "the Sky Hawk",
+      "bio": "The khan's champion, who can put a lance through a hanging ring at full gallop. His war cry is said to make horses throw their riders.",
+      "portrait": "m_warrior_08",
+      "gender": "m",
+      "birth": 185,
+      "martial": 92,
+      "command": 74,
+      "strategy": 38,
+      "politics": 22,
+      "charm": 50,
+      "affinity": 30,
+      "ambition": 55,
+      "bravery": 95,
+      "specialty": "cavalry",
+      "status": "serving",
+      "faction": "wolf_riders",
+      "city": "liangzhou",
+      "loyalty": 90,
+      "techniques": [
+        "howling_wolf_lance"
+      ]
+    },
+    {
+      "key": "helian_yue",
+      "name": "Helian Yue",
+      "nameZh": "赫连月",
+      "epithet": "Moon of the Steppe",
+      "bio": "Helian Bo's daughter, a mounted archer who reads the southern classics by campfire light. Many believe she, not her father, will be the one to cross the pass.",
+      "portrait": "f_warrior_02",
+      "gender": "f",
+      "birth": 193,
+      "martial": 76,
+      "command": 70,
+      "strategy": 64,
+      "politics": 45,
+      "charm": 82,
+      "affinity": 34,
+      "ambition": 60,
+      "bravery": 78,
+      "specialty": "archer",
+      "status": "serving",
+      "faction": "wolf_riders",
+      "city": "liangzhou",
+      "loyalty": 100
+    },
+    {
+      "key": "lu_xingzhou",
+      "name": "Lu Xingzhou",
+      "nameZh": "卢星舟",
+      "epithet": "the Star Reader",
+      "bio": "An astrologer from the central plain who followed a comet into the steppe and stayed to read the stars for the khan. His plans have the patience of the night sky.",
+      "portrait": "m_scholar_04",
+      "gender": "m",
+      "birth": 181,
+      "martial": 35,
+      "command": 55,
+      "strategy": 82,
+      "politics": 60,
+      "charm": 52,
+      "affinity": 26,
+      "ambition": 45,
+      "bravery": 40,
+      "specialty": "cavalry",
+      "status": "serving",
+      "faction": "wolf_riders",
+      "city": "liangzhou",
+      "loyalty": 82
+    },
+    {
+      "key": "wugu_ta",
+      "name": "Wugu Ta",
+      "nameZh": "乌古塔",
+      "epithet": "the Black Ox",
+      "bio": "Chieftain of the Wugu clan, last of the nine to yield to Helian Bo and now the most loyal. He guards the Jade Gate and the caravan roads beyond it.",
+      "portrait": "m_warrior_09",
+      "gender": "m",
+      "birth": 177,
+      "martial": 85,
+      "command": 66,
+      "strategy": 25,
+      "politics": 18,
+      "charm": 40,
+      "affinity": 36,
+      "ambition": 40,
+      "bravery": 94,
+      "specialty": "cavalry",
+      "status": "serving",
+      "faction": "wolf_riders",
+      "city": "yumen",
+      "loyalty": 86
+    },
+    {
+      "key": "kang_mo",
+      "name": "Kang Mo",
+      "nameZh": "康莫",
+      "epithet": "the Caravan Master",
+      "bio": "A caravan master from beyond the western deserts who sells silk, jade and information, often to both sides. Helian Bo pays him well; others have paid him better.",
+      "portrait": "m_rogue_01",
+      "gender": "m",
+      "birth": 182,
+      "martial": 62,
+      "command": 55,
+      "strategy": 60,
+      "politics": 66,
+      "charm": 70,
+      "affinity": 44,
+      "ambition": 75,
+      "bravery": 50,
+      "specialty": "archer",
+      "status": "serving",
+      "faction": "wolf_riders",
+      "city": "yumen",
+      "loyalty": 62
+    },
+    {
+      "key": "dugu_heng",
+      "name": "Dugu Heng",
+      "nameZh": "独孤衡",
+      "epithet": "the Lone Scale",
+      "bio": "An imperial cavalry commander who changed sides after the court left his garrison to starve. He weighs every battle like a merchant and never fights one he cannot win.",
+      "portrait": "m_warrior_10",
+      "gender": "m",
+      "birth": 174,
+      "martial": 76,
+      "command": 83,
+      "strategy": 66,
+      "politics": 48,
+      "charm": 58,
+      "affinity": 28,
+      "ambition": 50,
+      "bravery": 70,
+      "specialty": "cavalry",
+      "status": "serving",
+      "faction": "wolf_riders",
+      "city": "tianshui",
+      "loyalty": 85
+    },
+    {
+      "key": "shi_tuo",
+      "name": "Shi Tuo",
+      "nameZh": "石陀",
+      "epithet": "the Stone Rider",
+      "bio": "A silent herdsman who has never been seen without his horse, nor heard to speak ten words at once. His enemies remember him by the dent his mace leaves.",
+      "portrait": "m_warrior_11",
+      "gender": "m",
+      "birth": 188,
+      "martial": 80,
+      "command": 62,
+      "strategy": 30,
+      "politics": 20,
+      "charm": 35,
+      "affinity": 38,
+      "ambition": 35,
+      "bravery": 88,
+      "specialty": "cavalry",
+      "status": "serving",
+      "faction": "wolf_riders",
+      "city": "tianshui",
+      "loyalty": 84
+    },
+    {
+      "key": "cen_huaiyuan",
+      "name": "Cen Huaiyuan",
+      "nameZh": "岑怀远",
+      "epithet": "the Exiled Censor",
+      "bio": "An imperial censor banished to the frontier for impeaching the wrong eunuch. He now writes the khan's laws, and finds them more honest than the court's.",
+      "portrait": "m_elder_02",
+      "gender": "m",
+      "birth": 158,
+      "martial": 25,
+      "command": 40,
+      "strategy": 72,
+      "politics": 78,
+      "charm": 60,
+      "affinity": 40,
+      "ambition": 30,
+      "bravery": 50,
+      "specialty": "infantry",
+      "status": "serving",
+      "faction": "wolf_riders",
+      "city": "tianshui",
+      "loyalty": 76
+    },
+    {
+      "key": "liu_chengxuan",
+      "name": "Liu Chengxuan",
+      "nameZh": "刘承玄",
+      "epithet": "the Last Prince",
+      "bio": "Ninth son of the old emperor and the only one to survive the palace fires. Gentle, earnest and better read than his ministers, he must now become the emperor his father never was.",
+      "portrait": "m_scholar_05",
+      "gender": "m",
+      "birth": 193,
+      "martial": 45,
+      "command": 58,
+      "strategy": 68,
+      "politics": 84,
+      "charm": 93,
+      "affinity": 75,
+      "ambition": 60,
+      "bravery": 58,
+      "specialty": "cavalry",
+      "status": "serving",
+      "faction": "azure_court",
+      "city": "luojing",
+      "loyalty": 100
+    },
+    {
+      "key": "wen_tingjian",
+      "name": "Wen Tingjian",
+      "nameZh": "温廷鉴",
+      "epithet": "the Grand Chancellor",
+      "bio": "Served three emperors and buried two. The old chancellor keeps the Azure Court alive through precedent, patience and an unmatched memory for other people's debts.",
+      "portrait": "m_elder_03",
+      "gender": "m",
+      "birth": 146,
+      "martial": 18,
+      "command": 38,
+      "strategy": 80,
+      "politics": 89,
+      "charm": 72,
+      "affinity": 78,
+      "ambition": 25,
+      "bravery": 40,
+      "specialty": "infantry",
+      "status": "serving",
+      "faction": "azure_court",
+      "city": "luojing",
+      "loyalty": 98
+    },
+    {
+      "key": "qin_shouzheng",
+      "name": "Qin Shouzheng",
+      "nameZh": "秦守正",
+      "epithet": "the Azure Shield",
+      "bio": "Captain of the palace guard, who carried the young prince out of the burning palace on his back. He has sworn to see him crowned or die in the attempt.",
+      "portrait": "m_warrior_12",
+      "gender": "m",
+      "birth": 172,
+      "martial": 84,
+      "command": 88,
+      "strategy": 64,
+      "politics": 52,
+      "charm": 68,
+      "affinity": 72,
+      "ambition": 30,
+      "bravery": 85,
+      "specialty": "cavalry",
+      "status": "serving",
+      "faction": "azure_court",
+      "city": "luojing",
+      "loyalty": 100
+    },
+    {
+      "key": "lin_shuangyue",
+      "name": "Lin Shuangyue",
+      "nameZh": "林霜月",
+      "epithet": "the Frost Moon",
+      "bio": "A Moonwell Hall disciple sent to guard the prince's chambers. She speaks rarely, sleeps lightly and has already foiled two poisoners.",
+      "portrait": "f_warrior_03",
+      "gender": "f",
+      "birth": 189,
+      "martial": 80,
+      "command": 62,
+      "strategy": 58,
+      "politics": 46,
+      "charm": 70,
+      "affinity": 80,
+      "ambition": 40,
+      "bravery": 76,
+      "specialty": "infantry",
+      "status": "serving",
+      "faction": "azure_court",
+      "city": "luojing",
+      "loyalty": 90,
+      "techniques": [
+        "still_water_palm"
+      ]
+    },
+    {
+      "key": "feng_yan",
+      "name": "Feng Yan",
+      "nameZh": "冯晏",
+      "epithet": "the Silk Tongue",
+      "bio": "Minister of Rites, master of every ceremony and every rumour in Luojing. He bows lower than anyone at court and is suspected by everyone of having a price.",
+      "portrait": "m_scholar_06",
+      "gender": "m",
+      "birth": 168,
+      "martial": 30,
+      "command": 40,
+      "strategy": 72,
+      "politics": 80,
+      "charm": 66,
+      "affinity": 88,
+      "ambition": 88,
+      "bravery": 30,
+      "specialty": "infantry",
+      "status": "serving",
+      "faction": "azure_court",
+      "city": "luojing",
+      "loyalty": 55
+    },
+    {
+      "key": "tao_lianshan",
+      "name": "Tao Lianshan",
+      "nameZh": "陶连山",
+      "epithet": "the Granary Lord",
+      "bio": "Governor of Wancheng, whose granaries fed the capital through two sieges. He counts rice the way generals count soldiers, and with more affection.",
+      "portrait": "m_scholar_07",
+      "gender": "m",
+      "birth": 165,
+      "martial": 28,
+      "command": 45,
+      "strategy": 55,
+      "politics": 80,
+      "charm": 64,
+      "affinity": 70,
+      "ambition": 35,
+      "bravery": 40,
+      "specialty": "infantry",
+      "status": "serving",
+      "faction": "azure_court",
+      "city": "wancheng",
+      "loyalty": 86
+    },
+    {
+      "key": "bai_chongyi",
+      "name": "Bai Chongyi",
+      "nameZh": "白崇义",
+      "epithet": "the Righteous",
+      "bio": "A village militia captain who drove off a bandit army with farm tools and was made a general for it. The soldiers love him because he eats what they eat.",
+      "portrait": "m_warrior_13",
+      "gender": "m",
+      "birth": 180,
+      "martial": 78,
+      "command": 74,
+      "strategy": 52,
+      "politics": 45,
+      "charm": 62,
+      "affinity": 68,
+      "ambition": 35,
+      "bravery": 82,
+      "specialty": "infantry",
+      "status": "serving",
+      "faction": "azure_court",
+      "city": "wancheng",
+      "loyalty": 92
+    },
+    {
+      "key": "zheng_gu",
+      "name": "Zheng Gu",
+      "nameZh": "郑固",
+      "epithet": "the Old Oak",
+      "bio": "A veteran archery master who trained half the officers of the old imperial army. Stubborn, slow to praise, and never once late.",
+      "portrait": "m_elder_04",
+      "gender": "m",
+      "birth": 152,
+      "martial": 66,
+      "command": 76,
+      "strategy": 62,
+      "politics": 50,
+      "charm": 56,
+      "affinity": 82,
+      "ambition": 20,
+      "bravery": 72,
+      "specialty": "archer",
+      "status": "serving",
+      "faction": "azure_court",
+      "city": "wancheng",
+      "loyalty": 95
+    },
+    {
+      "key": "ren_zhiyuan",
+      "name": "Ren Zhiyuan",
+      "nameZh": "任致远",
+      "epithet": "the Far-Sighted",
+      "bio": "Passed the last imperial examination ever held, in first place. He believes the Azure Court can survive only by making its enemies fight one another.",
+      "portrait": "m_scholar_08",
+      "gender": "m",
+      "birth": 184,
+      "martial": 32,
+      "command": 60,
+      "strategy": 84,
+      "politics": 70,
+      "charm": 62,
+      "affinity": 76,
+      "ambition": 55,
+      "bravery": 45,
+      "specialty": "infantry",
+      "status": "serving",
+      "faction": "azure_court",
+      "city": "chenliu",
+      "loyalty": 85
+    },
+    {
+      "key": "luo_chengwu",
+      "name": "Luo Chengwu",
+      "nameZh": "罗承武",
+      "epithet": "the Spear of Chenliu",
+      "bio": "Heir to a family of spear-masters sworn to the imperial house for six generations. His long spear has unhorsed more bandit captains than he can remember.",
+      "portrait": "m_warrior_14",
+      "gender": "m",
+      "birth": 182,
+      "martial": 83,
+      "command": 70,
+      "strategy": 40,
+      "politics": 30,
+      "charm": 55,
+      "affinity": 66,
+      "ambition": 55,
+      "bravery": 88,
+      "specialty": "cavalry",
+      "status": "serving",
+      "faction": "azure_court",
+      "city": "chenliu",
+      "loyalty": 82
+    },
+    {
+      "key": "shangguan_qiu",
+      "name": "Shangguan Qiu",
+      "nameZh": "上官秋",
+      "epithet": "the Autumn Scribe",
+      "bio": "A palace archivist who carried the imperial registers out of the fire, she now governs Chenliu from them. No tax collector escapes her brush.",
+      "portrait": "f_scholar_01",
+      "gender": "f",
+      "birth": 186,
+      "martial": 20,
+      "command": 38,
+      "strategy": 70,
+      "politics": 78,
+      "charm": 76,
+      "affinity": 84,
+      "ambition": 45,
+      "bravery": 35,
+      "specialty": "infantry",
+      "status": "serving",
+      "faction": "azure_court",
+      "city": "chenliu",
+      "loyalty": 84
+    },
+    {
+      "key": "meng_kuan",
+      "name": "Meng Kuan",
+      "nameZh": "孟宽",
+      "epithet": "the Lenient Governor",
+      "bio": "Governor of Xuyang, famous for forgiving taxes in bad years. When the Brotherhood took the town he refused to flee, and now sits in a cellar writing letters no one delivers.",
+      "rumor": "The old governor of Xuyang is still alive, they say, kept in a cellar under the Brotherhood's grain store.",
+      "portrait": "m_elder_05",
+      "gender": "m",
+      "birth": 160,
+      "martial": 35,
+      "command": 50,
+      "strategy": 58,
+      "politics": 74,
+      "charm": 68,
+      "affinity": 74,
+      "ambition": 25,
+      "bravery": 55,
+      "specialty": "infantry",
+      "status": "prisoner",
+      "faction": "azure_court",
+      "captor": "black_mountain",
+      "city": "xuyang",
+      "loyalty": 88
+    },
+    {
+      "key": "shen_jiuling",
+      "name": "Shen Jiuling",
+      "nameZh": "沈九龄",
+      "epithet": "the Salt King",
+      "bio": "Began as a salt smuggler's bookkeeper and ended owning the salt pans, the ships and the smugglers. He believes every war has a price, and would rather pay it than fight it.",
+      "portrait": "m_scholar_09",
+      "gender": "m",
+      "birth": 160,
+      "martial": 30,
+      "command": 55,
+      "strategy": 82,
+      "politics": 94,
+      "charm": 80,
+      "affinity": 100,
+      "ambition": 85,
+      "bravery": 38,
+      "specialty": "archer",
+      "status": "serving",
+      "faction": "sea_league",
+      "city": "haizhou",
+      "loyalty": 100
+    },
+    {
+      "key": "xu_mochou",
+      "name": "Xu Mochou",
+      "nameZh": "徐莫愁",
+      "epithet": "the Untroubled",
+      "bio": "The League's chief strategist, who plays chess against three opponents at once and loses only on purpose. Her name means 'worry not', and she makes sure her lord never has to.",
+      "portrait": "f_scholar_02",
+      "gender": "f",
+      "birth": 185,
+      "martial": 28,
+      "command": 58,
+      "strategy": 88,
+      "politics": 72,
+      "charm": 74,
+      "affinity": 104,
+      "ambition": 50,
+      "bravery": 45,
+      "specialty": "archer",
+      "status": "serving",
+      "faction": "sea_league",
+      "city": "haizhou",
+      "loyalty": 90
+    },
+    {
+      "key": "qi_feng",
+      "name": "Qi Feng",
+      "nameZh": "戚锋",
+      "epithet": "Admiral of a Thousand Sails",
+      "bio": "Commander of the League's war fleet, who learned his trade hunting pirates through the island fogs. On land he is merely good; at sea he has never been beaten.",
+      "portrait": "m_warrior_15",
+      "gender": "m",
+      "birth": 176,
+      "martial": 74,
+      "command": 82,
+      "strategy": 60,
+      "politics": 42,
+      "charm": 58,
+      "affinity": 96,
+      "ambition": 45,
+      "bravery": 75,
+      "specialty": "archer",
+      "status": "serving",
+      "faction": "sea_league",
+      "city": "haizhou",
+      "loyalty": 88
+    },
+    {
+      "key": "shen_yuzhu",
+      "name": "Shen Yuzhu",
+      "nameZh": "沈玉珠",
+      "epithet": "the Pearl Ledger",
+      "bio": "Shen Jiuling's younger sister, who runs the League's counting houses from Haizhou to Wujun. Merchants say she can hear a false coin land from across the room.",
+      "portrait": "f_scholar_03",
+      "gender": "f",
+      "birth": 174,
+      "martial": 22,
+      "command": 35,
+      "strategy": 64,
+      "politics": 84,
+      "charm": 74,
+      "affinity": 98,
+      "ambition": 60,
+      "bravery": 30,
+      "specialty": "infantry",
+      "status": "serving",
+      "faction": "sea_league",
+      "city": "haizhou",
+      "loyalty": 100
+    },
+    {
+      "key": "zhuo_hu",
+      "name": "Zhuo Hu",
+      "nameZh": "卓虎",
+      "epithet": "the Hired Tiger",
+      "bio": "A mercenary captain whose company has served four lords in six years and betrayed none of them, he insists, before the money ran out. The League always pays on time.",
+      "portrait": "m_rogue_02",
+      "gender": "m",
+      "birth": 181,
+      "martial": 81,
+      "command": 66,
+      "strategy": 35,
+      "politics": 25,
+      "charm": 42,
+      "affinity": 110,
+      "ambition": 70,
+      "bravery": 86,
+      "specialty": "infantry",
+      "status": "serving",
+      "faction": "sea_league",
+      "city": "haizhou",
+      "loyalty": 60
+    },
+    {
+      "key": "pan_zhihe",
+      "name": "Pan Zhihe",
+      "nameZh": "潘知鹤",
+      "epithet": "the Crane of Langya",
+      "bio": "Head of the Langya Academy, whose students fill the League's offices. He joined Shen Jiuling on condition that the academy never pays tax, and has not regretted it.",
+      "portrait": "m_elder_06",
+      "gender": "m",
+      "birth": 155,
+      "martial": 18,
+      "command": 45,
+      "strategy": 86,
+      "politics": 80,
+      "charm": 70,
+      "affinity": 94,
+      "ambition": 30,
+      "bravery": 35,
+      "specialty": "infantry",
+      "status": "serving",
+      "faction": "sea_league",
+      "city": "langya",
+      "loyalty": 85
+    },
+    {
+      "key": "tang_jingyu",
+      "name": "Tang Jingyu",
+      "nameZh": "唐敬禹",
+      "epithet": "the Dyke-Builder",
+      "bio": "An engineer-general who rebuilt the Langya sea walls after the great storm of 206. His soldiers dig faster than any army in the realm, and complain more.",
+      "portrait": "m_warrior_16",
+      "gender": "m",
+      "birth": 178,
+      "martial": 70,
+      "command": 72,
+      "strategy": 55,
+      "politics": 64,
+      "charm": 55,
+      "affinity": 102,
+      "ambition": 40,
+      "bravery": 65,
+      "specialty": "infantry",
+      "status": "serving",
+      "faction": "sea_league",
+      "city": "langya",
+      "loyalty": 82
+    },
+    {
+      "key": "gu_shaohua",
+      "name": "Gu Shaohua",
+      "nameZh": "顾少华",
+      "epithet": "the Silk Heir",
+      "bio": "Heir to the largest silk house in Wujun and governor of the town in all but title. Charming, extravagant, and far shrewder than he lets anyone see.",
+      "portrait": "m_scholar_10",
+      "gender": "m",
+      "birth": 183,
+      "martial": 40,
+      "command": 50,
+      "strategy": 62,
+      "politics": 78,
+      "charm": 80,
+      "affinity": 106,
+      "ambition": 65,
+      "bravery": 40,
+      "specialty": "infantry",
+      "status": "serving",
+      "faction": "sea_league",
+      "city": "wujun",
+      "loyalty": 78
+    },
+    {
+      "key": "ling_botao",
+      "name": "Ling Botao",
+      "nameZh": "凌波涛",
+      "epithet": "Rider of the Waves",
+      "bio": "Captain of the Wujun river galleys, who can steer a war junk through the rapids blindfolded. He wants a war, any war, to prove his fleet is better than Qi Feng's.",
+      "portrait": "m_warrior_17",
+      "gender": "m",
+      "birth": 184,
+      "martial": 78,
+      "command": 72,
+      "strategy": 50,
+      "politics": 35,
+      "charm": 52,
+      "affinity": 92,
+      "ambition": 50,
+      "bravery": 80,
+      "specialty": "archer",
+      "status": "serving",
+      "faction": "sea_league",
+      "city": "wujun",
+      "loyalty": 84
+    },
+    {
+      "key": "cheng_lanyin",
+      "name": "Cheng Lanyin",
+      "nameZh": "程兰茵",
+      "epithet": "the Orchid Blade",
+      "bio": "A swordswoman who guards the silk caravans on the southern road. She has a scholar's handwriting, a smuggler's vocabulary and a very short temper.",
+      "portrait": "f_warrior_04",
+      "gender": "f",
+      "birth": 188,
+      "martial": 77,
+      "command": 62,
+      "strategy": 56,
+      "politics": 40,
+      "charm": 66,
+      "affinity": 108,
+      "ambition": 45,
+      "bravery": 74,
+      "specialty": "infantry",
+      "status": "serving",
+      "faction": "sea_league",
+      "city": "wujun",
+      "loyalty": 86
+    },
+    {
+      "key": "su_wanqing",
+      "name": "Su Wanqing",
+      "nameZh": "苏婉卿",
+      "epithet": "the Lotus Poet",
+      "bio": "Daughter of the last southern viceroy, she won her father's lords to her side with a single poem recited at his funeral. Her verses are sung in every teahouse; her enemies learn too late that she writes strategy the same way.",
+      "portrait": "f_scholar_04",
+      "gender": "f",
+      "birth": 184,
+      "martial": 40,
+      "command": 70,
+      "strategy": 86,
+      "politics": 80,
+      "charm": 92,
+      "affinity": 124,
+      "ambition": 70,
+      "bravery": 55,
+      "specialty": "archer",
+      "status": "serving",
+      "faction": "southern_lotus",
+      "city": "lianzhou",
+      "loyalty": 100
+    },
+    {
+      "key": "qu_jingyuan",
+      "name": "Qu Jingyuan",
+      "nameZh": "屈镜渊",
+      "epithet": "the Mirror Abyss",
+      "bio": "Su Wanqing's chief strategist, who sees through a deception as one sees the bottom of a still pool. He has never lost a game of go, and has been surprised only once.",
+      "portrait": "m_scholar_11",
+      "gender": "m",
+      "birth": 182,
+      "martial": 35,
+      "command": 72,
+      "strategy": 93,
+      "politics": 78,
+      "charm": 70,
+      "affinity": 120,
+      "ambition": 40,
+      "bravery": 50,
+      "specialty": "infantry",
+      "status": "serving",
+      "faction": "southern_lotus",
+      "city": "lianzhou",
+      "loyalty": 96
+    },
+    {
+      "key": "xiang_yuanbo",
+      "name": "Xiang Yuanbo",
+      "nameZh": "项远波",
+      "epithet": "the River Tiger",
+      "bio": "Grand marshal of the south, who drowned an invading army in the Lianzhou marshes ten years ago. He calls the queen 'little sister' when no one is listening.",
+      "portrait": "m_warrior_18",
+      "gender": "m",
+      "birth": 177,
+      "martial": 82,
+      "command": 84,
+      "strategy": 58,
+      "politics": 40,
+      "charm": 60,
+      "affinity": 128,
+      "ambition": 50,
+      "bravery": 84,
+      "specialty": "infantry",
+      "status": "serving",
+      "faction": "southern_lotus",
+      "city": "lianzhou",
+      "loyalty": 90
+    },
+    {
+      "key": "jiang_xiaoman",
+      "name": "Jiang Xiaoman",
+      "nameZh": "江小蛮",
+      "epithet": "the Wildcat",
+      "bio": "A hill-tribe orphan raised in the queen's household and now her bodyguard. She fights with two short sabres and no sense of fear whatsoever.",
+      "portrait": "f_warrior_05",
+      "gender": "f",
+      "birth": 192,
+      "martial": 83,
+      "command": 58,
+      "strategy": 40,
+      "politics": 25,
+      "charm": 64,
+      "affinity": 132,
+      "ambition": 40,
+      "bravery": 92,
+      "specialty": "infantry",
+      "status": "serving",
+      "faction": "southern_lotus",
+      "city": "lianzhou",
+      "loyalty": 95
+    },
+    {
+      "key": "fan_qingzhi",
+      "name": "Fan Qingzhi",
+      "nameZh": "范青芝",
+      "epithet": "the Queen's Tutor",
+      "bio": "Taught Su Wanqing to read, to write verse and never to trust a smiling minister. She now runs the southern court with a jade ruler she is not afraid to use.",
+      "portrait": "f_elder_01",
+      "gender": "f",
+      "birth": 150,
+      "martial": 15,
+      "command": 40,
+      "strategy": 72,
+      "politics": 84,
+      "charm": 78,
+      "affinity": 118,
+      "ambition": 20,
+      "bravery": 40,
+      "specialty": "infantry",
+      "status": "serving",
+      "faction": "southern_lotus",
+      "city": "lianzhou",
+      "loyalty": 96
+    },
+    {
+      "key": "yue_changfeng",
+      "name": "Yue Changfeng",
+      "nameZh": "岳长风",
+      "epithet": "the Long Wind",
+      "bio": "Commander of the Jiangling river fortress, whose archers can sink a boat from the walls at three hundred paces. Patient as the river, and as hard to stop.",
+      "portrait": "m_warrior_19",
+      "gender": "m",
+      "birth": 175,
+      "martial": 74,
+      "command": 82,
+      "strategy": 66,
+      "politics": 50,
+      "charm": 58,
+      "affinity": 126,
+      "ambition": 45,
+      "bravery": 72,
+      "specialty": "archer",
+      "status": "serving",
+      "faction": "southern_lotus",
+      "city": "jiangling",
+      "loyalty": 88
+    },
+    {
+      "key": "ning_shuyu",
+      "name": "Ning Shuyu",
+      "nameZh": "宁书玉",
+      "epithet": "Jade of the Library",
+      "bio": "A librarian's daughter who learned warfare from forbidden military manuals and corrected their mistakes in the margins. Qu Jingyuan calls her the only person whose plans he checks twice.",
+      "portrait": "f_scholar_05",
+      "gender": "f",
+      "birth": 187,
+      "martial": 25,
+      "command": 55,
+      "strategy": 84,
+      "politics": 74,
+      "charm": 68,
+      "affinity": 114,
+      "ambition": 50,
+      "bravery": 40,
+      "specialty": "archer",
+      "status": "serving",
+      "faction": "southern_lotus",
+      "city": "jiangling",
+      "loyalty": 88
+    },
+    {
+      "key": "tian_bugui",
+      "name": "Tian Bugui",
+      "nameZh": "田不归",
+      "epithet": "the One Who Stays",
+      "bio": "Earned his name by refusing to leave a ford until every comrade had crossed. He has a dozen scars and a habit of volunteering for the forlorn hope.",
+      "portrait": "m_warrior_20",
+      "gender": "m",
+      "birth": 186,
+      "martial": 79,
+      "command": 60,
+      "strategy": 35,
+      "politics": 25,
+      "charm": 45,
+      "affinity": 134,
+      "ambition": 35,
+      "bravery": 93,
+      "specialty": "infantry",
+      "status": "serving",
+      "faction": "southern_lotus",
+      "city": "jiangling",
+      "loyalty": 85
+    },
+    {
+      "key": "long_tieshu",
+      "name": "Long Tieshu",
+      "nameZh": "龙铁树",
+      "epithet": "the Iron Tree",
+      "bio": "Chieftain of the Guiyang hill tribes, who allied with Su Wanqing after she lowered the salt tax on his villages. He swears by the old forest gods and keeps his word better than most officials.",
+      "portrait": "m_warrior_21",
+      "gender": "m",
+      "birth": 168,
+      "martial": 84,
+      "command": 70,
+      "strategy": 40,
+      "politics": 35,
+      "charm": 62,
+      "affinity": 140,
+      "ambition": 60,
+      "bravery": 88,
+      "specialty": "infantry",
+      "status": "serving",
+      "faction": "southern_lotus",
+      "city": "guiyang",
+      "loyalty": 72
+    },
+    {
+      "key": "liang_yin",
+      "name": "Liang Yin",
+      "nameZh": "梁隐",
+      "epithet": "the Quiet Magistrate",
+      "bio": "Magistrate of Guiyang, who ended a decade of tribal feuds by arranging the right marriages between the right cousins. He regards war as a failure of paperwork.",
+      "portrait": "m_scholar_12",
+      "gender": "m",
+      "birth": 172,
+      "martial": 30,
+      "command": 45,
+      "strategy": 66,
+      "politics": 78,
+      "charm": 64,
+      "affinity": 122,
+      "ambition": 30,
+      "bravery": 40,
+      "specialty": "infantry",
+      "status": "serving",
+      "faction": "southern_lotus",
+      "city": "guiyang",
+      "loyalty": 86
+    },
+    {
+      "key": "mo_xuan",
+      "name": "Mo Xuan",
+      "nameZh": "墨玄",
+      "epithet": "the Black Tiger",
+      "bio": "A disgraced imperial lieutenant who killed a corrupt magistrate and fled into the Black Mountains with forty men. Ten years later he leads forty thousand, and now the magistrates flee from him.",
+      "portrait": "m_rogue_03",
+      "gender": "m",
+      "birth": 176,
+      "martial": 88,
+      "command": 80,
+      "strategy": 60,
+      "politics": 42,
+      "charm": 84,
+      "affinity": 52,
+      "ambition": 92,
+      "bravery": 96,
+      "specialty": "infantry",
+      "status": "serving",
+      "faction": "black_mountain",
+      "city": "heishan",
+      "loyalty": 100,
+      "techniques": [
+        "drifting_mist_steps"
+      ]
+    },
+    {
+      "key": "xiong_kuo",
+      "name": "Xiong Kuo",
+      "nameZh": "熊阔",
+      "epithet": "the Mountain Bear",
+      "bio": "Mo Xuan's sworn brother, a charcoal-burner who once wrestled a bear for a bet and carried its pelt home. He wields an iron staff as tall as a door and fears nothing except boredom.",
+      "portrait": "m_rogue_04",
+      "gender": "m",
+      "birth": 181,
+      "martial": 90,
+      "command": 55,
+      "strategy": 20,
+      "politics": 15,
+      "charm": 40,
+      "affinity": 50,
+      "ambition": 30,
+      "bravery": 100,
+      "specialty": "infantry",
+      "status": "serving",
+      "faction": "black_mountain",
+      "city": "heishan",
+      "loyalty": 98
+    },
+    {
+      "key": "qiao_yinling",
+      "name": "Qiao Yinling",
+      "nameZh": "乔银铃",
+      "epithet": "Silver Bell",
+      "bio": "Leader of the Brotherhood's scouts, who wears tiny silver bells on her sleeves so that her enemies know who killed them. She throws knives better than most men shoot arrows.",
+      "portrait": "f_warrior_06",
+      "gender": "f",
+      "birth": 189,
+      "martial": 80,
+      "command": 58,
+      "strategy": 66,
+      "politics": 40,
+      "charm": 74,
+      "affinity": 56,
+      "ambition": 55,
+      "bravery": 80,
+      "specialty": "archer",
+      "status": "serving",
+      "faction": "black_mountain",
+      "city": "heishan",
+      "loyalty": 88,
+      "techniques": [
+        "moonshadow_needles"
+      ]
+    },
+    {
+      "key": "lu_buping",
+      "name": "Lu Buping",
+      "nameZh": "鲁不平",
+      "epithet": "the Failed Examinee",
+      "bio": "Failed the imperial examination seven times, each time to a richer man's son. He joined the outlaws to correct the examiners' judgment and now plans their raids with bitter precision.",
+      "portrait": "m_scholar_13",
+      "gender": "m",
+      "birth": 173,
+      "martial": 30,
+      "command": 55,
+      "strategy": 80,
+      "politics": 62,
+      "charm": 55,
+      "affinity": 48,
+      "ambition": 60,
+      "bravery": 50,
+      "specialty": "infantry",
+      "status": "serving",
+      "faction": "black_mountain",
+      "city": "heishan",
+      "loyalty": 90
+    },
+    {
+      "key": "ding_hengshan",
+      "name": "Ding Hengshan",
+      "nameZh": "丁横山",
+      "epithet": "the Axe of Heishan",
+      "bio": "A woodcutter whose axe has felled more soldiers than trees since the Brotherhood rose. He leads the vanguard because he refuses to walk behind anyone.",
+      "portrait": "m_warrior_22",
+      "gender": "m",
+      "birth": 179,
+      "martial": 82,
+      "command": 64,
+      "strategy": 32,
+      "politics": 20,
+      "charm": 45,
+      "affinity": 58,
+      "ambition": 45,
+      "bravery": 90,
+      "specialty": "infantry",
+      "status": "serving",
+      "faction": "black_mountain",
+      "city": "heishan",
+      "loyalty": 88
+    },
+    {
+      "key": "shan_bao",
+      "name": "Shan Bao",
+      "nameZh": "单豹",
+      "epithet": "the Leopard",
+      "bio": "A horse thief who emptied the Xuyang garrison's stables the night before the Brotherhood took the town. Now he commands the town and the horses both.",
+      "portrait": "m_rogue_05",
+      "gender": "m",
+      "birth": 184,
+      "martial": 79,
+      "command": 66,
+      "strategy": 40,
+      "politics": 28,
+      "charm": 50,
+      "affinity": 46,
+      "ambition": 70,
+      "bravery": 84,
+      "specialty": "cavalry",
+      "status": "serving",
+      "faction": "black_mountain",
+      "city": "xuyang",
+      "loyalty": 78
+    },
+    {
+      "key": "huo_lin",
+      "name": "Huo Lin",
+      "nameZh": "霍麟",
+      "epithet": "the Smuggler",
+      "bio": "Moves salt, iron and people across every border in the realm for the right fee. The Brotherhood's treasury would be empty without him, and his loyalty is to the treasury.",
+      "portrait": "m_rogue_06",
+      "gender": "m",
+      "birth": 180,
+      "martial": 55,
+      "command": 50,
+      "strategy": 62,
+      "politics": 64,
+      "charm": 68,
+      "affinity": 62,
+      "ambition": 75,
+      "bravery": 50,
+      "specialty": "infantry",
+      "status": "serving",
+      "faction": "black_mountain",
+      "city": "xuyang",
+      "loyalty": 62
+    },
+    {
+      "key": "yao_su",
+      "name": "Yao Su",
+      "nameZh": "姚素",
+      "epithet": "the Barefoot Physician",
+      "bio": "A village healer who followed the Brotherhood to tend its wounded and stayed to tend its conscience. Mo Xuan listens to her more than to his generals.",
+      "portrait": "f_scholar_06",
+      "gender": "f",
+      "birth": 185,
+      "martial": 30,
+      "command": 35,
+      "strategy": 60,
+      "politics": 58,
+      "charm": 76,
+      "affinity": 54,
+      "ambition": 25,
+      "bravery": 55,
+      "specialty": "infantry",
+      "status": "serving",
+      "faction": "black_mountain",
+      "city": "xuyang",
+      "loyalty": 90
+    },
+    {
+      "key": "jing_wuming",
+      "name": "Jing Wuming",
+      "nameZh": "荆无名",
+      "epithet": "the Nameless Blade",
+      "bio": "Expelled from the Cloudpeak Sword Sect for a duel that left his opponent dead, he gave up his name along with his robes. He drifts from port to port, selling his sword to any cause worth bleeding for.",
+      "rumor": "A swordsman drinks alone by the harbour in Donghai. They say he once cut a falling leaf into four pieces before it touched the water.",
+      "portrait": "m_rogue_07",
+      "gender": "m",
+      "birth": 182,
+      "martial": 88,
+      "command": 55,
+      "strategy": 50,
+      "politics": 20,
+      "charm": 45,
+      "affinity": 60,
+      "ambition": 30,
+      "bravery": 85,
+      "specialty": "infantry",
+      "status": "free",
+      "city": "donghai",
+      "techniques": [
+        "cloud_piercing_sword"
+      ]
+    },
+    {
+      "key": "ouyang_ci",
+      "name": "Ouyang Ci",
+      "nameZh": "欧阳慈",
+      "epithet": "the Wandering Physician",
+      "bio": "A physician who walks from plague village to plague village with a medicine chest on her back. She has refused three lords' invitations, saying that a sick child outranks them all.",
+      "rumor": "A woman healer has set up beneath the old banyan by the Jiangling docks. She treats the poor for free and the rich for double.",
+      "portrait": "f_scholar_07",
+      "gender": "f",
+      "birth": 178,
+      "martial": 25,
+      "command": 30,
+      "strategy": 62,
+      "politics": 66,
+      "charm": 80,
+      "affinity": 118,
+      "ambition": 15,
+      "bravery": 50,
+      "specialty": "infantry",
+      "status": "free",
+      "city": "jiangling"
+    },
+    {
+      "key": "cui_hengzhi",
+      "name": "Cui Hengzhi",
+      "nameZh": "崔衡之",
+      "epithet": "the Dismissed Minister",
+      "bio": "Vice-minister of revenue under the old emperor, dismissed for presenting an honest budget. He now writes petitions for illiterate farmers at two coins a page.",
+      "rumor": "The petition-writer in the Luojing wine market used to run the imperial treasury. He will tell you so himself after the third cup.",
+      "portrait": "m_scholar_14",
+      "gender": "m",
+      "birth": 163,
+      "martial": 22,
+      "command": 40,
+      "strategy": 70,
+      "politics": 80,
+      "charm": 60,
+      "affinity": 74,
+      "ambition": 50,
+      "bravery": 30,
+      "specialty": "infantry",
+      "status": "free",
+      "city": "luojing"
+    },
+    {
+      "key": "situ_kang",
+      "name": "Situ Kang",
+      "nameZh": "司徒康",
+      "epithet": "the Defeated General",
+      "bio": "Lost an imperial army of thirty thousand at the Battle of Red Reeds and has been drinking ever since. He knows exactly what he did wrong, and would give anything to prove he has learned it.",
+      "rumor": "That drunk in the corner of the Beiyuan horse-fair tavern once commanded thirty thousand men. He lost them all at Red Reeds, the story goes.",
+      "portrait": "m_warrior_23",
+      "gender": "m",
+      "birth": 170,
+      "martial": 74,
+      "command": 80,
+      "strategy": 62,
+      "politics": 40,
+      "charm": 50,
+      "affinity": 90,
+      "ambition": 55,
+      "bravery": 70,
+      "specialty": "cavalry",
+      "status": "free",
+      "city": "beiyuan"
+    },
+    {
+      "key": "ji_feiyu",
+      "name": "Ji Feiyu",
+      "nameZh": "纪飞羽",
+      "epithet": "Flying Feather",
+      "bio": "A hunter's son from the edge of the desert who can hit a hare at two hundred paces. He came to Yumen to sell pelts and stayed to look for a war worth joining.",
+      "rumor": "A boy archer at Yumen shot the tassel off a caravan master's hat on a bet. The caravan master tried to hire him on the spot; the boy turned him down.",
+      "portrait": "m_warrior_24",
+      "gender": "m",
+      "birth": 194,
+      "martial": 76,
+      "command": 52,
+      "strategy": 45,
+      "politics": 30,
+      "charm": 60,
+      "affinity": 20,
+      "ambition": 65,
+      "bravery": 80,
+      "specialty": "archer",
+      "status": "free",
+      "city": "yumen"
+    },
+    {
+      "key": "rong_kuai",
+      "name": "Rong Kuai",
+      "nameZh": "荣快",
+      "epithet": "the Quick Knife",
+      "bio": "A street fighter who protects the market stalls of Xuyang from everyone, the Brotherhood included. Even Mo Xuan's men leave him alone after the first time.",
+      "rumor": "The stall-keepers of Xuyang pay no tribute to the Brotherhood. They pay a young man called the Quick Knife instead, and he pays nobody.",
+      "portrait": "m_rogue_08",
+      "gender": "m",
+      "birth": 187,
+      "martial": 80,
+      "command": 58,
+      "strategy": 48,
+      "politics": 30,
+      "charm": 55,
+      "affinity": 44,
+      "ambition": 60,
+      "bravery": 82,
+      "specialty": "infantry",
+      "status": "free",
+      "city": "xuyang"
+    },
+    {
+      "key": "yun_feixue",
+      "name": "Yun Feixue",
+      "nameZh": "云飞雪",
+      "epithet": "Snow on the Wind",
+      "bio": "A knight-errant who rides alone through the gorges righting wrongs nobody asked her to right. She has a price on her head in three provinces and a shrine in two villages.",
+      "rumor": "A woman in white rides the gorge roads near Baidi. Bandits who meet her are found tied to trees with their own sashes.",
+      "portrait": "f_warrior_07",
+      "gender": "f",
+      "birth": 190,
+      "martial": 84,
+      "command": 60,
+      "strategy": 55,
+      "politics": 35,
+      "charm": 70,
+      "affinity": 64,
+      "ambition": 50,
+      "bravery": 84,
+      "specialty": "cavalry",
+      "status": "free",
+      "city": "baidi",
+      "techniques": [
+        "drifting_mist_steps"
+      ]
+    },
+    {
+      "key": "dongfang_ce",
+      "name": "Dongfang Ce",
+      "nameZh": "东方策",
+      "epithet": "the Old Fox",
+      "bio": "A strategist who served four warlords and outlived all of them. He claims each one fell because he ignored his advice, and no one alive can contradict him.",
+      "rumor": "An old man in the Langya teahouse wins every game of go, then tells his opponents which lost campaign each of their moves resembles.",
+      "portrait": "m_elder_07",
+      "gender": "m",
+      "birth": 144,
+      "martial": 15,
+      "command": 50,
+      "strategy": 88,
+      "politics": 72,
+      "charm": 58,
+      "affinity": 98,
+      "ambition": 60,
+      "bravery": 30,
+      "specialty": "infantry",
+      "status": "free",
+      "city": "langya"
+    },
+    {
+      "key": "chilu_han",
+      "name": "Chilu Han",
+      "nameZh": "赤鲁罕",
+      "epithet": "the Red Hawk",
+      "bio": "A steppe mercenary who refused to swear to Helian Bo and was driven out of the clans for it. He sells his lance and his riders to anyone who is not the Grey Wolf.",
+      "rumor": "A red-cloaked steppe rider crossed Yanmen Pass last month looking for an employer. Any employer, he says, except the khan.",
+      "portrait": "m_warrior_25",
+      "gender": "m",
+      "birth": 178,
+      "martial": 82,
+      "command": 68,
+      "strategy": 38,
+      "politics": 22,
+      "charm": 48,
+      "affinity": 2,
+      "ambition": 70,
+      "bravery": 88,
+      "specialty": "cavalry",
+      "status": "free",
+      "city": "yanmen"
+    },
+    {
+      "key": "qian_wantong",
+      "name": "Qian Wantong",
+      "nameZh": "钱万通",
+      "epithet": "the Thrice-Bankrupt",
+      "bio": "A merchant who has made and lost three fortunes in the sea trade and is currently between his third and his fourth. He knows the price of everything and the owner of every debt.",
+      "rumor": "Qian Wantong the bankrupt is back in Haizhou. The last time he went bankrupt, he came back owning a fleet.",
+      "portrait": "m_scholar_15",
+      "gender": "m",
+      "birth": 167,
+      "martial": 30,
+      "command": 40,
+      "strategy": 58,
+      "politics": 80,
+      "charm": 74,
+      "affinity": 102,
+      "ambition": 70,
+      "bravery": 35,
+      "specialty": "infantry",
+      "status": "free",
+      "city": "haizhou"
+    },
+    {
+      "key": "xiao_qinyin",
+      "name": "Xiao Qinyin",
+      "nameZh": "萧琴音",
+      "epithet": "the Zither of Chenliu",
+      "bio": "A zither player whose recitals are attended by every official in Chenliu, and whose memory for what they say over wine is flawless. Whom she reports to is a matter of much speculation.",
+      "rumor": "Everyone in Chenliu goes to hear the zither player at the Plum Pavilion. Everyone also seems to say more there than they meant to.",
+      "portrait": "f_scholar_08",
+      "gender": "f",
+      "birth": 191,
+      "martial": 35,
+      "command": 40,
+      "strategy": 74,
+      "politics": 55,
+      "charm": 86,
+      "affinity": 128,
+      "ambition": 55,
+      "bravery": 40,
+      "specialty": "archer",
+      "status": "free",
+      "city": "chenliu"
+    },
+    {
+      "key": "xie_lingxiao",
+      "name": "Xie Lingxiao",
+      "nameZh": "谢凌霄",
+      "epithet": "Sword Above the Clouds",
+      "bio": "Master of the Cloudpeak Sword Sect, undefeated for forty years. He came down from the peaks only once, to stop a war, and the war stopped.",
+      "rumor": "The old master of Cloudpeak has not drawn his sword in ten years. They say he is waiting for a lord worth drawing it for.",
+      "portrait": "m_elder_08",
+      "gender": "m",
+      "birth": 147,
+      "martial": 95,
+      "command": 52,
+      "strategy": 72,
+      "politics": 38,
+      "charm": 68,
+      "affinity": 64,
+      "ambition": 15,
+      "bravery": 80,
+      "specialty": "infantry",
+      "status": "free",
+      "city": "qinchuan",
+      "sect": "cloudpeak",
+      "techniques": [
+        "falling_star_sword",
+        "cloud_piercing_sword",
+        "thousand_peak_guard",
+        "drifting_mist_steps"
+      ]
+    },
+    {
+      "key": "shi_huiming",
+      "name": "Shi Huiming",
+      "nameZh": "释慧明",
+      "epithet": "Abbot of the Stone Bell",
+      "bio": "Abbot of the Stone Bell Monastery, who feeds the poor of Hedong in famine years and breaks the bones of the bandits who rob them. He says compassion without strength is merely good manners.",
+      "rumor": "The abbot of Stone Bell will never serve a lord who lets his people starve. Feed the monastery's poor, and perhaps he will listen.",
+      "portrait": "m_monk_01",
+      "gender": "m",
+      "birth": 152,
+      "martial": 88,
+      "command": 62,
+      "strategy": 74,
+      "politics": 55,
+      "charm": 80,
+      "affinity": 76,
+      "ambition": 10,
+      "bravery": 75,
+      "specialty": "infantry",
+      "status": "free",
+      "city": "hedong",
+      "sect": "stone_bell",
+      "techniques": [
+        "iron_bell_body",
+        "arhat_palm",
+        "echoing_bell_fist"
+      ]
+    },
+    {
+      "key": "lan_yueru",
+      "name": "Lan Yueru",
+      "nameZh": "兰月如",
+      "epithet": "Mistress of the Moonwell",
+      "bio": "Mistress of Moonwell Hall, whose disciples guard the bedchambers of half the noble houses in the south. She trades secrets for favours and never forgets either.",
+      "rumor": "Moonwell Hall answers only to those it trusts. Win the Mistress's favour and every door in the south will open.",
+      "portrait": "f_elder_02",
+      "gender": "f",
+      "birth": 164,
+      "martial": 89,
+      "command": 55,
+      "strategy": 82,
+      "politics": 45,
+      "charm": 80,
+      "affinity": 130,
+      "ambition": 20,
+      "bravery": 65,
+      "specialty": "archer",
+      "status": "free",
+      "city": "xiangnan",
+      "sect": "moonwell",
+      "techniques": [
+        "moonshadow_needles",
+        "still_water_palm",
+        "crescent_moon_blade"
+      ]
+    },
+    {
+      "key": "yin_hexuan",
+      "name": "Yin Hexuan",
+      "nameZh": "殷鹤轩",
+      "epithet": "the Sleeping Crane",
+      "bio": "A recluse who farms a hillside in the misty forests of Xiangnan and turns away every lord's envoy. Those who have read his essays say he has already planned the unification of the Nine Provinces and is waiting for someone worth handing the plan to.",
+      "rumor": "Woodcutters near Xiangnan sing of a crane that sleeps in the misty hills until the realm is ready. They learned the song from a farmer who reads by moonlight.",
+      "portrait": "m_scholar_16",
+      "gender": "m",
+      "birth": 180,
+      "martial": 30,
+      "command": 78,
+      "strategy": 96,
+      "politics": 86,
+      "charm": 82,
+      "affinity": 116,
+      "ambition": 35,
+      "bravery": 50,
+      "specialty": "infantry",
+      "status": "hidden",
+      "city": "xiangnan"
+    },
+    {
+      "key": "nangong_lie",
+      "name": "Nangong Lie",
+      "nameZh": "南宫烈",
+      "epithet": "the Caged Tiger",
+      "bio": "The last imperial champion, who killed the eunuch behind the palace fires and vanished the same night. He now poles a ferry at Hedong under a false name, waiting for a cause worth his halberd.",
+      "rumor": "The new ferryman at Hedong poles his boat against the spring flood as if the river were a child. Nobody has beaten him at arm-wrestling, and nobody dares ask his real name.",
+      "portrait": "m_warrior_26",
+      "gender": "m",
+      "birth": 175,
+      "martial": 94,
+      "command": 70,
+      "strategy": 38,
+      "politics": 22,
+      "charm": 40,
+      "affinity": 6,
+      "ambition": 50,
+      "bravery": 96,
+      "specialty": "cavalry",
+      "status": "hidden",
+      "city": "hedong",
+      "techniques": [
+        "arhat_palm"
+      ]
+    },
+    {
+      "key": "ye_zhiqiu",
+      "name": "Ye Zhiqiu",
+      "nameZh": "叶知秋",
+      "epithet": "the Falling Leaf",
+      "bio": "A spymistress who ran the old court's network of informants and burned its records when the palace fell. She has been selling silk in Wujun ever since, and listening.",
+      "rumor": "The silk-seller by the Wujun canal knows which ships will sink before they sail. Ask her about the weather and see what she answers.",
+      "portrait": "f_scholar_09",
+      "gender": "f",
+      "birth": 187,
+      "martial": 40,
+      "command": 50,
+      "strategy": 85,
+      "politics": 66,
+      "charm": 78,
+      "affinity": 110,
+      "ambition": 60,
+      "bravery": 45,
+      "specialty": "archer",
+      "status": "hidden",
+      "city": "wujun"
+    },
+    {
+      "key": "kou_zhongyuan",
+      "name": "Kou Zhongyuan",
+      "nameZh": "寇中原",
+      "epithet": "Guardian of the Central Plain",
+      "bio": "The old empire's greatest general, who retired in disgust when the court began selling his commissions to the highest bidder. He sweeps the steps of an abandoned temple in Luojing and pretends not to recognise the veterans who bow to him.",
+      "rumor": "An old man sweeps the steps of the ruined ancestral temple in Luojing every dawn. Grey-haired soldiers bow to him in the street, and none of them will say why.",
+      "portrait": "m_elder_09",
+      "gender": "m",
+      "birth": 143,
+      "martial": 70,
+      "command": 88,
+      "strategy": 76,
+      "politics": 50,
+      "charm": 62,
+      "affinity": 80,
+      "ambition": 20,
+      "bravery": 75,
+      "specialty": "cavalry",
+      "status": "hidden",
+      "city": "luojing"
+    },
+    {
+      "key": "sha_wuying",
+      "name": "Sha Wuying",
+      "nameZh": "沙无影",
+      "epithet": "the Shadowless",
+      "bio": "An assassin trained by Moonwell Hall and cast out for taking a contract the Mistress had forbidden. He hides among the caravan guards of Liangzhou, and the khan does not know he is there.",
+      "rumor": "A caravan guard in Liangzhou casts no shadow at noon, the children say. Grown men who have crossed him say nothing at all.",
+      "portrait": "m_rogue_09",
+      "gender": "m",
+      "birth": 184,
+      "martial": 86,
+      "command": 50,
+      "strategy": 70,
+      "politics": 25,
+      "charm": 35,
+      "affinity": 40,
+      "ambition": 70,
+      "bravery": 70,
+      "specialty": "infantry",
+      "status": "hidden",
+      "city": "liangzhou",
+      "techniques": [
+        "moonshadow_needles"
+      ]
+    },
+    {
+      "key": "tian_fengnian",
+      "name": "Tian Fengnian",
+      "nameZh": "田丰年",
+      "epithet": "the Rice Sage",
+      "bio": "An agronomist who turned the bare hills of Tianshui into terraced fields with nothing but string, stakes and forty years of patience. He has no interest in war, but a great deal in feeding the people who must fight one.",
+      "rumor": "The terraces above Tianshui were built by one old man, the farmers say. He still walks them every morning and still refuses every magistrate who asks his advice.",
+      "portrait": "m_elder_10",
+      "gender": "m",
+      "birth": 154,
+      "martial": 20,
+      "command": 30,
+      "strategy": 64,
+      "politics": 86,
+      "charm": 66,
+      "affinity": 72,
+      "ambition": 15,
+      "bravery": 30,
+      "specialty": "infantry",
+      "status": "hidden",
+      "city": "tianshui"
+    },
+    {
+      "key": "helian_shuo",
+      "name": "Helian Shuo",
+      "nameZh": "赫连朔",
+      "epithet": "the New Moon Rider",
+      "bio": "Helian Bo's nephew, raised in the far camps beyond the Jade Gate after his father was exiled. He rides in from the desert as the finest horseman of his clan, and as resentful of his uncle as he is proud of him.",
+      "rumor": "The far camps beyond Yumen speak of the khan's lost nephew, a boy who breaks wild horses with his bare hands.",
+      "portrait": "m_warrior_27",
+      "gender": "m",
+      "birth": 198,
+      "appear": 214,
+      "martial": 84,
+      "command": 70,
+      "strategy": 50,
+      "politics": 30,
+      "charm": 64,
+      "affinity": 30,
+      "ambition": 80,
+      "bravery": 88,
+      "specialty": "cavalry",
+      "status": "unborn",
+      "city": "yumen"
+    },
+    {
+      "key": "lu_chenxi",
+      "name": "Lu Chenxi",
+      "nameZh": "陆晨曦",
+      "epithet": "the Dawn Sword",
+      "bio": "The youngest disciple ever to win the Cloudpeak summit tournament, who left the sect the next morning to see the world she had been trained to protect.",
+      "rumor": "A girl from Cloudpeak is said to have beaten every swordsman on the summit. The old master smiled for the first time in years.",
+      "portrait": "f_warrior_08",
+      "gender": "f",
+      "birth": 197,
+      "appear": 215,
+      "martial": 88,
+      "command": 58,
+      "strategy": 60,
+      "politics": 35,
+      "charm": 72,
+      "affinity": 66,
+      "ambition": 55,
+      "bravery": 82,
+      "specialty": "infantry",
+      "status": "unborn",
+      "city": "qinchuan",
+      "sect": "cloudpeak",
+      "techniques": [
+        "cloud_piercing_sword"
+      ]
+    },
+    {
+      "key": "wen_ruoshui",
+      "name": "Wen Ruoshui",
+      "nameZh": "温若水",
+      "epithet": "Still Water",
+      "bio": "Grandson of Chancellor Wen Tingjian, who memorised the imperial codes at nine and rewrote them at fifteen. He has his grandfather's mind and none of his patience.",
+      "rumor": "The old chancellor's grandson is said to be cleverer than the old man himself. He comes of age soon, and every court wants him.",
+      "portrait": "m_scholar_17",
+      "gender": "m",
+      "birth": 199,
+      "appear": 216,
+      "martial": 30,
+      "command": 55,
+      "strategy": 84,
+      "politics": 80,
+      "charm": 70,
+      "affinity": 78,
+      "ambition": 45,
+      "bravery": 40,
+      "specialty": "infantry",
+      "status": "unborn",
+      "city": "luojing"
+    },
+    {
+      "key": "he_yunshang",
+      "name": "He Yunshang",
+      "nameZh": "何云裳",
+      "epithet": "Cloud Robe",
+      "bio": "A ferryman's daughter from the Lianzhou marshes who taught herself strategy from a water-stained manual. She arrives in the capital with a plan for every war being fought, and for a few that have not started yet.",
+      "rumor": "A ferry girl in the Lianzhou marshes draws battle maps in the mud with a reed. The soldiers who stop to watch say she is always right.",
+      "portrait": "f_scholar_10",
+      "gender": "f",
+      "birth": 201,
+      "appear": 218,
+      "martial": 35,
+      "command": 62,
+      "strategy": 86,
+      "politics": 66,
+      "charm": 80,
+      "affinity": 126,
+      "ambition": 60,
+      "bravery": 50,
+      "specialty": "archer",
+      "status": "unborn",
+      "city": "lianzhou"
+    }
+  ],
+  "sects": [
+    {
+      "key": "cloudpeak",
+      "name": "Cloudpeak Sword Sect",
+      "nameZh": "云峰剑派",
+      "description": "Swordsmen who train on the knife-edge ridges above Qinchuan, where a misstep is the last lesson. The sect has sworn to stay out of the wars, and has broken that oath only when a tyrant left it no choice.",
+      "city": "qinchuan",
+      "master": "xie_lingxiao",
+      "techniques": [
+        "cloud_piercing_sword",
+        "drifting_mist_steps",
+        "thousand_peak_guard",
+        "falling_star_sword"
+      ],
+      "favor": {
+        "iron_banner": 5,
+        "wolf_riders": 15,
+        "azure_court": 20,
+        "sea_league": 5,
+        "southern_lotus": 15,
+        "black_mountain": 10
+      }
+    },
+    {
+      "key": "stone_bell",
+      "name": "Stone Bell Monastery",
+      "nameZh": "石钟寺",
+      "description": "A riverside monastery whose great stone bell can be heard across the Great River. Its monks feed the poor, shelter pilgrims and harden the body until blades turn aside from it.",
+      "city": "hedong",
+      "master": "shi_huiming",
+      "techniques": [
+        "iron_bell_body",
+        "arhat_palm",
+        "echoing_bell_fist"
+      ],
+      "favor": {
+        "iron_banner": 15,
+        "wolf_riders": 5,
+        "azure_court": 25,
+        "sea_league": 10,
+        "southern_lotus": 10,
+        "black_mountain": 0
+      }
+    },
+    {
+      "key": "moonwell",
+      "name": "Moonwell Hall",
+      "nameZh": "月井堂",
+      "description": "A hall of martial artists, most of them women, hidden in the misty forests of Xiangnan around a well said to reflect the moon even at noon. Its disciples serve as bodyguards, healers and spies, and its favour opens doors across the south.",
+      "city": "xiangnan",
+      "master": "lan_yueru",
+      "techniques": [
+        "moonshadow_needles",
+        "still_water_palm",
+        "crescent_moon_blade"
+      ],
+      "favor": {
+        "iron_banner": 0,
+        "wolf_riders": 0,
+        "azure_court": 15,
+        "sea_league": 10,
+        "southern_lotus": 30,
+        "black_mountain": 5
+      }
+    }
+  ],
   "relations": [
     {
       "a": "azure_court",
@@ -1582,7 +3724,1306 @@
       "a": "iron_banner",
       "b": "sea_league",
       "trust": 45
+    },
+    {
+      "a": "wolf_riders",
+      "b": "azure_court",
+      "trust": 30
+    },
+    {
+      "a": "wolf_riders",
+      "b": "sea_league",
+      "trust": 50
+    },
+    {
+      "a": "wolf_riders",
+      "b": "southern_lotus",
+      "trust": 40
+    },
+    {
+      "a": "wolf_riders",
+      "b": "black_mountain",
+      "trust": 45
+    },
+    {
+      "a": "iron_banner",
+      "b": "southern_lotus",
+      "trust": 30
+    },
+    {
+      "a": "iron_banner",
+      "b": "black_mountain",
+      "trust": 35
+    },
+    {
+      "a": "azure_court",
+      "b": "sea_league",
+      "trust": 42
+    },
+    {
+      "a": "black_mountain",
+      "b": "southern_lotus",
+      "trust": 20,
+      "truce": 6
     }
   ],
-  "events": []
+  "events": [
+    {
+      "key": "locust_swarm",
+      "title": "Locust Swarm",
+      "image": "Events/Disaster.png",
+      "text": "A black cloud of locusts descends on {city}. By nightfall the fields are bare stalks and hungry farmers crowd the granary gates.",
+      "world": true,
+      "once": false,
+      "context": "random_city",
+      "when": {
+        "minYear": 212,
+        "months": [
+          6,
+          7,
+          8
+        ],
+        "chance": 8
+      },
+      "effects": [
+        {
+          "type": "farm",
+          "amount": -60,
+          "city": "context"
+        },
+        {
+          "type": "food",
+          "amount": -4000,
+          "city": "context"
+        },
+        {
+          "type": "order",
+          "amount": -6,
+          "city": "context"
+        }
+      ]
+    },
+    {
+      "key": "river_flood",
+      "title": "The Rivers Rise",
+      "image": "Events/Flood.png",
+      "text": "Summer rains swell the rivers until the dykes of {city} give way. Whole villages are swept downstream and the walls stand knee-deep in mud.",
+      "world": true,
+      "once": false,
+      "context": "random_city",
+      "when": {
+        "minYear": 212,
+        "months": [
+          5,
+          6,
+          7
+        ],
+        "chance": 8
+      },
+      "effects": [
+        {
+          "type": "population",
+          "amount": -8000,
+          "city": "context"
+        },
+        {
+          "type": "farm",
+          "amount": -40,
+          "city": "context"
+        },
+        {
+          "type": "defense",
+          "amount": -80,
+          "city": "context"
+        },
+        {
+          "type": "food",
+          "amount": -2500,
+          "city": "context"
+        }
+      ]
+    },
+    {
+      "key": "pestilence",
+      "title": "Pestilence",
+      "image": "Events/Plague.png",
+      "text": "A fever spreads through the crowded lanes of {city}. Physicians burn incense at every corner, and the gravediggers work through the night.",
+      "world": true,
+      "once": false,
+      "context": "random_city",
+      "when": {
+        "minYear": 212,
+        "months": [
+          7,
+          8,
+          9
+        ],
+        "chance": 5
+      },
+      "effects": [
+        {
+          "type": "population",
+          "amount": -12000,
+          "city": "context"
+        },
+        {
+          "type": "troops",
+          "amount": -800,
+          "city": "context"
+        },
+        {
+          "type": "order",
+          "amount": -8,
+          "city": "context"
+        }
+      ]
+    },
+    {
+      "key": "bountiful_harvest",
+      "title": "A Bountiful Harvest",
+      "image": "Events/Harvest.png",
+      "text": "The grain hangs so heavy in the fields of {city} that the stalks bow to the ground. Farmers sing in the fields for the first time in years.",
+      "world": true,
+      "once": false,
+      "context": "random_city",
+      "when": {
+        "minYear": 212,
+        "months": [
+          9
+        ],
+        "chance": 25
+      },
+      "effects": [
+        {
+          "type": "food",
+          "amount": 8000,
+          "city": "context"
+        },
+        {
+          "type": "order",
+          "amount": 5,
+          "city": "context"
+        }
+      ]
+    },
+    {
+      "key": "red_comet",
+      "title": "The Red-Tailed Star",
+      "image": "Events/Omen.png",
+      "text": "A comet with a blood-red tail burns over {city} for nine nights. In every market the soothsayers cry that the Mandate will pass to whoever holds Luojing.",
+      "world": true,
+      "once": true,
+      "context": "random_city",
+      "when": {
+        "minYear": 213,
+        "maxYear": 213,
+        "months": [
+          2,
+          3
+        ],
+        "chance": 60
+      },
+      "effects": [
+        {
+          "type": "order",
+          "amount": -8,
+          "city": "context"
+        },
+        {
+          "type": "message",
+          "text": "Soothsayers across the Nine Provinces proclaim that the Mandate awaits the lord of Luojing."
+        }
+      ]
+    },
+    {
+      "key": "bandit_raid",
+      "title": "Bandits on the Road",
+      "image": "Events/Bandits.png",
+      "text": "Bandits from the hills are raiding the caravans outside {city}, my lord. The merchants demand protection and the farmers have begun to bar their doors.",
+      "speaker": "advisor",
+      "world": false,
+      "once": false,
+      "context": "random_player_city",
+      "when": {
+        "minYear": 212,
+        "chance": 8
+      },
+      "choices": [
+        {
+          "label": "Send troops to hunt them down",
+          "effects": [
+            {
+              "type": "troops",
+              "amount": -300,
+              "city": "context"
+            },
+            {
+              "type": "order",
+              "amount": 8,
+              "city": "context"
+            },
+            {
+              "type": "training",
+              "amount": 3,
+              "city": "context"
+            }
+          ]
+        },
+        {
+          "label": "Pay them to move on (300 gold)",
+          "gold": 300,
+          "effects": [
+            {
+              "type": "gold",
+              "amount": -300,
+              "city": "context"
+            },
+            {
+              "type": "order",
+              "amount": 3,
+              "city": "context"
+            }
+          ]
+        },
+        {
+          "label": "Ignore them",
+          "effects": [
+            {
+              "type": "commerce",
+              "amount": -30,
+              "city": "context"
+            },
+            {
+              "type": "order",
+              "amount": -6,
+              "city": "context"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "hedong_ferryman",
+      "title": "The Ferryman of Hedong",
+      "image": "Events/Wanderer.png",
+      "text": "A ferryman at {city} lifted a capsized grain barge out of the river with his bare hands. The townsfolk whisper that he once wore the armour of the imperial guard, and that there is a price on his head.",
+      "speaker": "advisor",
+      "world": false,
+      "once": true,
+      "context": "hedong",
+      "when": {
+        "minYear": 212,
+        "ownsCity": "hedong",
+        "chance": 25
+      },
+      "choices": [
+        {
+          "label": "Invite him to the hall and hear his story",
+          "effects": [
+            {
+              "type": "revealOfficer",
+              "officer": "nangong_lie",
+              "city": "hedong"
+            },
+            {
+              "type": "message",
+              "text": "The ferryman gives his true name: Nangong Lie, the last imperial champion. He agrees to listen, nothing more."
+            }
+          ]
+        },
+        {
+          "label": "Offer him a general's seal at once (800 gold)",
+          "gold": 800,
+          "effects": [
+            {
+              "type": "gold",
+              "amount": -800,
+              "city": "context"
+            },
+            {
+              "type": "joinOfficer",
+              "officer": "nangong_lie",
+              "faction": "player",
+              "city": "context"
+            }
+          ]
+        },
+        {
+          "label": "Leave him to his river",
+          "effects": [
+            {
+              "type": "message",
+              "text": "The ferryman nods once from his boat and goes back to his poling."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "cloudpeak_tournament",
+      "title": "The Summit Tournament",
+      "image": "Events/Sect.png",
+      "text": "The Cloudpeak Sword Sect invites the champions of the Nine Provinces to its summit tournament above Qinchuan. Victory brings honour to {faction}; a poor showing will be sung about in every tavern.",
+      "speaker": "advisor",
+      "world": false,
+      "once": true,
+      "context": "random_player_city",
+      "when": {
+        "minYear": 213,
+        "maxYear": 214,
+        "months": [
+          4,
+          5
+        ],
+        "chance": 30
+      },
+      "choices": [
+        {
+          "label": "Send our champion with a fine retinue (300 gold)",
+          "gold": 300,
+          "effects": [
+            {
+              "type": "gold",
+              "amount": -300,
+              "city": "context"
+            },
+            {
+              "type": "sectFavor",
+              "sect": "cloudpeak",
+              "amount": 15
+            },
+            {
+              "type": "loyaltyAll",
+              "faction": "player",
+              "amount": 2
+            },
+            {
+              "type": "revealOfficer",
+              "officer": "lu_chenxi",
+              "city": "qinchuan"
+            },
+            {
+              "type": "message",
+              "text": "Our champion fights well, but the tournament is won by a young disciple named Lu Chenxi, who leaves the sect the next morning."
+            }
+          ]
+        },
+        {
+          "label": "Send a gift of silver instead (500 gold)",
+          "gold": 500,
+          "effects": [
+            {
+              "type": "gold",
+              "amount": -500,
+              "city": "context"
+            },
+            {
+              "type": "sectFavor",
+              "sect": "cloudpeak",
+              "amount": 25
+            }
+          ]
+        },
+        {
+          "label": "Decline the invitation",
+          "effects": [
+            {
+              "type": "sectFavor",
+              "sect": "cloudpeak",
+              "amount": -10
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "stone_bell_alms",
+      "title": "The Abbot's Bowl",
+      "image": "Events/Sect.png",
+      "text": "Monks of the Stone Bell Monastery stand at the gates of {city} with empty bowls. The abbot asks for grain to feed the famine villages along the Great River.",
+      "speaker": "advisor",
+      "world": false,
+      "once": true,
+      "context": "random_player_city",
+      "when": {
+        "minYear": 212,
+        "months": [
+          2,
+          3,
+          4
+        ],
+        "chance": 10
+      },
+      "choices": [
+        {
+          "label": "Open the granary (3000 food)",
+          "effects": [
+            {
+              "type": "food",
+              "amount": -3000,
+              "city": "context"
+            },
+            {
+              "type": "sectFavor",
+              "sect": "stone_bell",
+              "amount": 15
+            },
+            {
+              "type": "order",
+              "amount": 4,
+              "city": "context"
+            }
+          ]
+        },
+        {
+          "label": "Send silver instead (300 gold)",
+          "gold": 300,
+          "effects": [
+            {
+              "type": "gold",
+              "amount": -300,
+              "city": "context"
+            },
+            {
+              "type": "sectFavor",
+              "sect": "stone_bell",
+              "amount": 10
+            }
+          ]
+        },
+        {
+          "label": "We have no grain to spare",
+          "effects": [
+            {
+              "type": "sectFavor",
+              "sect": "stone_bell",
+              "amount": -10
+            },
+            {
+              "type": "order",
+              "amount": -2,
+              "city": "context"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "mid_autumn_festival",
+      "title": "Mid-Autumn Festival",
+      "image": "Events/Festival.png",
+      "text": "The full moon of mid-autumn rises over {city}. The people expect lanterns, mooncakes and their lord's generosity.",
+      "speaker": "advisor",
+      "world": false,
+      "once": false,
+      "context": "capital",
+      "when": {
+        "minYear": 212,
+        "months": [
+          8
+        ],
+        "chance": 60
+      },
+      "choices": [
+        {
+          "label": "Hold a great feast for officers and people (600 gold)",
+          "gold": 600,
+          "effects": [
+            {
+              "type": "gold",
+              "amount": -600,
+              "city": "context"
+            },
+            {
+              "type": "loyaltyAll",
+              "faction": "player",
+              "amount": 5
+            },
+            {
+              "type": "order",
+              "amount": 8,
+              "city": "context"
+            }
+          ]
+        },
+        {
+          "label": "A modest celebration (150 gold)",
+          "gold": 150,
+          "effects": [
+            {
+              "type": "gold",
+              "amount": -150,
+              "city": "context"
+            },
+            {
+              "type": "order",
+              "amount": 3,
+              "city": "context"
+            }
+          ]
+        },
+        {
+          "label": "Cancel the festivities; the treasury needs every coin",
+          "effects": [
+            {
+              "type": "order",
+              "amount": -5,
+              "city": "context"
+            },
+            {
+              "type": "loyaltyAll",
+              "faction": "player",
+              "amount": -2
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "iron_ten_thousand_blades",
+      "title": "Ten Thousand Blades",
+      "image": "Events/Court.png",
+      "text": "The forges of {city} have finished the great order: ten thousand blades, quenched and polished. My lord {ruler}, the smiths await your command.",
+      "speaker": "pei_wenzhao",
+      "world": false,
+      "once": true,
+      "context": "tiezhou",
+      "when": {
+        "minYear": 212,
+        "months": [
+          3,
+          4,
+          5
+        ],
+        "chance": 40,
+        "faction": "iron_banner",
+        "ownsCity": "tiezhou",
+        "hasOfficer": "pei_wenzhao"
+      },
+      "choices": [
+        {
+          "label": "Arm new recruits and drill them hard (400 gold)",
+          "gold": 400,
+          "effects": [
+            {
+              "type": "gold",
+              "amount": -400,
+              "city": "context"
+            },
+            {
+              "type": "troops",
+              "amount": 1500,
+              "city": "context"
+            },
+            {
+              "type": "training",
+              "amount": 8,
+              "city": "context"
+            }
+          ]
+        },
+        {
+          "label": "Sell the blades to the Sea League",
+          "effects": [
+            {
+              "type": "gold",
+              "amount": 1500,
+              "city": "context"
+            },
+            {
+              "type": "trust",
+              "faction": "sea_league",
+              "amount": 10
+            }
+          ]
+        },
+        {
+          "label": "Melt them down into ploughshares",
+          "effects": [
+            {
+              "type": "farm",
+              "amount": 80,
+              "city": "context"
+            },
+            {
+              "type": "order",
+              "amount": 6,
+              "city": "context"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "wolf_great_gathering",
+      "title": "The Great Gathering",
+      "image": "Events/Festival.png",
+      "text": "The nine clans ride to {city} for the summer gathering. Great Khan, they expect races, wrestling and a feast worthy of a khan, and they are watching to see whether the Grey Wolf has grown soft.",
+      "speaker": "helian_yue",
+      "world": false,
+      "once": true,
+      "context": "capital",
+      "when": {
+        "minYear": 212,
+        "months": [
+          5,
+          6
+        ],
+        "chance": 50,
+        "faction": "wolf_riders",
+        "hasOfficer": "helian_yue"
+      },
+      "choices": [
+        {
+          "label": "Hold races and a feast for all nine clans (800 gold)",
+          "gold": 800,
+          "effects": [
+            {
+              "type": "gold",
+              "amount": -800,
+              "city": "context"
+            },
+            {
+              "type": "loyaltyAll",
+              "faction": "player",
+              "amount": 6
+            },
+            {
+              "type": "troops",
+              "amount": 2500,
+              "city": "context"
+            }
+          ]
+        },
+        {
+          "label": "Wrestle the chieftains yourself",
+          "effects": [
+            {
+              "type": "stat",
+              "officer": "ruler",
+              "stat": "martial",
+              "amount": 1
+            },
+            {
+              "type": "loyaltyAll",
+              "faction": "player",
+              "amount": 3
+            },
+            {
+              "type": "message",
+              "text": "The khan throws three chieftains in a row. The clans roar, and nobody mentions the cracked rib."
+            }
+          ]
+        },
+        {
+          "label": "Demand tribute from the clans",
+          "effects": [
+            {
+              "type": "gold",
+              "amount": 800,
+              "city": "context"
+            },
+            {
+              "type": "loyaltyAll",
+              "faction": "player",
+              "amount": -5
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "wolf_knife_in_the_night",
+      "title": "A Knife in the Night",
+      "image": "Events/Court.png",
+      "text": "Great Khan, a man slipped past forty guards into your tent last night, left a needle in your pillow, and then let me catch him at dawn. He says he could have killed you, and that he would rather work for you than for whoever paid him.",
+      "speaker": "tuoba_ying",
+      "world": false,
+      "once": true,
+      "context": "liangzhou",
+      "when": {
+        "minYear": 212,
+        "chance": 10,
+        "faction": "wolf_riders",
+        "ownsCity": "liangzhou",
+        "hasOfficer": "tuoba_ying"
+      },
+      "choices": [
+        {
+          "label": "Spare him and give him a purpose",
+          "effects": [
+            {
+              "type": "joinOfficer",
+              "officer": "sha_wuying",
+              "faction": "player",
+              "city": "context"
+            },
+            {
+              "type": "sectFavor",
+              "sect": "moonwell",
+              "amount": -10
+            },
+            {
+              "type": "message",
+              "text": "The assassin Sha Wuying kneels before the khan. Moonwell Hall, which cast him out, is not pleased."
+            }
+          ]
+        },
+        {
+          "label": "Make him name his employer, then release him",
+          "effects": [
+            {
+              "type": "trust",
+              "faction": "azure_court",
+              "amount": -15
+            },
+            {
+              "type": "revealOfficer",
+              "officer": "sha_wuying",
+              "city": "liangzhou"
+            },
+            {
+              "type": "message",
+              "text": "Under the knife, the assassin names a minister of the Azure Court. Released, he drifts into the caravan taverns."
+            }
+          ]
+        },
+        {
+          "label": "Execute him before the clans",
+          "effects": [
+            {
+              "type": "loyaltyAll",
+              "faction": "player",
+              "amount": 3
+            },
+            {
+              "type": "order",
+              "amount": 5,
+              "city": "context"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "azure_jade_seal",
+      "title": "The Imperial Jade Seal",
+      "image": "Events/Omen.png",
+      "text": "Fishermen have pulled the Imperial Jade Seal from the river mud below {city}, lost the night the palace burned. Your Highness, whoever bears this seal bears the Mandate, or at least the claim to it.",
+      "speaker": "wen_tingjian",
+      "world": false,
+      "once": true,
+      "context": "luojing",
+      "when": {
+        "minYear": 213,
+        "chance": 20,
+        "faction": "azure_court",
+        "ownsCity": "luojing",
+        "hasOfficer": "wen_tingjian"
+      },
+      "choices": [
+        {
+          "label": "Proclaim the Mandate restored",
+          "effects": [
+            {
+              "type": "loyaltyAll",
+              "faction": "player",
+              "amount": 8
+            },
+            {
+              "type": "order",
+              "amount": 10,
+              "city": "context"
+            },
+            {
+              "type": "trust",
+              "faction": "iron_banner",
+              "amount": -15
+            },
+            {
+              "type": "trust",
+              "faction": "black_mountain",
+              "amount": -10
+            }
+          ]
+        },
+        {
+          "label": "Keep the seal hidden until the time is right",
+          "effects": [
+            {
+              "type": "stat",
+              "officer": "ruler",
+              "stat": "politics",
+              "amount": 2
+            },
+            {
+              "type": "message",
+              "text": "The seal is wrapped in yellow silk and locked away. Only the chancellor and the prince know where."
+            }
+          ]
+        },
+        {
+          "label": "Send it to the Lotus Queen as a pledge of alliance",
+          "effects": [
+            {
+              "type": "alliance",
+              "faction": "southern_lotus",
+              "amount": 36
+            },
+            {
+              "type": "trust",
+              "faction": "southern_lotus",
+              "amount": 20
+            },
+            {
+              "type": "loyaltyAll",
+              "faction": "player",
+              "amount": -6
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "azure_chancellor_warning",
+      "title": "The Chancellor's Warning",
+      "image": "Events/Court.png",
+      "text": "Chancellor Wen Tingjian has sent a sealed note to {ruler}: 'Minister Feng Yan dines with envoys from three different lords, Your Highness, and his new mansion was not built on a minister's salary.'",
+      "speaker": "advisor",
+      "world": false,
+      "once": true,
+      "context": "capital",
+      "when": {
+        "minYear": 212,
+        "chance": 15,
+        "faction": "azure_court",
+        "hasOfficer": "feng_yan"
+      },
+      "choices": [
+        {
+          "label": "Strip Feng Yan of his office",
+          "effects": [
+            {
+              "type": "loyalty",
+              "officer": "feng_yan",
+              "amount": -25
+            },
+            {
+              "type": "loyalty",
+              "officer": "wen_tingjian",
+              "amount": 5
+            },
+            {
+              "type": "order",
+              "amount": 5,
+              "city": "context"
+            }
+          ]
+        },
+        {
+          "label": "Bind him closer with gold and honours (500 gold)",
+          "gold": 500,
+          "effects": [
+            {
+              "type": "gold",
+              "amount": -500,
+              "city": "context"
+            },
+            {
+              "type": "loyalty",
+              "officer": "feng_yan",
+              "amount": 25
+            }
+          ]
+        },
+        {
+          "label": "Dismiss the chancellor's suspicions",
+          "effects": [
+            {
+              "type": "loyalty",
+              "officer": "wen_tingjian",
+              "amount": -10
+            },
+            {
+              "type": "loyalty",
+              "officer": "feng_yan",
+              "amount": 5
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "sea_pirates",
+      "title": "Pirates of the Eastern Sea",
+      "image": "Events/Bandits.png",
+      "text": "Pirate junks have burned three merchant ships within sight of {city}. Admiral Qi Feng awaits your orders, and the guild masters await your answers.",
+      "speaker": "qi_feng",
+      "world": false,
+      "once": true,
+      "context": "capital",
+      "when": {
+        "minYear": 212,
+        "months": [
+          4,
+          5,
+          6,
+          7,
+          8
+        ],
+        "chance": 15,
+        "faction": "sea_league",
+        "hasOfficer": "qi_feng"
+      },
+      "choices": [
+        {
+          "label": "Send the fleet to burn their nests",
+          "effects": [
+            {
+              "type": "troops",
+              "amount": -600,
+              "city": "context"
+            },
+            {
+              "type": "stat",
+              "officer": "qi_feng",
+              "stat": "command",
+              "amount": 2
+            },
+            {
+              "type": "commerce",
+              "amount": 40,
+              "city": "context"
+            }
+          ]
+        },
+        {
+          "label": "Pay the pirate lords for safe passage (600 gold)",
+          "gold": 600,
+          "effects": [
+            {
+              "type": "gold",
+              "amount": -600,
+              "city": "context"
+            },
+            {
+              "type": "commerce",
+              "amount": 15,
+              "city": "context"
+            }
+          ]
+        },
+        {
+          "label": "Hire the pirates as marines",
+          "effects": [
+            {
+              "type": "troops",
+              "amount": 1500,
+              "city": "context"
+            },
+            {
+              "type": "order",
+              "amount": -8,
+              "city": "context"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "lotus_three_visits",
+      "title": "Three Visits to the Misty Hills",
+      "image": "Events/Wanderer.png",
+      "text": "My queen, a farmer in the misty hills of Xiangnan named Yin Hexuan is wiser than I am; beside him I am a boy playing with pebbles. He has refused every lord who sent for him. Perhaps he will not refuse one who comes in person.",
+      "speaker": "qu_jingyuan",
+      "world": false,
+      "once": true,
+      "context": "capital",
+      "when": {
+        "minYear": 212,
+        "months": [
+          10,
+          11,
+          12
+        ],
+        "chance": 30,
+        "faction": "southern_lotus",
+        "hasOfficer": "qu_jingyuan"
+      },
+      "choices": [
+        {
+          "label": "Go yourself, three times if need be (300 gold)",
+          "gold": 300,
+          "effects": [
+            {
+              "type": "gold",
+              "amount": -300,
+              "city": "context"
+            },
+            {
+              "type": "joinOfficer",
+              "officer": "yin_hexuan",
+              "faction": "player",
+              "city": "context"
+            },
+            {
+              "type": "message",
+              "text": "On the third visit the hermit is awake. He talks with the queen until dawn, then packs his books."
+            }
+          ]
+        },
+        {
+          "label": "Send Qu Jingyuan with a letter and gifts",
+          "effects": [
+            {
+              "type": "revealOfficer",
+              "officer": "yin_hexuan",
+              "city": "xiangnan"
+            },
+            {
+              "type": "message",
+              "text": "The hermit reads the letter twice and says he will think on it. By the next market day the whole south knows his name."
+            }
+          ]
+        },
+        {
+          "label": "A hermit cannot hold a wall",
+          "effects": [
+            {
+              "type": "loyalty",
+              "officer": "qu_jingyuan",
+              "amount": -5
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "lotus_moonwell_invitation",
+      "title": "The Moonwell Invitation",
+      "image": "Events/Sect.png",
+      "text": "Mistress Lan Yueru of Moonwell Hall has sent a letter wrapped in silk. She has watched Jiang Xiaoman fight, and offers to teach her the Crescent Moon Blade in return for a season guarding the Hall's secrets.",
+      "speaker": "jiang_xiaoman",
+      "world": false,
+      "once": true,
+      "context": "capital",
+      "when": {
+        "minYear": 212,
+        "chance": 15,
+        "faction": "southern_lotus",
+        "hasOfficer": "jiang_xiaoman"
+      },
+      "choices": [
+        {
+          "label": "Send Xiaoman to Moonwell Hall (200 gold)",
+          "gold": 200,
+          "effects": [
+            {
+              "type": "gold",
+              "amount": -200,
+              "city": "context"
+            },
+            {
+              "type": "learnTechnique",
+              "officer": "jiang_xiaoman",
+              "technique": "crescent_moon_blade"
+            },
+            {
+              "type": "sectFavor",
+              "sect": "moonwell",
+              "amount": 10
+            },
+            {
+              "type": "loyalty",
+              "officer": "jiang_xiaoman",
+              "amount": 5
+            }
+          ]
+        },
+        {
+          "label": "Send the Hall a gift of silk instead (400 gold)",
+          "gold": 400,
+          "effects": [
+            {
+              "type": "gold",
+              "amount": -400,
+              "city": "context"
+            },
+            {
+              "type": "sectFavor",
+              "sect": "moonwell",
+              "amount": 20
+            }
+          ]
+        },
+        {
+          "label": "My bodyguard stays at my side",
+          "effects": [
+            {
+              "type": "sectFavor",
+              "sect": "moonwell",
+              "amount": -8
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "black_blood_oath",
+      "title": "Oath of the Black Mountain",
+      "image": "Events/Festival.png",
+      "text": "Brother! The men are restless since we took Xuyang. Some say {ruler} has become a lord and forgotten the brotherhood. Let us drink blood wine under the black banner and remind them what we swore!",
+      "speaker": "xiong_kuo",
+      "world": false,
+      "once": true,
+      "context": "capital",
+      "when": {
+        "minYear": 212,
+        "months": [
+          1,
+          2,
+          3
+        ],
+        "chance": 50,
+        "faction": "black_mountain",
+        "hasOfficer": "xiong_kuo"
+      },
+      "choices": [
+        {
+          "label": "Swear the oath anew with every captain (300 gold)",
+          "gold": 300,
+          "effects": [
+            {
+              "type": "gold",
+              "amount": -300,
+              "city": "context"
+            },
+            {
+              "type": "loyaltyAll",
+              "faction": "player",
+              "amount": 8
+            },
+            {
+              "type": "order",
+              "amount": 4,
+              "city": "context"
+            }
+          ]
+        },
+        {
+          "label": "Lead a raid on the salt road instead",
+          "effects": [
+            {
+              "type": "gold",
+              "amount": 900,
+              "city": "context"
+            },
+            {
+              "type": "loyaltyAll",
+              "faction": "player",
+              "amount": 3
+            },
+            {
+              "type": "trust",
+              "faction": "sea_league",
+              "amount": -15
+            }
+          ]
+        },
+        {
+          "label": "We are lords now; they must learn discipline",
+          "effects": [
+            {
+              "type": "order",
+              "amount": 10,
+              "city": "context"
+            },
+            {
+              "type": "training",
+              "amount": 5,
+              "city": "context"
+            },
+            {
+              "type": "loyaltyAll",
+              "faction": "player",
+              "amount": -5
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "black_imperial_amnesty",
+      "title": "The Prince's Amnesty",
+      "image": "Events/Envoy.png",
+      "text": "An envoy of the Azure Court arrives under a white flag. Prince Liu Chengxuan offers to pardon the Brotherhood and grant {ruler} the title of General Who Pacifies the South, if the raids on imperial lands cease.",
+      "speaker": "liu_chengxuan",
+      "world": false,
+      "once": true,
+      "context": "capital",
+      "when": {
+        "minYear": 213,
+        "maxYear": 216,
+        "chance": 20,
+        "faction": "black_mountain"
+      },
+      "choices": [
+        {
+          "label": "Accept the title and the peace",
+          "effects": [
+            {
+              "type": "truce",
+              "faction": "azure_court",
+              "amount": 24
+            },
+            {
+              "type": "trust",
+              "faction": "azure_court",
+              "amount": 25
+            },
+            {
+              "type": "order",
+              "amount": 6,
+              "city": "context"
+            },
+            {
+              "type": "loyaltyAll",
+              "faction": "player",
+              "amount": -6
+            }
+          ]
+        },
+        {
+          "label": "Accept the title, ignore the terms",
+          "effects": [
+            {
+              "type": "order",
+              "amount": 4,
+              "city": "context"
+            },
+            {
+              "type": "trust",
+              "faction": "azure_court",
+              "amount": -15
+            }
+          ]
+        },
+        {
+          "label": "Send the envoy home with his beard shaved",
+          "effects": [
+            {
+              "type": "trust",
+              "faction": "azure_court",
+              "amount": -20
+            },
+            {
+              "type": "loyaltyAll",
+              "faction": "player",
+              "amount": 5
+            }
+          ]
+        }
+      ]
+    }
+  ]
 }
