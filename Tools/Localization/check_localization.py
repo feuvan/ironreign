@@ -34,23 +34,29 @@ def main() -> int:
             errors.append(f"en/{name} is stale; run extract_strings.py")
         tables[name] = expected
 
+    english_union = {}
+    for table in tables.values():
+        english_union.update(table)
     for culture in TARGET_CULTURES:
-        missing_total = 0
-        for name, english in tables.items():
-            path = LOC_DIR / culture / name
-            translated = load_json(path) if path.exists() else {}
-            missing = [k for k in english if not translated.get(k)]
-            missing_total += len(missing)
-            for key in missing[:5]:
-                errors.append(f"{culture}/{name}: missing '{key}'")
-            if len(missing) > 5:
-                errors.append(f"{culture}/{name}: ... {len(missing) - 5} more missing keys")
-            for key, text in translated.items():
-                if key not in english:
-                    warnings.append(f"{culture}/{name}: unused key '{key}'")
-                elif placeholders(text) != placeholders(english[key]):
-                    errors.append(f"{culture}/{name}: placeholders differ for '{key}': {sorted(placeholders(text))} vs {sorted(placeholders(english[key]))}")
-        print(f"{culture}: {missing_total} missing")
+        # A culture may split its translations over several files; the game loads every .json in the folder.
+        translated = {}
+        folder = LOC_DIR / culture
+        for path in sorted(folder.glob("*.json")) if folder.exists() else []:
+            for key, text in load_json(path).items():
+                if key in translated and translated[key] != text:
+                    errors.append(f"{culture}/{path.name}: '{key}' is defined twice with different text")
+                translated[key] = text
+        missing = [k for k in english_union if not translated.get(k)]
+        for key in missing[:8]:
+            errors.append(f"{culture}: missing '{key}'")
+        if len(missing) > 8:
+            errors.append(f"{culture}: ... {len(missing) - 8} more missing keys")
+        for key, text in translated.items():
+            if key not in english_union:
+                warnings.append(f"{culture}: unused key '{key}'")
+            elif placeholders(text) != placeholders(english_union[key]):
+                errors.append(f"{culture}: placeholders differ for '{key}': {sorted(placeholders(text))} vs {sorted(placeholders(english_union[key]))}")
+        print(f"{culture}: {len(translated)} translated, {len(missing)} missing")
 
     for message in warnings[:20]:
         print(f"warning: {message}")
