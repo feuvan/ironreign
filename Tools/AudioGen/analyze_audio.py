@@ -22,6 +22,31 @@ from audiolib_dsp import loudness, read_wav, to_db  # noqa: E402
 
 AUDIO_DIR = Path(__file__).resolve().parents[2] / "Content" / "Data" / "Audio"
 LOOPED = {"Music_Title", "Music_Strategy", "Music_Battle", "Music_Duel"}
+PITCH_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+# Pentatonic collection each piece is written in (gong of the mode): used for the chroma sanity check.
+SCALES = {"Music_Title": "D", "Music_Strategy": "G", "Music_Battle": "C", "Music_Duel": "F",
+          "Music_Victory": "D", "Music_Defeat": "C"}
+
+
+def chroma(x: np.ndarray, rate: int) -> np.ndarray:
+    """Share of spectral magnitude (80-2500 Hz) per pitch class."""
+    f, _, z = signal.stft(x, fs=rate, nperseg=4096, noverlap=2048)
+    mag = np.abs(z).sum(axis=1)
+    sel = (f >= 80.0) & (f <= 2500.0)
+    pcs = np.round(12.0 * np.log2(f[sel] / 440.0) + 69.0).astype(int) % 12
+    out = np.bincount(pcs, weights=mag[sel], minlength=12)
+    return out / out.sum()
+
+
+def scale_share(name: str, x: np.ndarray, rate: int):
+    gong = SCALES.get(name)
+    if gong is None:
+        return None
+    root = PITCH_NAMES.index(gong)
+    pent = {(root + s) % 12 for s in (0, 2, 4, 7, 9)}
+    c = chroma(x, rate)
+    top = [PITCH_NAMES[i] for i in np.argsort(c)[::-1][:5]]
+    return float(sum(c[i] for i in pent)), top
 
 
 def metrics(path: Path) -> dict:
@@ -31,6 +56,9 @@ def metrics(path: Path) -> dict:
     m = dict(name=path.stem, rate=rate, channels=channels, seconds=len(x) / rate, bytes=path.stat().st_size,
              peak_db=to_db(np.max(np.abs(x))), rms_db=to_db(np.sqrt(np.mean(x * x))), lufs=loudness(x),
              dc=float(np.mean(x)), clipped=int(np.sum((raw >= 32767) | (raw <= -32768))), loop=loop)
+    sc = scale_share(path.stem, x, rate)
+    if sc is not None:
+        m["scale"] = f"{SCALES[path.stem]} pentatonic {100 * sc[0]:.0f}% (top {' '.join(sc[1])})"
     if loop:
         d1 = np.abs(np.diff(x))
         d2 = np.abs(np.diff(x, 2))
@@ -53,6 +81,8 @@ def print_table(rows) -> None:
             seam = f"jump {m['seam_jump']:.2f}x  slope {m['seam_slope']:.2f}x  rms {m['seam_rms_db']:+.1f} dB"
         print(f"{m['name']:16s} {m['seconds']:6.2f} {m['bytes'] / 1024:7.0f} {m['peak_db']:6.1f} {m['rms_db']:6.1f} "
               f"{m['lufs']:6.1f} {m['dc']:8.1e} {m['clipped']:4d}  {seam}")
+        if "scale" in m:
+            print(f"{'':16s} {m['scale']}")
     print(f"total {total / 1024 / 1024:.2f} MiB ({total / 1e6:.2f} MB) in {len(rows)} files")
 
 

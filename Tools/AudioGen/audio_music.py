@@ -69,11 +69,11 @@ def title() -> np.ndarray:
     mix.hits("drum", drums, lambda v, r: ins.drum("dagu", v, r))
     roll = [(mix.bar(15, 2.0 + i * 0.125), 0.25 + 0.7 * (i / 15.0) ** 1.5) for i in range(16)]
     mix.hits("roll", roll, lambda v, r: ins.drum("tanggu", v, r), variants=6)
-    mix.add("gong", mix.bar(0), ins.gong(105.0, 7.5, 1.0, mix.rng, glide=-0.9, decay=4.0))
-    mix.add("gong", mix.bar(8), ins.gong(118.0, 6.0, 0.6, mix.rng, glide=-0.7, decay=3.5))
+    mix.add("gong", mix.bar(0), ins.gong(105.0, 9.0, 1.0, mix.rng, glide=-0.9, decay=4.0))
+    mix.add("gong", mix.bar(8), ins.gong(118.0, 8.0, 0.6, mix.rng, glide=-0.7, decay=3.5))
     mix.add("cymbal", mix.bar(12), ins.cymbal(3.0, 0.5, mix.rng, decay=1.4))
 
-    levels = {"dizi": -1, "guqin": -3, "guzheng_mel": -4, "guzheng": -7, "guzheng_bass": -9, "drum": -5,
+    levels = {"dizi": -1, "guqin": -3, "guzheng_mel": -4, "guzheng": -6, "guzheng_bass": -10, "drum": -7,
               "roll": -9, "gong": -6, "cymbal": -15}
     sends = {"dizi": 0.38, "guqin": 0.3, "guzheng_mel": 0.35, "guzheng": 0.35, "guzheng_bass": 0.25, "drum": 0.2,
              "roll": 0.2, "gong": 0.25, "cymbal": 0.3}
@@ -215,7 +215,7 @@ def battle() -> np.ndarray:
     mix.pattern("rim", [24, 25, 26, 27], "..x...x...x...x.", lambda v, r: ins.rim(v, r), vel=0.9)
 
     for b, v in ((0, 1.0), (8, 0.75), (16, 1.0), (24, 0.65)):
-        mix.add("gong", mix.bar(b), ins.gong(98.0, 5.5, v, mix.rng, glide=-1.0, decay=3.0))
+        mix.add("gong", mix.bar(b), ins.gong(98.0, 7.0, v, mix.rng, glide=-1.0, decay=3.0))
     for b, v in ((0, 0.9), (8, 0.6), (16, 0.9), (24, 0.5)):
         mix.add("cymbal", mix.bar(b), ins.cymbal(2.5, v, mix.rng, decay=1.0))
     naos = [(mix.bar(b, beat), 0.7) for b in range(16, 24) for beat in (1.0, 3.0)]
@@ -264,13 +264,13 @@ def duel() -> np.ndarray:
              (mix.bar(14, 0.0), 0.9), (mix.bar(14, 0.5), 0.6), (mix.bar(15, 3.5), 0.7), (mix.bar(3, 3.5), 0.5)]
     mix.hits("clapper", claps, lambda v, r: ins.clapper(v, r))
     for b, v in ((8, 0.6), (16, 0.45), (12, 0.5)):
-        mix.add("gong", mix.bar(b), ins.gong(370.0, 2.5, v, mix.rng, glide=2.5, glide_tau=0.08, decay=1.1, bloom=0.3))
+        mix.add("gong", mix.bar(b), ins.gong(370.0, 3.5, v, mix.rng, glide=2.5, glide_tau=0.08, decay=1.1, bloom=0.3))
     rolls = []
     for b in (11, 15):
         rolls += [(mix.bar(b, 2.0 + i * 0.125), 0.12 + 0.55 * (i / 15.0) ** 2) for i in range(16)]
     mix.hits("roll", rolls, lambda v, r: ins.drum("taiko", v, r), variants=5)
 
-    levels = {"heart": -4, "guqin": -3, "pipa": -2, "clapper": -11, "gong": -10, "roll": -9}
+    levels = {"heart": -10, "guqin": -4, "pipa": -2, "clapper": -11, "gong": -10, "roll": -10}
     sends = {"heart": 0.05, "guqin": 0.35, "pipa": 0.32, "clapper": 0.35, "gong": 0.3, "roll": 0.2}
     return mix.render(levels, sends, make_ir(2.2, 0.03, seed=14))
 
@@ -319,7 +319,7 @@ def defeat() -> np.ndarray:
     guqin = jianpu("6,:4~ | 3,:2 6,:2\\", c3, vel=0.9)
     mix.plucks("guqin", guqin, "guqin", ring=5.0, offset=off)
     mix.hits("drum", [(off, 0.75), (off + mix.bar(1, 2.0), 0.6)], lambda v, r: ins.drum("dagu", v, r))
-    mix.add("gong", off + mix.bar(1, 2.0), ins.gong(92.0, 6.0, 0.5, mix.rng, glide=-1.3, decay=3.5, bright=0.7))
+    mix.add("gong", off + mix.bar(1, 2.0), ins.gong(92.0, 7.0, 0.5, mix.rng, glide=-1.3, decay=3.5, bright=0.7))
 
     levels = {"erhu": -1, "guqin": -4, "drum": -7, "gong": -9}
     sends = {"erhu": 0.35, "guqin": 0.3, "drum": 0.2, "gong": 0.3}

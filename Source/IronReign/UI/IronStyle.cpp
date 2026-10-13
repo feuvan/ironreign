@@ -579,8 +579,7 @@ namespace IronStyle
 		State.RowStyle = FButtonStyle();
 		State.ChoiceStyles[0] = FButtonStyle();
 		State.ChoiceStyles[1] = FButtonStyle();
-		State.FontSets.Empty();
-		State.ActiveFonts = IronStyleDetail::FFontSet();
+		// Composite fonts are kept: Slate's font cache knows them by address, and they hold no textures.
 		State.Session.Reset();
 		State.bInitialized = false;
 	}

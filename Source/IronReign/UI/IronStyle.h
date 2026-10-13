@@ -91,6 +91,6 @@ namespace IronStyle
 	IRONREIGN_API FText FactionGlyph(const FString& FactionKey, const FString& DefaultGlyph);
 	/** Ornamental horizontal rule (Art/UI/Divider.png, or a thin gold line when the art is missing). */
 	IRONREIGN_API TSharedRef<SWidget> MakeDivider(float Height = 12.0f);
-	/** Selectable pill used for option rows (language, speed, difficulty): Tab_Active style when bActive. */
+	/** Selectable pill for option rows on parchment (language, speeds): gold when bActive, ink text in LabelFont. */
 	IRONREIGN_API TSharedRef<SButton> MakeChoiceButton(const FText& Label, bool bActive, FOnClicked OnClicked, const FSlateFontInfo& LabelFont);
 }

@@ -169,7 +169,24 @@ namespace IronSim
 		Message
 	};
 
-	/** Something that happened, for animation and the battle log. */
+	/**
+	 * Something that happened, for animation and the battle log. Text is the localized log line (empty for moves).
+	 *   DayStart       Value = the new day.
+	 *   Move           Unit went From -> To; Value = movement cost (0 for UndoMove).
+	 *   Attack         Unit (at From) hit Target (at To); Value = troops lost. Distance 2 = archer volley (never countered).
+	 *   Counter        Unit (the defender, at From) struck back at Target (at To); Value = troops lost.
+	 *   GateHit        Unit (at From) battered the gate at To; Value = gate damage. Use To: great cities have two gates.
+	 *   GateBroken     The gate at To is now Rubble.
+	 *   Tactic         Unit used Tactic on Target (at To). Value: Fire = troops lost, Confuse = 1, Rally = morale gained.
+	 *   TacticFailed   Unit's Tactic on Target failed; Value = the chance (percent).
+	 *   Burn           Unit lost Value troops to the fire on its hex (To) at dawn.
+	 *   DuelChallenge  Unit challenged Target; Value = the AI's acceptance chance.
+	 *   DuelDeclined   Target refused Unit's challenge; Value = morale Target lost.
+	 *   DuelResult     Unit (challenger) fought Target; Value = winning unit id, or -1 for a draw.
+	 *   Routed, Destroyed, Captured  Unit left the field at From; Target = unit responsible or -1; Value = troops kept.
+	 *   Victory        Value = winning side; Text = the summary.
+	 *   Message        Narration: battle start, challenge accepted, supplies running low, an officer slain (Unit set).
+	 */
 	struct FBattleEvent
 	{
 		EBattleEventType Type = EBattleEventType::Message;
@@ -259,6 +276,7 @@ namespace IronSim
 		bool IsPlayerTurn() const;
 
 		// Queries (for the active side's units).
+		/** Destinations for this turn (excluding the current hex). Units of the waiting side report their full range. */
 		std::vector<FReachableHex> Reachable(int UnitId) const;
 		std::vector<int> AttackTargets(int UnitId) const;
 		bool CanAttackGate(int UnitId) const;
@@ -280,7 +298,7 @@ namespace IronSim
 		bool AttackGate(int UnitId);
 		bool UseTactic(int UnitId, ETactic Tactic, int TargetId);
 		bool Wait(int UnitId);
-		/** Challenge an adjacent enemy officer. An AI target decides at once; on acceptance a duel becomes active. */
+		/** Challenge an adjacent enemy officer (once per pair and battle). An AI target decides at once; on acceptance a duel becomes active. */
 		bool ChallengeDuel(int UnitId, int TargetId);
 
 		// Duel handshake.
@@ -352,8 +370,8 @@ namespace IronSim
 		FHex SecondGate = {-1, -1};
 		int SecondGateHitPoints = 0;
 		bool bAnyGateBroken = false;
-		/** Duel challenges already issued by the AI (Challenger * 4096 + Target), so it never repeats one. */
-		std::vector<int> AIChallenges;
+		/** Duel challenges already issued (Challenger * 4096 + Target): each pair may duel at most once per battle. */
+		std::vector<int> IssuedChallenges;
 
 		// IronBattleMap.cpp
 		void GenerateMap();

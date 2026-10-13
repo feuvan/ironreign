@@ -186,7 +186,7 @@ def make_ir(t60: float = 1.6, predelay: float = 0.018, seed: int = 1, brightness
     def env(t60_band):
         return np.exp(-6.9078 * t / t60_band)
 
-    late = low * env(t60 * 1.2) + mid * env(t60) + high * env(t60 * 0.45 * brightness)
+    late = low * env(t60 * 0.9) + mid * env(t60) + high * env(t60 * 0.5 * brightness)
     late *= 1.0 - np.exp(-t / 0.03)  # diffusion build-up
     pd = samples(predelay)
     ir = np.zeros(n)

@@ -89,6 +89,8 @@ private:
 		/** Escape pops the modal when no handler is set. */
 		bool bPopOnEscape = true;
 		TFunction<void()> OnEscape;
+		/** Keyboard focus before the modal opened; restored when it closes. */
+		TWeakPtr<SWidget> PreviousFocus;
 	};
 
 	void PushModalInternal(const TSharedRef<SWidget>& Widget, bool bPopOnEscape, TFunction<void()> OnEscape);

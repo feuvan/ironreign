@@ -120,6 +120,42 @@ effects automatically and are logged.
 - End: commander unit destroyed/routed/captured -> that side loses; side wiped out; attacker on castle
   hex; attacker out of food; day > MaxDays -> defender wins.
 
+**As implemented** (numbers to tune; `Tests/TestBattle.cpp` and `TestDuel.cpp` guard balance):
+- Maps: field 16x11; sieges 16x11 / 17x11 / 18x12 by city size, wall at column Cols*2/3, castle at
+  (Cols-2, middle), town inside, roads to every gate. Siege defaults when the setup leaves them 0:
+  GateHp 1200, WallBonus 30. Friendly units can be passed through; burning hexes cannot be entered;
+  defenders may pass their own gate but not stop on it.
+- Unit attack = 0.6 Command + 0.4 Martial (cavalry 0.45/0.55; archers 0.6 Command + 0.2 Martial + 0.2
+  Strategy), defense = 0.7 Command + 0.3 Martial, both x (0.75 + Training/200); ratio clamped 0.25..4.
+  Type factor: infantry 1.0, cavalry 1.1, archers 0.85 at range / 0.65 in melee. Morale factor
+  0.6 + Morale/250; random 0.85..1.15. Terrain bonus B% divides damage by (1 + B/100); defenders inside
+  the walls add WallBonus (half on the breach, +15 more on the castle); rubble +10.
+- Morale loss per hit = 3 + 60 x losses/troops (counters 1 + ..., fire 10 + ...). A fallen unit costs its
+  allies 4 morale (10 for the commander) and gives the enemy 3. Gate broken: defenders -10, attackers +5.
+  Food: a side whose FoodDays < day withdraws (checked at dawn, attacker first); -5 morale/day for the
+  last two days.
+- Gate damage per hit = 0.4 x sqrt(Troops) x 10 x type (infantry 1, cavalry 0.6, archers 0.5) x
+  sqrt(attack/60) x morale factor.
+- Fire: chance 45 + Strategy difference (+15 forest, +5 town, -10 bridge), damage 0.35 x sqrt(Troops) x 10
+  x (0.5 + Strategy/100) x terrain (forest 1.5, town 1.2, bridge 0.8; halved wall bonus applies); burns 2
+  days (6% troops/dawn), spreads to adjacent forest; units in fords cannot be targeted. Confuse: chance
+  35 + 1.2 x Strategy difference; the target cannot move or act during its side's next turn. Rally: chance
+  40 + (Strategy + Command)/4, +15 + (Command + Strategy)/10 morale. All chances clamped 5..95.
+- Duels: each challenger/target pair at most once per battle. AI acceptance = 50 + 3 x Martial gap +
+  0.6 x (Bravery - 50), -15 for commanders, at least 90 when 5+ stronger (clamped 5..95). Declining costs
+  10 morale (allies 2). Winner +15 morale, allies +5; loser's allies -5. Loser killed 5%, captured 25%.
+  Duel HP = 80 + Martial/2; clean hit = (20 + Martial/4) x (1 + gap/200) x move (Strike 1.2, Guard 0.9,
+  Feint 1.0) x technique power x 0.9..1.1; Strike vs Strike clash: both take 0.5. Techniques are one-use,
+  performed with their own move, and win ties against the same move. 10 rounds, then a draw.
+- Duel AI: predicts the opponent from recency-weighted move counts plus a habit of countering its own last
+  move, scores moves by expected HP swing (fractions of remaining HP), samples a softmax blended 25% with
+  uniform; saves techniques for finishing blows, low HP or the last rounds (30% otherwise).
+- Battle AI (`IronBattleAI.cpp`): one action per `StepAI`. Each ready unit scores every reachable hex plus
+  action (attack, gate, Fire, Confuse, Rally, duel, wait) by expected troops/morale swing, goal progress
+  (field: nearest enemies; sieges: gate approaches, then the castle; defenders hold behind the gate and on
+  the wall walk) and danger (expected damage from enemies able to strike next turn). Archers avoid
+  adjacency; commanders with an army are risk-averse and stay near it; the attacker grows bolder each day.
+
 ## 5. Architecture
 
 ```

@@ -41,6 +41,7 @@ namespace IronSim
 		constexpr int Unreached = std::numeric_limits<int>::max();
 		/** Safety net for AutoResolve; real battles need a few thousand steps at most. */
 		constexpr int MaxAutoSteps = 200000;
+		/** Must match the core's encoding of IssuedChallenges. */
 		constexpr int ChallengeKeyStride = 4096;
 
 		/** Utility of one morale point for a unit of the given size, in troop-equivalents. */
@@ -65,6 +66,8 @@ namespace IronSim
 			std::vector<std::vector<uint8_t>> Cover;
 		};
 
+		/** A commander with an army to hide behind plays it safe; a lone commander has to fight. */
+		static bool IsCautiousCommander(const FBattle& Battle, const FBattleUnit& Self);
 		static void BuildContext(const FBattle& Battle, FContext& Context);
 		static void GoalSources(const FBattle& Battle, int UnitId, std::vector<FHex>& OutSources);
 		static void GoalField(const FBattle& Battle, int UnitId, const std::vector<FHex>& Sources, std::vector<int>& OutDistance);
@@ -75,6 +78,22 @@ namespace IronSim
 		static void Execute(FBattle& Battle, int UnitId, const BattleAIDetail::FPlan& Plan);
 		static bool Act(FBattle& Battle);
 	};
+
+	bool FBattleInternals::IsCautiousCommander(const FBattle& Battle, const FBattleUnit& Self)
+	{
+		if (!Self.bCommander)
+		{
+			return false;
+		}
+		for (const FBattleUnit& Ally : Battle.BattleUnits)
+		{
+			if (Ally.IsActive() && Ally.Side == Self.Side && Ally.Id != Self.Id)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
 
 	void FBattleInternals::BuildContext(const FBattle& Battle, FContext& Context)
 	{
@@ -365,9 +384,15 @@ namespace IronSim
 		{
 			GoalWeight = 200.0;
 		}
-		if (Self.bCommander)
+		const bool bCautious = IsCautiousCommander(Battle, Self);
+		if (Self.bCommander && bSiege && Self.Side == 1)
 		{
-			GoalWeight = (bSiege && Self.Side == 1) ? 800.0 : GoalWeight * 0.3;
+			GoalWeight = 800.0;
+			Risk = 2.0;
+		}
+		else if (bCautious)
+		{
+			GoalWeight *= 0.3;
 			Risk = 2.0;
 		}
 		const int Distance = Goal[Cell];
@@ -401,7 +426,7 @@ namespace IronSim
 					Value -= 5000.0;
 				}
 			}
-			else
+			else if (bCautious)
 			{
 				if (Threats > 0)
 				{
@@ -463,7 +488,7 @@ namespace IronSim
 			const int MoraleAfter = static_cast<int>(Enemy.Morale - Shock);
 			const double Counter = 0.5 * Battle.RawDamage(TargetId, TroopsAfter, MoraleAfter, UnitId, false) * Battle.DefenseMultiplier(Pos, Self.Side);
 			const double CounterShock = 1.0 + 60.0 * Counter / std::max(1, Self.Troops);
-			const double Caution = Self.bCommander ? 2.5 : 1.0;
+			const double Caution = IsCautiousCommander(Battle, Self) ? 2.5 : 1.0;
 			Value -= Caution * (Counter + CounterShock * BattleAIDetail::MoraleValue(Self.Troops));
 			if (Self.Morale - CounterShock < BattleAIDetail::RoutMorale || Counter >= Self.Troops)
 			{
@@ -544,12 +569,12 @@ namespace IronSim
 			}
 			if (Distance == 1 && Self.Setup.Officer >= 0 && Enemy.Setup.Officer >= 0)
 			{
-				// Challenge only when clearly the better fighter, and never the same officer twice.
+				// Challenge only when clearly the better fighter (each pair may duel once per battle).
 				const int Mine = BattleAIDetail::MartialOf(Self);
 				const int Theirs = BattleAIDetail::MartialOf(Enemy);
 				const int Margin = Self.bCommander ? 20 : 12;
 				const int Key = UnitId * BattleAIDetail::ChallengeKeyStride + Enemy.Id;
-				if (Mine - Theirs >= Margin && std::find(Battle.AIChallenges.begin(), Battle.AIChallenges.end(), Key) == Battle.AIChallenges.end())
+				if (Mine - Theirs >= Margin && std::find(Battle.IssuedChallenges.begin(), Battle.IssuedChallenges.end(), Key) == Battle.IssuedChallenges.end())
 				{
 					const double Accept = Battle.IsSideAI(Enemy.Side) ? Battle.AcceptChance(UnitId, Enemy.Id) / 100.0 : 0.5;
 					const double WinChance = std::clamp(0.5 + 0.012 * (Mine - Theirs), 0.05, 0.92);
@@ -665,7 +690,6 @@ namespace IronSim
 			bDone = Battle.UseTactic(UnitId, Plan.Tactic, Plan.Target);
 			break;
 		case EPlanKind::Duel:
-			Battle.AIChallenges.push_back(UnitId * BattleAIDetail::ChallengeKeyStride + Plan.Target);
 			bDone = Battle.ChallengeDuel(UnitId, Plan.Target);
 			break;
 		case EPlanKind::Wait:

@@ -80,8 +80,8 @@ def attack(rng):
         mix_at(out, ins.clang(rng.uniform(480.0, 1100.0), 0.5, rng.uniform(0.25, 0.6), rng, decay=0.2, extra=4),
                samples(start))
     n = len(out)
-    dust = lowpass(rng.standard_normal(n), 900.0) * np.exp(-time_axis(n) / 0.6)
-    out += 0.25 * dust
+    dust = bandpass(rng.standard_normal(n), 150.0, 1200.0) * np.exp(-time_axis(n) / 0.5)
+    out += 0.15 * dust
     return out
 
 
@@ -152,12 +152,13 @@ def gate_hit(rng):
     n = samples(1.3)
     t = time_axis(n)
     out = np.zeros(n)
-    f = 46.0 + 40.0 * np.exp(-t / 0.04)
-    out += 1.0 * np.exp(-t / 0.2) * np.sin(2.0 * np.pi * np.cumsum(f) / SR)
-    src = rng.standard_normal(n) * np.exp(-t / 0.05)
-    for fc, q, g in ((118.0, 6.0, 1.0), (186.0, 7.0, 0.9), (305.0, 8.0, 0.8), (520.0, 6.0, 0.6), (870.0, 5.0, 0.4)):
-        out += g * resonate(src, fc, q) * 4.0
-    out += 0.8 * bandpass(rng.standard_normal(n), 300.0, 3000.0) * np.exp(-t / 0.035)
+    f = 72.0 + 60.0 * np.exp(-t / 0.035)
+    out += 0.35 * np.exp(-t / 0.14) * np.sin(2.0 * np.pi * np.cumsum(f) / SR)
+    src = rng.standard_normal(n) * np.exp(-t / 0.06)
+    for fc, q, g in ((118.0, 5.0, 1.0), (186.0, 6.0, 0.9), (305.0, 6.0, 0.9), (520.0, 5.0, 0.8), (870.0, 4.0, 0.6),
+                     (1400.0, 3.0, 0.4)):
+        out += g * resonate(src, fc, q) * 6.0
+    out += 1.6 * bandpass(rng.standard_normal(n), 300.0, 3500.0) * np.exp(-t / 0.03)
     debris = ins.crackle(1.3, 28.0, rng, lo=900.0) * np.clip((t - 0.06) / 0.05, 0, 1) * np.exp(-t / 0.4)
     out += 0.35 * debris
     return ramp_in(out, 0.001)

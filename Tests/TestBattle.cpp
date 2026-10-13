@@ -1064,6 +1064,9 @@ IRON_TEST(BattlePlayerChallengeIsAnsweredByTheAI)
 			IRON_EXPECT(BattleTestUtil::LastEvent(Battle, EBattleEventType::DuelDeclined) != nullptr);
 		}
 		IRON_EXPECT(Battle.IsOver() || Battle.IsPlayerTurn());
+		// Each pair duels at most once per battle.
+		BattleTestUtil::EndDay(Battle);
+		IRON_EXPECT(Battle.IsOver() || (Battle.CanAct(0) && Battle.DuelTargets(0).empty() && !Battle.ChallengeDuel(0, 1)));
 	}
 	// A stronger officer accepts nearly always.
 	IRON_EXPECT(Accepted >= 20);
@@ -1337,4 +1340,69 @@ IRON_TEST(BattleBalanceSiegesNeedSuperiorForce)
 	const double Double = BattleTestUtil::WinRate(EBattleKind::Siege, 40000, 20000, 30);
 	IRON_EXPECT_MSG(Even <= 0.15, std::to_string(Even));
 	IRON_EXPECT_MSG(Double >= 0.8, std::to_string(Double));
+}
+
+IRON_TEST(BattleCommandersStayOutOfHarmsWay)
+{
+	int Falls = 0;
+	int CommanderFirst = 0;
+	for (int Index = 0; Index < 24; ++Index)
+	{
+		FBattle Battle;
+		Battle.Setup(BattleTestUtil::MakeArmies(EBattleKind::Field, BattleTestUtil::AllTerrains[Index % 6], 700 + static_cast<uint64_t>(Index), 20000 + 2000 * (Index % 3), 20000));
+		Battle.AutoResolve();
+		int FirstFall[2] = {-1, -1};
+		for (const FBattleEvent& Event : Battle.Events())
+		{
+			const bool bFall = Event.Type == EBattleEventType::Routed || Event.Type == EBattleEventType::Destroyed || Event.Type == EBattleEventType::Captured;
+			if (bFall && FirstFall[Battle.Unit(Event.Unit).Side] < 0)
+			{
+				FirstFall[Battle.Unit(Event.Unit).Side] = Event.Unit;
+			}
+		}
+		for (const int Fallen : FirstFall)
+		{
+			if (Fallen >= 0)
+			{
+				++Falls;
+				CommanderFirst += Battle.Unit(Fallen).bCommander ? 1 : 0;
+			}
+		}
+	}
+	IRON_EXPECT(Falls >= 24);
+	IRON_EXPECT_MSG(CommanderFirst * 100 <= Falls * 15, std::to_string(CommanderFirst) + " of " + std::to_string(Falls));
+}
+
+IRON_TEST(BattleEmptySideLosesAtOnce)
+{
+	FBattleSetup Setup = BattleTestUtil::MakeArmies(EBattleKind::Siege, ETerrain::Plains, 5, 10000, 0, 2);
+	FBattle Battle;
+	Battle.Setup(Setup);
+	IRON_EXPECT(Battle.IsOver());
+	IRON_EXPECT_EQ(Battle.Result().Winner, 0);
+	IRON_EXPECT_EQ(Battle.Result().Days, 1);
+	IRON_EXPECT(!Battle.StepAI());
+
+	FBattleSetup NoArmy = BattleTestUtil::MakeArmies(EBattleKind::Field, ETerrain::Plains, 5, 10000, 10000, 2);
+	NoArmy.Sides[0].Units.clear();
+	const FBattleResult Result = IronSim::ResolveBattleAuto(NoArmy);
+	IRON_EXPECT(Result.bFinished);
+	IRON_EXPECT_EQ(Result.Winner, 1);
+}
+
+IRON_TEST(BattleLoneCommandersStillFight)
+{
+	// A commander without an army cannot hide behind one: it has to engage to win.
+	for (int Kind = 0; Kind < 2; ++Kind)
+	{
+		int Wins = 0;
+		for (uint64_t Seed = 1; Seed <= 6; ++Seed)
+		{
+			const FBattleSetup Setup = BattleTestUtil::MakeArmies(Kind == 0 ? EBattleKind::Field : EBattleKind::Siege, BattleTestUtil::AllTerrains[Seed % 6], Seed, 9000, 2500, 1);
+			const FBattleResult Result = IronSim::ResolveBattleAuto(Setup);
+			Wins += Result.Winner == 0 ? 1 : 0;
+			IRON_EXPECT(Result.Units[0].DamageDealt > 0);
+		}
+		IRON_EXPECT_MSG(Wins >= 5, std::to_string(Wins));
+	}
 }

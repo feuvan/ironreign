@@ -43,10 +43,10 @@ def vibrato_curve(n: int, rate: float, depth: float, onset: float, ramp: float) 
 
 PLUCK = {
     # Steel-nylon zither: bright, long singing sustain, airy box.
-    "guzheng": dict(pos=0.12, alpha=1.0, fbright=5200.0, tau=2.3, tau_ref=294.0, tau_exp=0.55, fdamp=2700.0,
+    "guzheng": dict(pos=0.12, alpha=1.0, fbright=6500.0, tau=2.3, tau_ref=294.0, tau_exp=0.55, fdamp=2700.0,
                     inharm=6e-5, detune=1.4, noise=0.10, noise_band=(1800.0, 7000.0), noise_tau=0.004,
                     slide_noise=0.010, gain=1.0,
-                    eq=[("peak", 230.0, 3.0, 1.0), ("peak", 2400.0, 2.5, 1.2), ("highshelf", 7500.0, -6.0, 0.7)]),
+                    eq=[("peak", 230.0, 2.0, 1.0), ("peak", 2400.0, 3.0, 1.2), ("highshelf", 8000.0, -3.0, 0.7)]),
     # Pear-shaped lute: plectrum attack, nasal, short.
     "pipa": dict(pos=0.08, alpha=0.85, fbright=6500.0, tau=0.85, tau_ref=330.0, tau_exp=0.4, fdamp=1900.0,
                  inharm=1.5e-4, detune=1.0, noise=0.26, noise_band=(2200.0, 8000.0), noise_tau=0.003,
@@ -54,7 +54,7 @@ PLUCK = {
                  eq=[("lowshelf", 220.0, -4.0, 0.7), ("peak", 520.0, 3.0, 1.2), ("peak", 1500.0, 3.0, 1.5),
                      ("peak", 3200.0, 2.5, 1.5)]),
     # Seven-string zither plucked with the flesh: dark, deep, very long, audible finger slides.
-    "guqin": dict(pos=0.21, alpha=1.35, fbright=1700.0, tau=4.2, tau_ref=147.0, tau_exp=0.3, fdamp=1100.0,
+    "guqin": dict(pos=0.21, alpha=1.35, fbright=1700.0, tau=3.2, tau_ref=147.0, tau_exp=0.3, fdamp=1100.0,
                   inharm=3e-5, detune=0.8, noise=0.05, noise_band=(400.0, 2500.0), noise_tau=0.008,
                   slide_noise=0.035, gain=1.3,
                   eq=[("peak", 160.0, 3.0, 0.9), ("highshelf", 3000.0, -6.0, 0.7)]),
@@ -111,7 +111,8 @@ def pluck(freq: float, dur: float, vel: float = 0.8, preset: str = "guzheng", be
     if damp_at is not None and damp_at < dur:
         m = samples(damp_at)
         out[m:] *= np.exp(-(t[m:] - t[m]) / 0.025)
-    out = fade_out(out, min(0.04, dur * 0.2))
+    # strings are let ring: release over the last third of the buffer instead of cutting a ringing note
+    out = fade_out(out, min(0.04, dur * 0.2) if damp_at is not None else min(0.9, dur * 0.35))
     out = eq(out, p["eq"])
     return out * vel * p["gain"]
 
@@ -279,14 +280,14 @@ DRUMS = {
     "taiko": dict(f_hi=150.0, f_lo=68.0, sweep=0.028, decay=0.40, dur=1.3, noise=0.45, band=(120.0, 1800.0),
                   ntau=0.022, modes=[(1.59, 0.30, 0.55), (2.14, 0.18, 0.40), (2.30, 0.12, 0.35), (2.65, 0.08, 0.3)]),
     # Very large court drum for the title and stings.
-    "dagu": dict(f_hi=110.0, f_lo=50.0, sweep=0.045, decay=0.85, dur=2.4, noise=0.30, band=(80.0, 1200.0),
-                 ntau=0.035, modes=[(1.59, 0.25, 0.5), (2.14, 0.14, 0.4), (2.65, 0.07, 0.3)]),
+    "dagu": dict(f_hi=128.0, f_lo=63.0, sweep=0.04, decay=0.6, dur=2.0, noise=0.35, band=(90.0, 1500.0),
+                 ntau=0.03, modes=[(1.59, 0.30, 0.5), (2.14, 0.18, 0.4), (2.65, 0.10, 0.3)]),
     # Small hall drum (tanggu): rolls, fills and backbeats.
     "tanggu": dict(f_hi=290.0, f_lo=200.0, sweep=0.018, decay=0.15, dur=0.6, noise=0.70, band=(300.0, 5000.0),
                    ntau=0.018, modes=[(1.59, 0.35, 0.6), (2.14, 0.22, 0.45), (2.65, 0.15, 0.35)]),
     # Muffled heartbeat thump for the duel.
-    "heart": dict(f_hi=75.0, f_lo=44.0, sweep=0.035, decay=0.12, dur=0.5, noise=0.12, band=(60.0, 400.0),
-                  ntau=0.02, modes=[(1.59, 0.10, 0.5)], lp=280.0),
+    "heart": dict(f_hi=100.0, f_lo=56.0, sweep=0.03, decay=0.10, dur=0.45, noise=0.25, band=(70.0, 700.0),
+                  ntau=0.02, modes=[(1.59, 0.35, 0.6), (2.30, 0.25, 0.4), (3.1, 0.12, 0.3)], lp=700.0),
 }
 
 
@@ -362,13 +363,13 @@ def gong(f0: float, dur: float, vel: float, rng: np.random.Generator, glide: flo
         out += a * env * (np.sin(r * ph + rng.uniform(0, TAU)) + 0.6 * np.sin(r * (1.0 + beat) * ph + rng.uniform(0, TAU)))
     thud_n = min(n, samples(0.4))
     tt = time_axis(thud_n)
-    out[:thud_n] += 0.5 * np.exp(-tt / 0.09) * np.sin(TAU * f0 * 0.5 * tt)
+    out[:thud_n] += 0.25 * np.exp(-tt / 0.07) * np.sin(TAU * max(f0 * 0.5, 70.0) * tt)
     sn = min(n, samples(0.06))
     out[:sn] += 0.5 * lowpass(rng.standard_normal(sn), 1800.0) * exp_decay(sn, 0.015)
     shimmer = bandpass(rng.standard_normal(n), 2000.0, 6500.0) * (1.0 - np.exp(-t / 0.25)) * np.exp(-t / (decay * 0.4))
     out += 0.06 * bright * shimmer
     out = ramp_in(out, 0.001)
-    out = fade_out(out, min(0.6, dur * 0.25))
+    out = fade_out(out, dur * 0.4)
     return out * vel
 
 
@@ -385,7 +386,7 @@ def cymbal(dur: float, vel: float, rng: np.random.Generator, decay: float = 1.1,
     out += 0.6 * highpass(rng.standard_normal(n), 2500.0, 2) * np.exp(-t / (decay * 0.55))
     out += 0.7 * bandpass(rng.standard_normal(n), 400.0, 3000.0) * np.exp(-t / 0.05)
     out = ramp_in(out, 0.0008)
-    return fade_out(out, min(0.4, dur * 0.3)) * vel
+    return fade_out(out, dur * 0.4) * vel
 
 
 BELL_PARTIALS = [(0.5, 0.30, 1.6), (1.0, 1.0, 1.0), (1.19, 0.50, 0.75), (1.51, 0.30, 0.6), (2.0, 0.42, 0.5),
@@ -407,7 +408,7 @@ def bell(f0: float, dur: float, vel: float, rng: np.random.Generator, decay: flo
     sn = min(n, samples(0.01))
     out[:sn] += 0.3 * highpass(rng.standard_normal(sn), 2000.0) * exp_decay(sn, 0.002)
     out = ramp_in(out, 0.0015)
-    return fade_out(out, min(0.3, dur * 0.2)) * vel
+    return fade_out(out, dur * 0.35) * vel
 
 
 BAR_MODES = [1.0, 2.756, 5.404, 8.933, 13.344]

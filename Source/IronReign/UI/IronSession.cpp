@@ -326,19 +326,19 @@ FText FIronSession::CultureDisplayName(const FString& InCulture)
 	// Native names, written with escapes so the source stays ASCII.
 	if (InCulture == TEXT("zh-Hans"))
 	{
-		return FText::FromString(TEXT("简体中文"));
+		return FText::FromString(TEXT("\u7B80\u4F53\u4E2D\u6587"));
 	}
 	if (InCulture == TEXT("zh-Hant"))
 	{
-		return FText::FromString(TEXT("繁體中文"));
+		return FText::FromString(TEXT("\u7E41\u9AD4\u4E2D\u6587"));
 	}
 	if (InCulture == TEXT("ja"))
 	{
-		return FText::FromString(TEXT("日本語"));
+		return FText::FromString(TEXT("\u65E5\u672C\u8A9E"));
 	}
 	if (InCulture == TEXT("ko"))
 	{
-		return FText::FromString(TEXT("한국어"));
+		return FText::FromString(TEXT("\uD55C\uAD6D\uC5B4"));
 	}
 	return FText::FromString(TEXT("English"));
 }

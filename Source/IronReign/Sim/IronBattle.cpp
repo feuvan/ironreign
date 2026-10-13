@@ -28,6 +28,8 @@ namespace IronSim
 		/** Used when a siege setup leaves GateHp / WallBonus at 0. */
 		constexpr int DefaultGateHp = 1200;
 		constexpr int DefaultWallBonus = 30;
+		/** Encodes a (challenger, target) pair in IssuedChallenges. */
+		constexpr int ChallengeKeyStride = 4096;
 
 		std::string LocationOf(const FBattleSetup& Setup)
 		{
@@ -308,7 +310,7 @@ namespace IronSim
 		SecondGate = {-1, -1};
 		SecondGateHitPoints = 0;
 		bAnyGateBroken = false;
-		AIChallenges.clear();
+		IssuedChallenges.clear();
 		Rng = FRng(Config.Seed ^ 0xB7E151628AED2A6Bull);
 		Rng.Next();
 
@@ -328,7 +330,7 @@ namespace IronSim
 				if (NewUnit.Setup.Name.empty())
 				{
 					++GarrisonNumber;
-					NewUnit.Setup.Name = LocF("battle.unit.garrison", "Garrison {index}", {{"index", ToText(GarrisonNumber)}});
+					NewUnit.Setup.Name = LocF("battle.unit.detachment", "Detachment {index}", {{"index", ToText(GarrisonNumber)}});
 				}
 				NewUnit.Troops = std::max(0, NewUnit.Setup.Troops);
 				NewUnit.StartTroops = NewUnit.Troops;
@@ -825,7 +827,8 @@ namespace IronSim
 		}
 		for (const FBattleUnit& Other : BattleUnits)
 		{
-			if (Other.IsActive() && Other.Side != Actor.Side && Other.Setup.Officer >= 0 && HexMath::Distance(Actor.Pos, Other.Pos) == 1)
+			const int Key = UnitId * BattleDetail::ChallengeKeyStride + Other.Id;
+			if (Other.IsActive() && Other.Side != Actor.Side && Other.Setup.Officer >= 0 && HexMath::Distance(Actor.Pos, Other.Pos) == 1 && std::find(IssuedChallenges.begin(), IssuedChallenges.end(), Key) == IssuedChallenges.end())
 			{
 				Targets.push_back(Other.Id);
 			}
@@ -1352,6 +1355,7 @@ namespace IronSim
 		const FBattleUnit& Challenged = BattleUnits[static_cast<size_t>(TargetId)];
 		Challenger.bMoved = true;
 		Challenger.bActed = true;
+		IssuedChallenges.push_back(UnitId * BattleDetail::ChallengeKeyStride + TargetId);
 		const int Chance = AcceptChance(UnitId, TargetId);
 		Emit(EBattleEventType::DuelChallenge, UnitId, TargetId, Challenger.Pos, Challenged.Pos, Chance, LocF("battle.log.challenge", "{unit} challenges {target} to a duel!", {{"unit", Challenger.Setup.Name}, {"target", Challenged.Setup.Name}}));
 		if (IsSideAI(Challenged.Side))
@@ -1426,7 +1430,7 @@ namespace IronSim
 	{
 		FBattleUnit& Challenger = BattleUnits[static_cast<size_t>(ChallengerId)];
 		FBattleUnit& Challenged = BattleUnits[static_cast<size_t>(ChallengedId)];
-		const int Penalty = 12;
+		const int Penalty = 10;
 		Challenged.Morale = ClampInt(Challenged.Morale - Penalty, 0, 100);
 		Challenger.Morale = ClampInt(Challenger.Morale + 5, 0, 100);
 		Emit(EBattleEventType::DuelDeclined, ChallengerId, ChallengedId, Challenger.Pos, Challenged.Pos, Penalty, LocF("battle.log.challengeDeclined", "{target} refuses to face {unit}; the troops lose heart.", {{"unit", Challenger.Setup.Name}, {"target", Challenged.Setup.Name}}));

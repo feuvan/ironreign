@@ -153,7 +153,13 @@ void SIronRoot::ShowBattle(const IronSim::FBattleSetup& Setup, FOnIronBattleFini
 void SIronRoot::SetScreen(const TSharedRef<SWidget>& Screen)
 {
 	ScreenHost->SetContent(Screen);
-	FocusRoot();
+	// Screens with keyboard handling (strategy, battle) get focus; unhandled keys such as Escape bubble up to the root.
+	const bool bScreenFocused = !HasModal() && Screen->SupportsKeyboardFocus() && FSlateApplication::IsInitialized()
+		&& FSlateApplication::Get().SetKeyboardFocus(Screen, EFocusCause::SetDirectly);
+	if (!bScreenFocused)
+	{
+		FocusRoot();
+	}
 }
 
 void SIronRoot::FocusRoot()
@@ -220,7 +226,12 @@ void SIronRoot::PushModalInternal(const TSharedRef<SWidget>& Widget, bool bPopOn
 	FModalInfo Info;
 	Info.bPopOnEscape = bPopOnEscape;
 	Info.OnEscape = MoveTemp(OnEscape);
+	if (FSlateApplication::IsInitialized())
+	{
+		Info.PreviousFocus = FSlateApplication::Get().GetKeyboardFocusedWidget();
+	}
 	ModalInfos.Add(MoveTemp(Info));
+	// Keys go to the root while a modal is open (Escape handling, no shortcuts reaching the screen below).
 	FocusRoot();
 }
 
@@ -233,12 +244,20 @@ void SIronRoot::PopModal()
 	const int32 TopIndex = ModalStack.Num() - 1;
 	const TSharedRef<SWidget> Layer = ModalStack[TopIndex];
 	ModalStack.RemoveAt(TopIndex);
+	TSharedPtr<SWidget> FocusToRestore;
 	if (ModalInfos.IsValidIndex(TopIndex))
 	{
+		FocusToRestore = ModalInfos[TopIndex].PreviousFocus.Pin();
 		ModalInfos.RemoveAt(TopIndex);
 	}
 	ModalLayer->RemoveSlot(Layer);
-	FocusRoot();
+
+	const bool bRestored = FocusToRestore.IsValid() && FSlateApplication::IsInitialized()
+		&& FSlateApplication::Get().SetKeyboardFocus(FocusToRestore, EFocusCause::SetDirectly);
+	if (!bRestored)
+	{
+		FocusRoot();
+	}
 }
 
 bool SIronRoot::HasModal() const
@@ -248,12 +267,17 @@ bool SIronRoot::HasModal() const
 
 void SIronRoot::ClearModals()
 {
+	const bool bHadModals = ModalStack.Num() > 0;
 	if (ModalLayer.IsValid())
 	{
 		ModalLayer->ClearChildren();
 	}
 	ModalStack.Reset();
 	ModalInfos.Reset();
+	if (bHadModals)
+	{
+		FocusRoot();
+	}
 }
 
 void SIronRoot::ShowMessage(const FText& Title, const FText& Message, TFunction<void()> OnClose)

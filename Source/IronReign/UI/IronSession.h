@@ -28,8 +28,8 @@ struct FIronSaveSlot
  * Created by UIronReignWorldStateSubsystem and shared by every Slate screen.
  *
  * Files:
- *   Content/Data/Scenarios/*.json                 scenarios
- *   Content/Data/Localization/<culture>/*.json    string tables (Strings.json + Scenario_<key>.json)
+ *   Content/Data/Scenarios/<name>.json            scenarios
+ *   Content/Data/Localization/<culture>/<table>.json  string tables (Strings.json + Scenario_<key>.json)
  *   <ProjectSaved>/SaveGames/IronReign_<slot>.json save games (slot 0 = autosave)
  *   <ProjectSaved>/IronReign/Settings.json        culture + options
  */
@@ -90,8 +90,8 @@ public:
 	/** Maps any culture name ("zh-CN", "ja_JP", "zh-Hant-TW"...) to a supported culture, or "" if unsupported. */
 	static FString NormalizeCulture(const FString& CultureName);
 	/**
-	 * Resets IronSim::FLocale::Active() to InCulture and loads Localization/en/*.json followed by
-	 * Localization/<InCulture>/*.json. Returns the number of tables loaded; files that fail to parse are
+	 * Resets IronSim::FLocale::Active() to InCulture and loads every .json file in Localization/en, then every .json
+	 * file in Localization/<InCulture>. Returns the number of tables loaded; files that fail to parse are
 	 * reported in OutErrors (and logged). Does not touch fonts or settings (see SetCulture).
 	 */
 	static int32 LoadCultureStrings(const FString& InCulture, TArray<FString>* OutErrors = nullptr);
