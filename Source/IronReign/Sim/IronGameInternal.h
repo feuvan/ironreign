@@ -82,6 +82,8 @@ namespace IronSim
 			constexpr int AIWarmupMonths = 24;
 			/** Share of an adjacent same-owner garrison the AI expects to come to a besieged city's aid. */
 			constexpr int AISupportPercent = 20;
+			/** Strength the AI credits to garrison troops beyond what a city's officers can lead (percent). */
+			constexpr int AIGarrisonPercent = 60;
 		}
 
 		constexpr int Unreachable = 1 << 29;

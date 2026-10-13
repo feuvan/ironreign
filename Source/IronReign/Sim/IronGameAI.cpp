@@ -63,10 +63,53 @@ namespace IronSim
 				return Best;
 			}
 
+			/** Officers of City's owner stationed there, best commanders first. */
+			std::vector<int> CommandersIn(const FGameState& State, int City)
+			{
+				std::vector<int> Officers = OfficersInCity(State, City, At(State.Cities, City).Owner);
+				std::stable_sort(Officers.begin(), Officers.end(), [&State](int Left, int Right) {
+					return StatOf(At(State.Officers, Left), EStat::Command) > StatOf(At(State.Officers, Right), EStat::Command);
+				});
+				return Officers;
+			}
+
+			/** Troops the officers in City could lead out in up to two armies. */
+			int LeadableTroops(const FGameState& State, int City)
+			{
+				long long Capacity = 0;
+				int Count = 0;
+				for (const int Officer : CommandersIn(State, City))
+				{
+					if (Count++ >= 2 * MaxArmyUnits)
+					{
+						break;
+					}
+					Capacity += MaxUnitTroopsOf(State, Officer);
+				}
+				return static_cast<int>(std::min<long long>(Capacity, At(State.Cities, City).Troops));
+			}
+
+			/**
+			 * Expected fighting strength of City's defenders: officers lead up to five units (as in a siege setup);
+			 * troops beyond what they can lead fight as nameless garrison detachments at reduced strength.
+			 */
 			long long CityDefensePower(const FGameState& State, int City)
 			{
 				const FCity& Data = At(State.Cities, City);
-				const long long Base = Power(Data.Troops, Data.Training, BestCommandIn(State, City, Data.Owner));
+				std::vector<int> Officers = CommandersIn(State, City);
+				if (CountOf(Officers) > Balance::MaxDefenderOfficers)
+				{
+					Officers.resize(static_cast<size_t>(Balance::MaxDefenderOfficers));
+				}
+				long long Led = 0;
+				int BestCommand = Balance::GarrisonUnitStat;
+				for (const int Officer : Officers)
+				{
+					Led += std::min(MaxUnitTroopsOf(State, Officer), Data.Troops / std::max(1, CountOf(Officers)));
+					BestCommand = std::max(BestCommand, StatOf(At(State.Officers, Officer), EStat::Command));
+				}
+				const int LedTroops = static_cast<int>(std::min<long long>(Led, Data.Troops));
+				const long long Base = Power(LedTroops, Data.Training, BestCommand) + Power(Data.Troops - LedTroops, Data.Training, Balance::GarrisonUnitStat) * Balance::AIGarrisonPercent / 100;
 				return Base * (100 + Data.Defense / 40) / 100;
 			}
 
@@ -123,7 +166,7 @@ namespace IronSim
 							const FCity& Far = At(State.Cities, Second);
 							if (Second != City && Second != IgnoreCity && Far.Owner >= 0 && Far.Owner != Faction && State.AreHostile(Faction, Far.Owner))
 							{
-								Plan.Threat = std::max(Plan.Threat, Far.Troops / 2);
+								Plan.Threat = std::max(Plan.Threat, LeadableTroops(State, Second) / 2);
 							}
 						}
 						continue;
@@ -131,7 +174,8 @@ namespace IronSim
 					Plan.bFrontier = true;
 					if (Data.Owner >= 0 && Neighbor != IgnoreCity)
 					{
-						Plan.Threat = std::max(Plan.Threat, Data.Troops);
+						// A garrison only threatens us with what its officers can lead out.
+						Plan.Threat = std::max(Plan.Threat, LeadableTroops(State, Neighbor));
 					}
 				}
 				Plan.Incoming = IncomingHostileTroops(State, City, Faction);
