@@ -9,7 +9,8 @@ class UGameViewportClient;
 
 /**
  * Local UI controller: shows the mouse cursor, adds SIronRoot to the game viewport with UI-only input and disables
- * world rendering (the Entry map has nothing to draw). The widget is removed again in EndPlay.
+ * world rendering (the Entry map has nothing to draw). Attaches FIronAudio to the world for music and effects.
+ * The widget is removed and the audio shut down again in EndPlay.
  */
 UCLASS()
 class IRONREIGN_API AIronReignPlayerController : public APlayerController
@@ -29,4 +30,6 @@ private:
 
 	TSharedPtr<SIronRoot> RootWidget;
 	TWeakObjectPtr<UGameViewportClient> RootViewport;
+	/** True once this controller attached FIronAudio to its world (only the local UI controller does). */
+	bool bAudioAttached = false;
 };

@@ -1,6 +1,7 @@
 #include "UI/SIronBattleScreen.h"
 
 #include "UI/IronAssets.h"
+#include "UI/IronAudio.h"
 #include "UI/IronSession.h"
 #include "UI/IronStyle.h"
 #include "UI/IronUI.h"
@@ -105,6 +106,8 @@ void SIronBattleScreen::Construct(const FArguments& InArgs)
 	{
 		CultureChangedHandle = Session->OnCultureChanged.AddSP(this, &SIronBattleScreen::OnCultureChanged);
 	}
+
+	FIronAudio::Get().PlayMusic(TEXT("Battle"));
 
 	// Setup events (e.g. the first DayStart) play as the screen opens.
 	ConsumeEvents(true);
@@ -1051,11 +1054,18 @@ bool SIronBattleScreen::IsAnyModalOpen() const
 	return PinnedRoot.IsValid() && PinnedRoot->HasModal();
 }
 
-void SIronBattleScreen::PushScreenModal(const TSharedRef<SWidget>& Widget)
+void SIronBattleScreen::PushScreenModal(const TSharedRef<SWidget>& Widget, bool bMustAnswer)
 {
 	if (const TSharedPtr<SIronRoot> PinnedRoot = Root.Pin())
 	{
-		PinnedRoot->PushModal(Widget);
+		if (bMustAnswer)
+		{
+			PinnedRoot->PushModalWithEscape(Widget, nullptr);
+		}
+		else
+		{
+			PinnedRoot->PushModal(Widget);
+		}
 	}
 	else
 	{
@@ -1207,7 +1217,7 @@ void SIronBattleScreen::ShowChallenge()
 			]
 		];
 
-	PushScreenModal(MakeModalFrame(Content, 660.0f));
+	PushScreenModal(MakeModalFrame(Content, 660.0f), true);
 }
 
 FReply SIronBattleScreen::OnChallengeAccept()
@@ -1218,6 +1228,7 @@ FReply SIronBattleScreen::OnChallengeAccept()
 
 FReply SIronBattleScreen::OnChallengeDecline()
 {
+	FIronAudio::Get().PlaySfx(TEXT("Cancel"));
 	AnswerChallenge(false);
 	return FReply::Handled();
 }
@@ -1261,17 +1272,19 @@ void SIronBattleScreen::OpenDuel()
 		}
 	}
 
+	FIronAudio::Get().PlayMusic(TEXT("Duel"));
 	PushScreenModal(SNew(SIronDuelDialog)
 		.Battle(Battle)
 		.Session(Session)
 		.PlayerSide(PlayerDuelSide)
-		.OnClosed(FSimpleDelegate::CreateSP(this, &SIronBattleScreen::OnDuelClosed)));
+		.OnClosed(FSimpleDelegate::CreateSP(this, &SIronBattleScreen::OnDuelClosed)), true);
 }
 
 void SIronBattleScreen::OnDuelClosed()
 {
 	const TSharedRef<SIronBattleScreen> KeepAlive = SharedThis(this);
 	PopScreenModal();
+	FIronAudio::Get().PlayMusic(TEXT("Battle"));
 	if (Battle->HasActiveDuel())
 	{
 		if (!Battle->ActiveDuel().IsOver())
@@ -1450,7 +1463,12 @@ void SIronBattleScreen::ShowResult()
 		IronStyle::MakeButton(IronUI::Loc("ui.battle.result.continue", "Continue"), FOnClicked::CreateSP(this, &SIronBattleScreen::OnResultContinue), true, FString(), 220.0f)
 	];
 
-	PushScreenModal(MakeModalFrame(Content, 780.0f));
+	if (bHasWinner && PlayerSide >= 0)
+	{
+		// One-shot sting; the strategy music takes over once the player continues.
+		FIronAudio::Get().PlayMusic(Winner == PlayerSide ? TEXT("Victory") : TEXT("Defeat"), false);
+	}
+	PushScreenModal(MakeModalFrame(Content, 780.0f), true);
 }
 
 FReply SIronBattleScreen::OnResultContinue()
@@ -1517,6 +1535,7 @@ void SIronBattleScreen::ShowDelegatePrompt()
 
 FReply SIronBattleScreen::OnDelegateWatch()
 {
+	FIronAudio::Get().PlaySfx(TEXT("Confirm"));
 	PopScreenModal();
 	if (PlayerSide < 0 || Battle->IsOver())
 	{
@@ -1534,6 +1553,7 @@ FReply SIronBattleScreen::OnDelegateWatch()
 
 FReply SIronBattleScreen::OnDelegateSkip()
 {
+	FIronAudio::Get().PlaySfx(TEXT("Confirm"));
 	PopScreenModal();
 	if (PlayerSide < 0 || Battle->IsOver())
 	{
@@ -1555,6 +1575,7 @@ FReply SIronBattleScreen::OnDelegateSkip()
 
 FReply SIronBattleScreen::OnDelegateCancel()
 {
+	FIronAudio::Get().PlaySfx(TEXT("Cancel"));
 	PopScreenModal();
 	return FReply::Handled();
 }
@@ -1720,6 +1741,7 @@ FReply SIronBattleScreen::OnEndTurnClicked()
 	{
 		return FReply::Handled();
 	}
+	FIronAudio::Get().PlaySfx(TEXT("EndTurn"));
 	SelectedUnit = -1;
 	Mode = EIronBattleMode::None;
 	Battle->EndTurn();

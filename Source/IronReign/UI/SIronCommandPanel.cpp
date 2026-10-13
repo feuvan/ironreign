@@ -2,6 +2,7 @@
 
 #include "Sim/IronLocale.h"
 #include "UI/IronAssets.h"
+#include "UI/IronAudio.h"
 #include "UI/IronSession.h"
 #include "UI/IronStyle.h"
 #include "UI/IronUI.h"
@@ -196,7 +197,7 @@ TSharedRef<SWidget> SIronCommandPanel::BuildTabBar()
 			.HAlign(HAlign_Center)
 			.VAlign(VAlign_Center)
 			.ContentPadding(FMargin(4.0f, 6.0f))
-			.OnClicked(FOnClicked::CreateSP(this, &SIronCommandPanel::HandleTab, Info.Tab))
+			.OnClicked(IronStyle::WithClickSound(FOnClicked::CreateSP(this, &SIronCommandPanel::HandleTab, Info.Tab)))
 			[
 				SNew(STextBlock)
 				.Text(Info.Label)
@@ -1079,6 +1080,7 @@ FReply SIronCommandPanel::HandleCancelOrder(int32 Officer)
 {
 	if (CanCommand() && Session->Game().CancelOrder(Officer))
 	{
+		FIronAudio::Get().PlaySfx(TEXT("Cancel"));
 		Session->NotifyStateChanged();
 	}
 	return FReply::Handled();
@@ -1088,6 +1090,7 @@ FReply SIronCommandPanel::HandleDisband(int32 ArmyId)
 {
 	if (Session.IsValid() && Session->HasGame() && Session->Game().IsPlanning() && Session->Game().DisbandArmy(ArmyId))
 	{
+		FIronAudio::Get().PlaySfx(TEXT("Cancel"));
 		Session->NotifyStateChanged();
 	}
 	return FReply::Handled();

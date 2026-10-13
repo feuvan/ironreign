@@ -89,7 +89,8 @@ private:
 
 	// Modals.
 	bool IsAnyModalOpen() const;
-	void PushScreenModal(const TSharedRef<SWidget>& Widget);
+	/** bMustAnswer: Escape cannot dismiss the modal (duel challenge, active duel, battle result). */
+	void PushScreenModal(const TSharedRef<SWidget>& Widget, bool bMustAnswer = false);
 	void PopScreenModal();
 	void ShowChallenge();
 	FReply OnChallengeAccept();

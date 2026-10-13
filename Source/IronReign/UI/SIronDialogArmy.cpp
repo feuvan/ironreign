@@ -2,6 +2,7 @@
 
 #include "Sim/IronLocale.h"
 #include "UI/IronAssets.h"
+#include "UI/IronAudio.h"
 #include "UI/IronSession.h"
 #include "UI/IronStyle.h"
 #include "UI/IronUI.h"
@@ -594,6 +595,7 @@ FReply SIronArmyDialog::HandleMarch()
 	std::string Error;
 	if (Session->Game().FormArmy(MakePlan(), Error))
 	{
+		FIronAudio::Get().PlaySfx(TEXT("March"));
 		Session->NotifyStateChanged();
 		CloseDialog();
 		return FReply::Handled();
@@ -604,6 +606,7 @@ FReply SIronArmyDialog::HandleMarch()
 
 FReply SIronArmyDialog::HandleCancel()
 {
+	FIronAudio::Get().PlaySfx(TEXT("Cancel"));
 	CloseDialog();
 	return FReply::Handled();
 }

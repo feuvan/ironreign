@@ -224,3 +224,15 @@ def ortho_units_per_px(cam, scene=None):
     sc = scene or bpy.context.scene
     W, H = sc.render.resolution_x, sc.render.resolution_y
     return cam.data.ortho_scale / max(W, H) * _scene.supersample_factor(sc)
+
+
+def center_on(cam, objs, x_frac=0.5, scene=None):
+    """Shift a (perspective or ortho) camera horizontally so the pixel bbox of ``objs`` is centred
+    at ``x_frac`` of the frame width (portraits: centre head+helmet whatever the yaw)."""
+    sc = scene or bpy.context.scene
+    x0, y0, x1, y1 = pixel_bounds(cam, objs, sc)
+    W, H = sc.render.resolution_x, sc.render.resolution_y
+    dx = ((x0 + x1) / 2.0 - x_frac * W) / max(W, H)
+    cam.data.shift_x += dx
+    bpy.context.view_layer.update()
+    return dx

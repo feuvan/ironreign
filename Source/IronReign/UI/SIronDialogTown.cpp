@@ -3,6 +3,7 @@
 #include "Sim/IronGame.h"
 #include "Sim/IronLocale.h"
 #include "UI/IronAssets.h"
+#include "UI/IronAudio.h"
 #include "UI/IronSession.h"
 #include "UI/IronStyle.h"
 #include "UI/IronUI.h"
@@ -21,8 +22,10 @@
 
 namespace IronDialogTownDetail
 {
+	/** Close button of the town dialogs. */
 	void PopModal(const TWeakPtr<SIronRoot>& WeakRoot)
 	{
+		FIronAudio::Get().PlaySfx(TEXT("Cancel"));
 		if (TSharedPtr<SIronRoot> RootPtr = WeakRoot.Pin())
 		{
 			RootPtr->PopModal();
@@ -228,6 +231,7 @@ FReply SIronMarketDialog::HandleTrade(bool bBuy)
 	std::string Error;
 	if (Session->Game().TradeFood(CityIndex, bBuy ? Traded : -Traded, Error))
 	{
+		FIronAudio::Get().PlaySfx(TEXT("Coins"));
 		bResultError = false;
 		ResultText = bBuy
 			? IronUI::LocF("ui.strategy.boughtFood", "Bought {amount} food for {gold} gold.", {{"amount", IronUI::ToStd(IronStrategy::Num(Traded).ToString())}, {"gold", IronUI::ToStd(IronStrategy::Num(GoldAmount).ToString())}})
@@ -615,6 +619,7 @@ FReply SIronSectDialog::HandleDonate(int32 Sect)
 	std::string Error;
 	if (Session->Game().DonateToSect(CityIndex, Sect, Amount, Error))
 	{
+		FIronAudio::Get().PlaySfx(TEXT("Coins"));
 		bResultError = false;
 		ResultText = IronUI::LocF("ui.strategy.donated", "The {sect} accepts {gold} gold with gratitude.", {{"sect", IronUI::ToStd(IronStrategy::SectName(Session->State(), Sect).ToString())}, {"gold", IronUI::ToStd(IronStrategy::Num(Amount).ToString())}});
 		DonationValue = FMath::Min(DonationValue, CityGold());
@@ -835,6 +840,7 @@ FReply SIronRewardDialog::HandleReward()
 	std::string Error;
 	if (Session->Game().RewardOfficer(SelectedOfficer, GoldValue, Error))
 	{
+		FIronAudio::Get().PlaySfx(TEXT("Coins"));
 		const IronSim::FOfficer* Data = IronStrategy::GetOfficer(Session->State(), SelectedOfficer);
 		bResultError = false;
 		ResultText = IronUI::LocF("ui.strategy.rewarded", "{name} is grateful. Loyalty is now {loyalty}.", {{"name", IronUI::ToStd(IronStrategy::OfficerName(Session->State(), SelectedOfficer).ToString())}, {"loyalty", IronSim::ToText(Data ? Data->Loyalty : 0)}});

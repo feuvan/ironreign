@@ -2,6 +2,7 @@
 
 #include "IronReignLog.h"
 #include "UI/IronAssets.h"
+#include "UI/IronAudio.h"
 #include "UI/IronSession.h"
 #include "UI/IronStyle.h"
 
@@ -17,6 +18,9 @@ void UIronReignWorldStateSubsystem::Deinitialize()
 {
 	if (Session.IsValid())
 	{
+		// Normally done by AIronReignPlayerController::EndPlay; repeated here (idempotent) so no sound object
+		// outlives the world, e.g. when the world is torn down without its actors ending play.
+		FIronAudio::Get().Shutdown();
 		IronStyle::SetSession(nullptr);
 		Session.Reset();
 		// Styles reference textures owned by FIronAssets: clear the styles first, then release the textures.

@@ -65,7 +65,7 @@ namespace IronStyle
 	IRONREIGN_API const FTextBlockStyle& BodyText();
 	IRONREIGN_API const FTableRowStyle& TableRow();
 
-	// Widget factories.
+	// Widget factories. Buttons made here play the "Click" effect (see WithClickSound).
 	IRONREIGN_API TSharedRef<SWidget> MakePanel(const TSharedRef<SWidget>& Content, bool bDark = false, const FMargin& Padding = FMargin(18.0f));
 	/** Lacquer button with light text and an optional icon (Art/UI/Icon_<IconName>.png). */
 	IRONREIGN_API TSharedRef<SButton> MakeButton(const TAttribute<FText>& Label, FOnClicked OnClicked, const TAttribute<bool>& IsEnabled = true, const FString& IconName = FString(), float MinWidth = 0.0f);
@@ -93,4 +93,11 @@ namespace IronStyle
 	IRONREIGN_API TSharedRef<SWidget> MakeDivider(float Height = 12.0f);
 	/** Selectable pill for option rows on parchment (language, speeds): gold when bActive, ink text in LabelFont. */
 	IRONREIGN_API TSharedRef<SButton> MakeChoiceButton(const FText& Label, bool bActive, FOnClicked OnClicked, const FSlateFontInfo& LabelFont);
+
+	// ----- Additions (integration) -----
+	/**
+	 * Wraps a click handler so the button plays the "Click" effect, unless the handler itself already requested a
+	 * sound (e.g. "Confirm", "EndTurn"). MakeButton / MakeChoiceButton do this; use it for hand-built buttons (tabs).
+	 */
+	IRONREIGN_API FOnClicked WithClickSound(FOnClicked OnClicked);
 }

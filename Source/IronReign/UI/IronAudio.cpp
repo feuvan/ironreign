@@ -219,6 +219,7 @@ struct FIronAudio::FState
 	TMap<FString, double> LastSfxTimes;
 	FString MusicTrack;
 	bool bMusicLoop = true;
+	uint32 SfxRequests = 0;
 	float MusicVolume = 0.7f;
 	float SfxVolume = 0.8f;
 
@@ -538,7 +539,13 @@ void FIronAudio::StopMusic()
 
 void FIronAudio::PlaySfx(const FString& Name)
 {
+	++State->SfxRequests;
 	State->PlaySfx(Name);
+}
+
+uint32 FIronAudio::GetSfxRequestCount() const
+{
+	return State->SfxRequests;
 }
 
 void FIronAudio::SetMusicVolume(const float Volume)

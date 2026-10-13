@@ -1,12 +1,14 @@
 #include "UI/SIronSettingsDialog.h"
 
 #include "Sim/IronLocale.h"
+#include "UI/IronAudio.h"
 #include "UI/IronSession.h"
 #include "UI/IronStyle.h"
 #include "UI/IronUI.h"
 #include "UI/SIronRoot.h"
 
 #include "Widgets/Input/SButton.h"
+#include "Widgets/Input/SSlider.h"
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/SBoxPanel.h"
 #include "Widgets/Text/STextBlock.h"
@@ -14,6 +16,8 @@
 namespace IronSettingsDetail
 {
 	constexpr float ChoiceSpacing = 8.0f;
+	constexpr float VolumeLabelWidth = 200.0f;
+	constexpr float VolumeValueWidth = 64.0f;
 
 	TSharedRef<SWidget> MakeSectionLabel(const FText& Text)
 	{
@@ -52,6 +56,14 @@ void SIronSettingsDialog::Construct(const FArguments& InArgs)
 	Rebuild();
 }
 
+SIronSettingsDialog::~SIronSettingsDialog()
+{
+	if (bVolumeDirty)
+	{
+		CommitVolumes(false);
+	}
+}
+
 void SIronSettingsDialog::Rebuild()
 {
 	if (!ContentHost.IsValid())
@@ -76,6 +88,23 @@ void SIronSettingsDialog::Rebuild()
 		.AutoHeight()
 		[
 			MakeLanguageRow()
+		]
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.Padding(FMargin(0.0f, 20.0f, 0.0f, 8.0f))
+		[
+			IronSettingsDetail::MakeSectionLabel(IronUI::Loc("ui.settings.sound", "Sound"))
+		]
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.Padding(FMargin(0.0f, 0.0f, 0.0f, 6.0f))
+		[
+			MakeVolumeRow(IronUI::Loc("ui.settings.musicVolume", "Music volume"), true)
+		]
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		[
+			MakeVolumeRow(IronUI::Loc("ui.settings.sfxVolume", "Effects volume"), false)
 		]
 		+ SVerticalBox::Slot()
 		.AutoHeight()
@@ -140,6 +169,55 @@ TSharedRef<SWidget> SIronSettingsDialog::MakeLanguageRow()
 			];
 	}
 	return Choices;
+}
+
+TSharedRef<SWidget> SIronSettingsDialog::MakeVolumeRow(const FText& Label, bool bMusic)
+{
+	return SNew(SHorizontalBox)
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		.VAlign(VAlign_Center)
+		[
+			SNew(SBox)
+			.WidthOverride(IronSettingsDetail::VolumeLabelWidth)
+			[
+				SNew(STextBlock)
+				.Text(Label)
+				.Font(IronStyle::Body(16.0f))
+				.ColorAndOpacity(IronStyle::Ink())
+			]
+		]
+		+ SHorizontalBox::Slot()
+		.FillWidth(1.0f)
+		.VAlign(VAlign_Center)
+		.Padding(FMargin(8.0f, 0.0f))
+		[
+			SNew(SSlider)
+			.MinValue(0.0f)
+			.MaxValue(1.0f)
+			.StepSize(0.05f)
+			.Value(TAttribute<float>::CreateLambda([this, bMusic]() { return GetVolume(bMusic); }))
+			.SliderBarColor(IronStyle::InkSoft())
+			.SliderHandleColor(IronStyle::Lacquer())
+			.OnValueChanged(FOnFloatValueChanged::CreateSP(this, &SIronSettingsDialog::OnVolumeChanged, bMusic))
+			// Preview the effects volume when a drag ends; music is heard while dragging.
+			.OnMouseCaptureEnd(FSimpleDelegate::CreateSP(this, &SIronSettingsDialog::CommitVolumes, !bMusic))
+			.OnControllerCaptureEnd(FSimpleDelegate::CreateSP(this, &SIronSettingsDialog::CommitVolumes, !bMusic))
+		]
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		.VAlign(VAlign_Center)
+		[
+			SNew(SBox)
+			.WidthOverride(IronSettingsDetail::VolumeValueWidth)
+			[
+				SNew(STextBlock)
+				.Text(TAttribute<FText>::CreateLambda([this, bMusic]() { return GetVolumeText(bMusic); }))
+				.Font(IronStyle::BodyBold(15.0f))
+				.ColorAndOpacity(IronStyle::Ink())
+				.Justification(ETextJustify::Right)
+			]
+		];
 }
 
 TSharedRef<SWidget> SIronSettingsDialog::MakeMapSpeedRow()
@@ -225,8 +303,64 @@ FReply SIronSettingsDialog::OnBattleSpeed(float StepSeconds)
 	return FReply::Handled();
 }
 
+float SIronSettingsDialog::GetVolume(bool bMusic) const
+{
+	if (!Session.IsValid())
+	{
+		return bMusic ? FIronAudio::Get().GetMusicVolume() : FIronAudio::Get().GetSfxVolume();
+	}
+	return bMusic ? Session->GetMusicVolume() : Session->GetSfxVolume();
+}
+
+FText SIronSettingsDialog::GetVolumeText(bool bMusic) const
+{
+	return IronUI::LocF("ui.settings.volumePercent", "{percent}%", {{"percent", IronSim::ToText(FMath::RoundToInt(GetVolume(bMusic) * 100.0f))}});
+}
+
+void SIronSettingsDialog::OnVolumeChanged(float NewValue, bool bMusic)
+{
+	if (Session.IsValid())
+	{
+		if (bMusic)
+		{
+			Session->SetMusicVolume(NewValue, false);
+		}
+		else
+		{
+			Session->SetSfxVolume(NewValue, false);
+		}
+	}
+	else if (bMusic)
+	{
+		FIronAudio::Get().SetMusicVolume(NewValue);
+	}
+	else
+	{
+		FIronAudio::Get().SetSfxVolume(NewValue);
+	}
+	bVolumeDirty = true;
+}
+
+void SIronSettingsDialog::CommitVolumes(bool bPreviewSfx)
+{
+	if (bVolumeDirty && Session.IsValid())
+	{
+		// Settings.json holds every option: persisting through one setter saves both volumes.
+		Session->SetSfxVolume(Session->GetSfxVolume(), true);
+	}
+	bVolumeDirty = false;
+	if (bPreviewSfx)
+	{
+		FIronAudio::Get().PlaySfx(TEXT("Click"));
+	}
+}
+
 FReply SIronSettingsDialog::OnClose()
 {
+	if (bVolumeDirty)
+	{
+		CommitVolumes(false);
+	}
 	if (const TSharedPtr<SIronRoot> PinnedRoot = Root.Pin())
 	{
 		PinnedRoot->PopModal();

@@ -634,11 +634,11 @@ namespace IronSim
 			return Result;
 		}
 
-		bool IsRecruitTargeted(const FGameState& State, int Target)
+		bool IsRecruitTargeted(const FGameState& State, int Target, int Faction)
 		{
 			for (const FOrder& Order : State.Orders)
 			{
-				if (Order.Type == EOrderType::Recruit && Order.TargetOfficer == Target)
+				if (Order.Type == EOrderType::Recruit && Order.TargetOfficer == Target && ValidOfficer(State, Order.Officer) && At(State.Officers, Order.Officer).Faction == Faction)
 				{
 					return true;
 				}
@@ -840,9 +840,9 @@ namespace IronSim
 				}
 				Check.SuccessChance = RecruitChanceOf(State, Order.Officer, Order.TargetOfficer);
 				Check.Preview = LocF("order.preview.chance", "Success {chance}%", {{"chance", ToText(Check.SuccessChance)}});
-				if (IsRecruitTargeted(State, Order.TargetOfficer))
+				if (IsRecruitTargeted(State, Order.TargetOfficer, Faction))
 				{
-					return DenyCheck(Check, LocF("order.reason.recruitTaken", "Someone is already trying to recruit {target} this month.", {{"target", Target}}));
+					return DenyCheck(Check, LocF("order.reason.recruitTaken", "Another of your officers is already trying to recruit {target} this month.", {{"target", Target}}));
 				}
 				break;
 			}

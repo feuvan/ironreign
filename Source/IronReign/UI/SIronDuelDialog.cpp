@@ -1,6 +1,7 @@
 #include "UI/SIronDuelDialog.h"
 
 #include "UI/IronAssets.h"
+#include "UI/IronAudio.h"
 #include "UI/IronSession.h"
 #include "UI/IronStyle.h"
 #include "UI/IronUI.h"
@@ -456,6 +457,10 @@ void SIronDuelDialog::RebuildHistory()
 
 void SIronDuelDialog::AfterRound(const IronSim::FDuelRound& Round)
 {
+	// Blades clash, unless the player raised a guard.
+	const bool bPlayerGuarded = PlayerSide >= 0 && Round.Moves[PlayerSide] == IronSim::EDuelMove::Guard;
+	FIronAudio::Get().PlaySfx(bPlayerGuarded ? TEXT("Guard") : TEXT("Sword"));
+
 	const double Now = FPlatformTime::Seconds();
 	for (int32 DuelSide = 0; DuelSide < 2; ++DuelSide)
 	{

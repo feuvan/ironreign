@@ -54,7 +54,8 @@ namespace IronBattleUI
 /**
  * Leaf widget that renders the tactical hex board: terrain tiles, burning hexes, gate HP, highlights, units with
  * side-coloured bases, troop bars, commander star, status overlays, move interpolation, hit effects, floating numbers,
- * a day banner and a hover tooltip. Game logic lives in SIronBattleScreen; the view reports clicks.
+ * a day banner and a hover tooltip. Plays the battle sound effects in sync with the animations.
+ * Game logic lives in SIronBattleScreen; the view reports clicks.
  */
 class SIronHexView : public SLeafWidget
 {
@@ -69,11 +70,11 @@ public:
 	void Construct(const FArguments& InArgs);
 
 	void SetHighlights(const FIronHexHighlights& InHighlights);
-	/** Queues the animation for one battle event (moves play one after another, effects follow the moves). */
+	/** Queues the animation and sound for one battle event (moves play one after another, effects follow the moves). */
 	void PlayEvent(const IronSim::FBattleEvent& Event);
 	/** Large centred caption that fades out ("Day 3"). */
 	void ShowBanner(const FText& Text);
-	/** Drops every running animation (e.g. after a fast-forward). */
+	/** Drops every running animation and queued sound (e.g. after a fast-forward). */
 	void ClearAnimations();
 	/** FPlatformTime::Seconds() until which queued move animations are still playing. */
 	double GetBusyUntil() const { return AnimCursor; }
@@ -151,6 +152,13 @@ private:
 		bool bBold = false;
 	};
 
+	/** Sound effect (FIronAudio::PlaySfx name) that starts with its animation. */
+	struct FQueuedSound
+	{
+		FString Name;
+		double Start = 0.0;
+	};
+
 	static FArtRef MakeArt(const FString& RelativePath);
 	static const FSlateBrush* ArtBrush(const FArtRef& Art);
 
@@ -169,6 +177,9 @@ private:
 
 	void AddFx(EFxKind Kind, IronSim::FHex Hex, double Start, float Duration);
 	void AddFloat(IronSim::FHex Hex, const FString& Text, const FLinearColor& Color, double Start, float FontSize = 18.0f);
+	/** Plays SfxName now, or when Start is reached if the event's animation is still queued behind a move. */
+	void AddSound(const TCHAR* SfxName, double Start);
+	void PlayDueSounds(double Now);
 	EActiveTimerReturnType OnAnimationTick(double InCurrentTime, float InDeltaTime);
 
 	void DrawImage(FSlateWindowElementList& OutDrawElements, int32 Layer, const FGeometry& Geometry, const FSlateBrush* Brush, const FVector2f& Center, const FVector2f& Size, const FLinearColor& Tint) const;
@@ -198,6 +209,7 @@ private:
 	TArray<FMoveAnim> MoveAnims;
 	TArray<FHexFx> ActiveFx;
 	TArray<FFloatText> FloatingTexts;
+	TArray<FQueuedSound> QueuedSounds;
 	/** Moves play back to back; effects of later events start once earlier moves finished. */
 	double AnimCursor = 0.0;
 	FText BannerText;

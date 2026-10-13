@@ -3,6 +3,7 @@
 #include "Sim/IronGame.h"
 #include "Sim/IronLocale.h"
 #include "UI/IronAssets.h"
+#include "UI/IronAudio.h"
 #include "UI/IronSession.h"
 #include "UI/IronStyle.h"
 #include "UI/IronUI.h"
@@ -275,6 +276,7 @@ TSharedRef<SWidget> SIronFactionsPanel::BuildFactionRow(int32 Faction)
 
 FReply SIronFactionsPanel::HandleClose()
 {
+	FIronAudio::Get().PlaySfx(TEXT("Cancel"));
 	if (TSharedPtr<SIronRoot> RootPtr = Root.Pin())
 	{
 		RootPtr->PopModal();

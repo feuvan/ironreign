@@ -188,7 +188,8 @@ BIOME_DEFAULTS = {
     "beach_px": 2.5,          # sand rim width along the coast
     "shallow_px": 26.0,       # width (px) of the light coastal shallows; deep sea beyond ~4x
     "paint_scale": 90.0,      # size of the hand-painted colour blotches (px)
-    "paint_amount": 0.07,     # strength of blotches
+    "paint_amount": 0.09,     # strength of blotches
+    "brush_amount": 0.05,     # strength of the streaky brush-stroke texture
 }
 
 
@@ -241,7 +242,7 @@ def paint_albedo(height, land, moisture=None, steppe=None, forest=None, river=No
     if forest is not None:
         col = _lerp(col, _c("forest_dark"), np.clip(forest, 0, 1) * 0.85)
     # hand-painted blotches + brush streaks
-    col = col * (1 + p["paint_amount"] * paint[..., None] + 0.03 * brush[..., None])
+    col = col * (1 + p["paint_amount"] * paint[..., None] + p["brush_amount"] * brush[..., None])
     # coast: beach rim then sea shallows -> deep
     near_sea = coast_proximity(1 - land, p["beach_px"] * 0.6)
     beach = smoothstep(0.35, 0.8, near_sea) * (height < 0.08)

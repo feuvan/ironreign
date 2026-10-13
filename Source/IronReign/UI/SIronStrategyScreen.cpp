@@ -3,6 +3,7 @@
 #include "Sim/IronGame.h"
 #include "Sim/IronLocale.h"
 #include "UI/IronAssets.h"
+#include "UI/IronAudio.h"
 #include "UI/IronSession.h"
 #include "UI/IronStyle.h"
 #include "UI/IronUI.h"
@@ -958,6 +959,7 @@ void SIronStrategyScreen::ShowEventModal()
 		return;
 	}
 	TWeakPtr<SIronStrategyScreen> WeakSelf = SharedThis(this);
+	FIronAudio::Get().PlaySfx(TEXT("Event"));
 	// Events must be answered: Escape does not close them.
 	RootPtr->PushModalWithEscape(SNew(SIronEventDialog)
 		.Session(Session)
@@ -1274,6 +1276,7 @@ FReply SIronStrategyScreen::HandleEndTurn()
 		PumpPlanningModals();
 		return FReply::Handled();
 	}
+	FIronAudio::Get().PlaySfx(TEXT("EndTurn"));
 	Game.EndPlanning();
 	Flow = EIronStrategyFlow::Running;
 	DayFraction = 0.0f;

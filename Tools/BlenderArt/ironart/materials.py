@@ -25,6 +25,17 @@ from . import palette
 # ---------------------------------------------------------------------------------------------
 # tiny node-graph builder
 # ---------------------------------------------------------------------------------------------
+def sock(coll, name):
+    """Socket by identifier *or* display name (some 4.0 sockets, e.g. the Hair BSDF's
+    'Random Color', have identifiers that differ from their names)."""
+    s = coll.get(name)
+    if s is None:
+        s = next((x for x in coll if x.name == name), None)
+    if s is None:
+        raise KeyError(name)
+    return s
+
+
 class NB:
     """Minimal helper around a node tree: ``nb.node(type, inputs={...}, **props)`` and ``nb.link``.
 
@@ -42,7 +53,7 @@ class NB:
         for k, v in props.items():
             setattr(n, k, v)
         for k, v in (inputs or {}).items():
-            self.set(n.inputs[k], v)
+            self.set(sock(n.inputs, k), v)
         return n
 
     def set(self, sock, value):
@@ -128,7 +139,7 @@ class NB:
     def principled(self, **inputs):
         p = self.nodes.get("Principled BSDF") or self.node("ShaderNodeBsdfPrincipled")
         for k, v in inputs.items():
-            self.set(p.inputs[k.replace("_", " ")], v)
+            self.set(sock(p.inputs, k.replace("_", " ")), v)
         return p
 
     def output(self, shader):
@@ -391,7 +402,7 @@ def lamellar(name="Lamellar", color="iron", lacing="lacing_red", plate=(0.026, 0
         return mat
     uv = nb.coord("UV")
     br = nb.node("ShaderNodeTexBrick", inputs={
-        "Scale": 1.0, "Mortar Size": 0.0035, "Mortar Smooth": 0.6, "Bias": 0.0,
+        "Scale": 1.0, "Mortar Size": plate[0] * 0.07, "Mortar Smooth": 0.5, "Bias": 0.0,
         "Brick Width": plate[0], "Row Height": plate[1],
         "Color1": (1, 1, 1, 1), "Color2": (0.8, 0.8, 0.8, 1), "Mortar": (0, 0, 0, 1)})
     br.offset = 0.5
@@ -529,16 +540,25 @@ def skin(name="Skin", color="skin", sss=0.25, roughness=0.48, blush=0.25, vary=0
     return mat
 
 
-def hair_strands(name="HairStrands", color="hair_black", melanin=0.9, roughness=0.35,
-                 random_color=0.1):
-    """Principled Hair BSDF for particle/curve hair (beards, eyebrows)."""
+def hair_strands(name="HairStrands", color="hair_black", melanin=None, redness=0.25,
+                 roughness=0.35, random_color=0.1, radial_roughness=0.4):
+    """Principled Hair BSDF for curve hair (beards, brows, plumes, buns).
+
+    Natural hair: pass ``melanin`` (0 blond/white .. 1 black) - physically based, never greyish.
+    Dyed/horsehair colours (red tassels): leave ``melanin=None`` and give ``color``.
+    """
     mat, nb, created = new(name)
     if created:
-        h = nb.node("ShaderNodeBsdfHairPrincipled", parametrization="COLOR")
-        nb.set(h.inputs["Color"], color)
-        h.inputs["Roughness"].default_value = roughness
-        h.inputs["Radial Roughness"].default_value = 0.4
-        h.inputs["Random Color"].default_value = random_color
+        if melanin is not None:
+            h = nb.node("ShaderNodeBsdfHairPrincipled", parametrization="MELANIN")
+            sock(h.inputs, "Melanin").default_value = melanin
+            sock(h.inputs, "Melanin Redness").default_value = redness
+        else:
+            h = nb.node("ShaderNodeBsdfHairPrincipled", parametrization="COLOR")
+            nb.set(sock(h.inputs, "Color"), color)
+        sock(h.inputs, "Roughness").default_value = roughness
+        sock(h.inputs, "Radial Roughness").default_value = radial_roughness
+        sock(h.inputs, "Random Color").default_value = random_color
         nb.output(h.outputs[0])
     return mat
 
@@ -562,7 +582,7 @@ def hair_mesh(name="HairMesh", color="hair_black", strand_scale=180.0, roughness
     return mat
 
 
-def eye(name="Eye", iris="iris", sclera="eye_white", iris_radius=0.42, pupil_radius=0.18,
+def eye(name="Eye", iris="iris", sclera="eye_white", iris_radius=0.5, pupil_radius=0.2,
         axis="-Y"):
     """Eyeball for a unit sphere looking along ``axis`` (object space): sclera, iris, pupil,
     glossy cornea.  Scale the sphere object; the pattern is in object coordinates."""

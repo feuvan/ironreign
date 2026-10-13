@@ -1,6 +1,7 @@
 #include "UI/SIronRoot.h"
 
 #include "IronReignLog.h"
+#include "UI/IronAudio.h"
 #include "UI/IronSession.h"
 #include "UI/IronStyle.h"
 #include "UI/IronUI.h"
@@ -111,6 +112,7 @@ void SIronRoot::ShowTitle()
 	ClearModals();
 	CurrentScreen = EScreen::Title;
 	SetScreen(MakeTitleScreen());
+	FIronAudio::Get().PlayMusic(TEXT("Title"));
 }
 
 void SIronRoot::ShowNewGame()
@@ -118,6 +120,7 @@ void SIronRoot::ShowNewGame()
 	ClearModals();
 	CurrentScreen = EScreen::NewGame;
 	SetScreen(MakeNewGameScreen());
+	FIronAudio::Get().PlayMusic(TEXT("Title"));
 }
 
 void SIronRoot::ShowStrategy()
@@ -130,6 +133,8 @@ void SIronRoot::ShowStrategy()
 	}
 	CurrentScreen = EScreen::Strategy;
 	SetScreen(StrategyScreen.ToSharedRef());
+	// Also when coming back from a battle (the strategy screen is cached, so this is the place that sees every return).
+	FIronAudio::Get().PlayMusic(TEXT("Strategy"));
 }
 
 void SIronRoot::ResetStrategy()
@@ -336,6 +341,7 @@ void SIronRoot::ShowConfirm(const FText& Title, const FText& Message, TFunction<
 				IronUI::Loc("ui.common.cancel", "Cancel"),
 				FOnClicked::CreateLambda([Finish]()
 				{
+					FIronAudio::Get().PlaySfx(TEXT("Cancel"));
 					Finish(false);
 					return FReply::Handled();
 				}),
@@ -350,6 +356,7 @@ void SIronRoot::ShowConfirm(const FText& Title, const FText& Message, TFunction<
 				IronUI::Loc("ui.common.ok", "OK"),
 				FOnClicked::CreateLambda([Finish]()
 				{
+					FIronAudio::Get().PlaySfx(TEXT("Confirm"));
 					Finish(true);
 					return FReply::Handled();
 				}),
@@ -565,11 +572,13 @@ FReply SIronRoot::OnKeyDown(const FGeometry& /*MyGeometry*/, const FKeyEvent& In
 			const TFunction<void()> Handler = ModalInfos[TopIndex].OnEscape;
 			if (Handler)
 			{
+				FIronAudio::Get().PlaySfx(TEXT("Cancel"));
 				Handler();
 			}
 		}
 		else
 		{
+			FIronAudio::Get().PlaySfx(TEXT("Cancel"));
 			PopModal();
 		}
 		return FReply::Handled();

@@ -49,20 +49,6 @@ namespace IronSim
 			return Faction >= 0 && Faction == State.PlayerFaction;
 		}
 
-		bool IsAIControlledCity(const FGameState& State, int City)
-		{
-			if (!ValidCity(State, City))
-			{
-				return false;
-			}
-			const FCity& Data = At(State.Cities, City);
-			if (Data.Owner < 0)
-			{
-				return false;
-			}
-			return !IsPlayerFaction(State, Data.Owner) || Data.bDelegated;
-		}
-
 		FOrderCheck DenyCheck(FOrderCheck Check, const std::string& Reason)
 		{
 			Check.bAllowed = false;

@@ -1,6 +1,7 @@
 #include "UI/IronSession.h"
 
 #include "IronReignLog.h"
+#include "UI/IronAudio.h"
 #include "UI/IronStyle.h"
 #include "UI/IronUI.h"
 
@@ -121,6 +122,7 @@ FString FIronSession::DataDir()
 void FIronSession::Initialize()
 {
 	LoadSettings();
+	ApplyAudioVolumes();
 	LoadStringTables();
 	IronStyle::SetSession(AsShared());
 	IronStyle::Initialize(Culture);
@@ -450,6 +452,33 @@ void FIronSession::SetBattleStepSeconds(float Value)
 	SaveSettings();
 }
 
+void FIronSession::SetMusicVolume(float Value, bool bPersist)
+{
+	MusicVolume = FMath::Clamp(Value, 0.0f, 1.0f);
+	FIronAudio::Get().SetMusicVolume(MusicVolume);
+	if (bPersist)
+	{
+		SaveSettings();
+	}
+}
+
+void FIronSession::SetSfxVolume(float Value, bool bPersist)
+{
+	SfxVolume = FMath::Clamp(Value, 0.0f, 1.0f);
+	FIronAudio::Get().SetSfxVolume(SfxVolume);
+	if (bPersist)
+	{
+		SaveSettings();
+	}
+}
+
+void FIronSession::ApplyAudioVolumes() const
+{
+	FIronAudio& AudioPlayer = FIronAudio::Get();
+	AudioPlayer.SetMusicVolume(MusicVolume);
+	AudioPlayer.SetSfxVolume(SfxVolume);
+}
+
 void FIronSession::LoadSettings()
 {
 	Culture = IronSessionDetail::DetectDefaultCulture();
@@ -472,6 +501,8 @@ void FIronSession::LoadSettings()
 	}
 	DaysPerSecond = FMath::Clamp(static_cast<float>(SettingsJson.GetNumber("daysPerSecond", DaysPerSecond)), 0.5f, 60.0f);
 	BattleStepSeconds = FMath::Clamp(static_cast<float>(SettingsJson.GetNumber("battleStepSeconds", BattleStepSeconds)), 0.02f, 3.0f);
+	MusicVolume = FMath::Clamp(static_cast<float>(SettingsJson.GetNumber("musicVolume", MusicVolume)), 0.0f, 1.0f);
+	SfxVolume = FMath::Clamp(static_cast<float>(SettingsJson.GetNumber("sfxVolume", SfxVolume)), 0.0f, 1.0f);
 }
 
 void FIronSession::SaveSettings() const
@@ -480,6 +511,8 @@ void FIronSession::SaveSettings() const
 	SettingsJson.SetString("culture", IronUI::ToStd(Culture));
 	SettingsJson.SetNumber("daysPerSecond", DaysPerSecond);
 	SettingsJson.SetNumber("battleStepSeconds", BattleStepSeconds);
+	SettingsJson.SetNumber("musicVolume", MusicVolume);
+	SettingsJson.SetNumber("sfxVolume", SfxVolume);
 	FText Error;
 	if (!IronSessionDetail::WriteUtf8File(IronSessionDetail::SettingsFilePath(), SettingsJson.Write(true), Error))
 	{

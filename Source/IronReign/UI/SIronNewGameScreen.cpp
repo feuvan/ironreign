@@ -2,6 +2,7 @@
 
 #include "Sim/IronLocale.h"
 #include "UI/IronAssets.h"
+#include "UI/IronAudio.h"
 #include "UI/IronStyle.h"
 #include "UI/IronUI.h"
 #include "UI/SIronRoot.h"
@@ -440,7 +441,7 @@ TSharedRef<SWidget> SIronNewGameScreen::MakeDifficultyRow()
 			[
 				SNew(SButton)
 				.ButtonStyle(&IronStyle::Tab(Level == Difficulty))
-				.OnClicked(FOnClicked::CreateSP(this, &SIronNewGameScreen::OnDifficultyClicked, Level))
+				.OnClicked(IronStyle::WithClickSound(FOnClicked::CreateSP(this, &SIronNewGameScreen::OnDifficultyClicked, Level)))
 				.HAlign(HAlign_Center)
 				.VAlign(VAlign_Center)
 				[
@@ -507,6 +508,7 @@ FReply SIronNewGameScreen::OnStart()
 	FText Error;
 	if (Session->StartNewGame(Entry->Path, SelectedFaction, Difficulty, Error))
 	{
+		FIronAudio::Get().PlaySfx(TEXT("Confirm"));
 		// This screen is destroyed by ShowStrategy: no member access after this point.
 		PinnedRoot->ResetStrategy();
 		PinnedRoot->ShowStrategy();
@@ -520,6 +522,7 @@ FReply SIronNewGameScreen::OnStart()
 
 FReply SIronNewGameScreen::OnBack()
 {
+	FIronAudio::Get().PlaySfx(TEXT("Cancel"));
 	if (const TSharedPtr<SIronRoot> PinnedRoot = Root.Pin())
 	{
 		PinnedRoot->ShowTitle();

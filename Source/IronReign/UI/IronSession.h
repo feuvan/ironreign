@@ -75,6 +75,14 @@ public:
 	/** Seconds per AI action animation in battles. */
 	float GetBattleStepSeconds() const { return BattleStepSeconds; }
 	void SetBattleStepSeconds(float Value);
+	/**
+	 * Music and sound-effect volumes, linear 0..1. Applied to FIronAudio immediately (also on load).
+	 * bPersist = false skips writing Settings.json, e.g. while a volume slider is being dragged.
+	 */
+	float GetMusicVolume() const { return MusicVolume; }
+	void SetMusicVolume(float Value, bool bPersist = true);
+	float GetSfxVolume() const { return SfxVolume; }
+	void SetSfxVolume(float Value, bool bPersist = true);
 
 	/** Broadcast after any UI-driven change to the game so widgets can refresh. */
 	FSimpleMulticastDelegate OnStateChanged;
@@ -99,6 +107,8 @@ public:
 private:
 	void LoadSettings();
 	void SaveSettings() const;
+	/** Pushes MusicVolume / SfxVolume to FIronAudio. */
+	void ApplyAudioVolumes() const;
 	void LoadStringTables();
 	static FString SaveSlotPath(int32 Slot);
 
@@ -107,4 +117,6 @@ private:
 	FString Culture = TEXT("en");
 	float DaysPerSecond = 6.0f;
 	float BattleStepSeconds = 0.35f;
+	float MusicVolume = 0.7f;
+	float SfxVolume = 0.8f;
 };

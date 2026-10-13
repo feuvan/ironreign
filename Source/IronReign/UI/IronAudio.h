@@ -37,6 +37,11 @@ public:
 	void StopMusic();
 	/** Plays Audio/Sfx_<Name>.wav once. The same effect re-triggered within 30 ms is ignored. */
 	void PlaySfx(const FString& Name);
+	/**
+	 * Number of PlaySfx calls so far (audible or not). Lets a caller tell whether some code it ran requested an
+	 * effect, e.g. IronStyle buttons play "Click" only when their handler did not already play a specific sound.
+	 */
+	uint32 GetSfxRequestCount() const;
 
 	/** Volumes are linear multipliers in [0, 1] and apply immediately (also to sounds already playing). */
 	void SetMusicVolume(float Volume);

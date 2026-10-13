@@ -1,6 +1,7 @@
 #include "UI/SIronSaveLoadDialog.h"
 
 #include "Sim/IronLocale.h"
+#include "UI/IronAudio.h"
 #include "UI/IronStyle.h"
 #include "UI/IronUI.h"
 #include "UI/SIronRoot.h"
@@ -227,6 +228,7 @@ void SIronSaveLoadDialog::SaveTo(int32 SlotIndex)
 	FText Error;
 	if (Session->SaveToSlot(SlotIndex, Error))
 	{
+		FIronAudio::Get().PlaySfx(TEXT("Confirm"));
 		// This dialog is the top modal here (any confirmation popped itself before calling back).
 		PinnedRoot->PopModal();
 		PinnedRoot->ShowMessage(
@@ -261,6 +263,7 @@ void SIronSaveLoadDialog::LoadFrom(int32 SlotIndex)
 
 FReply SIronSaveLoadDialog::OnClose()
 {
+	FIronAudio::Get().PlaySfx(TEXT("Cancel"));
 	if (const TSharedPtr<SIronRoot> PinnedRoot = Root.Pin())
 	{
 		PinnedRoot->PopModal();

@@ -2,6 +2,7 @@
 
 #include "IronReignLog.h"
 #include "IronReignWorldStateSubsystem.h"
+#include "UI/IronAudio.h"
 #include "UI/IronSession.h"
 #include "UI/SIronRoot.h"
 
@@ -43,6 +44,11 @@ void AIronReignPlayerController::BeginPlay()
 	// The game is drawn entirely by Slate; skip rendering the (empty) world.
 	TargetViewport->bDisableWorldRendering = true;
 
+	// Before the root exists so the title music starts with the first screen. The session already applied the saved
+	// volumes (FIronSession::Initialize).
+	FIronAudio::Get().Initialize(GameWorld);
+	bAudioAttached = true;
+
 	RootWidget = SNew(SIronRoot)
 		.Session(IronSession)
 		.OnQuitRequested(FSimpleDelegate::CreateUObject(this, &AIronReignPlayerController::HandleQuitRequested));
@@ -59,6 +65,13 @@ void AIronReignPlayerController::BeginPlay()
 void AIronReignPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	RemoveRootWidget();
+	if (bAudioAttached)
+	{
+		// Release every sound object while the world is still alive (UIronReignWorldStateSubsystem::Deinitialize
+		// repeats this as a safety net; Shutdown is idempotent).
+		bAudioAttached = false;
+		FIronAudio::Get().Shutdown();
+	}
 	Super::EndPlay(EndPlayReason);
 }
 

@@ -398,7 +398,10 @@ namespace IronSim
 				const int Ratio = Balance::AIAttackRatioPercent[ClampInt(static_cast<int>(State.Difficulty), 0, 2)];
 				// Aggression against other factions ramps up over the first two years of the campaign.
 				const int MonthsPlayed = (State.Year - State.StartYear) * 12 + State.Month - 1;
-				const int FactionRatio = Ratio + Ratio * std::max(0, Balance::AIWarmupMonths - MonthsPlayed) / Balance::AIWarmupMonths;
+				// Later on, ambition grows: up to AILateAggressionPercent less is demanded by AILateAggressionMonths.
+				const int Late = ClampInt(MonthsPlayed - Balance::AIWarmupMonths, 0, Balance::AILateAggressionMonths - Balance::AIWarmupMonths);
+				const int LateRatio = Ratio - Ratio * Balance::AILateAggressionPercent / 100 * Late / (Balance::AILateAggressionMonths - Balance::AIWarmupMonths);
+				const int FactionRatio = LateRatio + Ratio * std::max(0, Balance::AIWarmupMonths - MonthsPlayed) / Balance::AIWarmupMonths;
 
 				int BestTarget = -1;
 				long long BestScore = 0;
@@ -412,9 +415,22 @@ namespace IronSim
 						continue;
 					}
 					// During the opening years nobody is finished off: a faction's last city is left alone.
-					if (Owner >= 0 && MonthsPlayed < Balance::AIWarmupMonths && CountOf(State.FactionCities(Owner)) <= 1)
+					if (Owner >= 0 && MonthsPlayed < Balance::AILastCityGraceMonths)
 					{
-						continue;
+						int Exposed = 0;
+						for (const int Held : State.FactionCities(Owner))
+						{
+							bool bBesieged = false;
+							for (const FArmy& Army : State.Armies)
+							{
+								bBesieged = bBesieged || (Army.Target == Held && Army.State == EArmyState::Marching && State.AreHostile(Army.Faction, Owner));
+							}
+							Exposed += bBesieged ? 0 : 1;
+						}
+						if (Exposed <= 1)
+						{
+							continue;
+						}
 					}
 					std::vector<int> Path;
 					int Tenths = 0;
@@ -569,7 +585,9 @@ namespace IronSim
 				const FCityPlan Plan = AnalyzeCity(State, War, City, -1);
 				if (Plan.bFront)
 				{
-					return 5 + At(State.Cities, City).Size;
+					// The front gets a fair share of the faction's officers (up to two full armies plus a governor).
+					const int Pool = CountOf(ServingOfficers(State, War.Faction)) * 2 / 5 / std::max(1, CountOf(War.Front));
+					return std::min(2 * MaxArmyUnits + 1, std::max(5 + At(State.Cities, City).Size, Pool));
 				}
 				if (Plan.Incoming > 0)
 				{
@@ -690,6 +708,36 @@ namespace IronSim
 					Issue(State, Order);
 				}
 
+				// Rich treasuries pay for cities that cannot afford their officers (and their patrols).
+				for (const int Poor : War.Controlled)
+				{
+					const FCity& Needy = At(State.Cities, Poor);
+					const int Upkeep = CountOf(OfficersInCity(State, Poor, Faction)) * Balance::OfficerUpkeep;
+					const int Wanted = Upkeep * 6 + 300 - Needy.Gold;
+					if (Needy.Gold >= Upkeep * 2 + 100 || Wanted <= 0)
+					{
+						continue;
+					}
+					for (const int Source : War.Controlled)
+					{
+						const FCity& Treasury = At(State.Cities, Source);
+						const int Spare = Treasury.Gold - GoldReserve(State, Source) - 1000;
+						std::vector<int> Idle = IdleNonRulers(State, Source, Faction);
+						std::vector<int> Path;
+						int Tenths = 0;
+						if (Source == Poor || Spare < 300 || CountOf(Idle) < 2 || !FindRoute(State, Faction, Source, Poor, Path, Tenths))
+						{
+							continue;
+						}
+						const int Courier = TakeBest(Idle, State, [](const FOfficer& Officer) { return -StatOf(Officer, EStat::Politics); });
+						FOrder Order = MakeOrder(EOrderType::Transport, Courier, Source);
+						Order.TargetCity = Poor;
+						Order.Gold = std::min(Spare, Wanted);
+						Issue(State, Order);
+						break;
+					}
+				}
+
 				// Granaries with more than a year of food supply cities that will run short before the harvest.
 				for (const int Hungry : War.Controlled)
 				{
@@ -741,7 +789,7 @@ namespace IronSim
 				// 2. Recruit wandering officers, and tempt disloyal enemies.
 				for (const int Target : RecruitTargetsOf(State, City, Faction))
 				{
-					if (Idle.empty() || Budget() < Balance::RecruitCost || IsRecruitTargeted(State, Target))
+					if (Idle.empty() || Budget() < Balance::RecruitCost || IsRecruitTargeted(State, Target, Faction))
 					{
 						break;
 					}

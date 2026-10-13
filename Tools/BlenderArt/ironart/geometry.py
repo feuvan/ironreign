@@ -848,6 +848,41 @@ def ribbon(mb, points, width, mat, z=0.0, width_fn=None):
 
 
 # ---------------------------------------------------------------------------------------------
+# hair curves
+# ---------------------------------------------------------------------------------------------
+def hair_curves(name, strands, material=None, root_radius=0.0004, tip_radius=0.00008,
+                radii=None, col=None):
+    """Build a Blender 4.x ``Curves`` (hair) object from python polylines.
+
+    strands   list of point lists (each >= 2 points, any lengths)
+    radii     optional per-strand root radius list (tip = root * tip_radius / root_radius)
+    Cycles renders these as real 3D curves with the Principled Hair BSDF - the way to do beards,
+    brows, horsehair plumes and fur at high quality.
+    """
+    import numpy as np
+    strands = [s for s in strands if len(s) >= 2]
+    c = bpy.data.hair_curves.new(name)
+    c.add_curves([len(s) for s in strands])
+    pos = np.array([tuple(p) for s in strands for p in s], np.float32)
+    c.position_data.foreach_set("vector", pos.reshape(-1))
+    rad = []
+    for k, s in enumerate(strands):
+        r0 = radii[k] if radii is not None else root_radius
+        r1 = r0 * tip_radius / root_radius
+        n = len(s)
+        for i in range(n):
+            t = i / (n - 1)
+            rad.append(r0 + (r1 - r0) * t ** 0.8)
+    ra = c.attributes.get("radius") or c.attributes.new("radius", "FLOAT", "POINT")
+    ra.data.foreach_set("value", np.array(rad, np.float32))
+    if material is not None:
+        c.materials.append(material)
+    obj = bpy.data.objects.new(name, c)
+    (col or bpy.context.scene.collection).objects.link(obj)
+    return obj
+
+
+# ---------------------------------------------------------------------------------------------
 # terrain
 # ---------------------------------------------------------------------------------------------
 def terrain_grid(name, heights, size_x, size_y, z_scale=1.0, mat=None, col=None):

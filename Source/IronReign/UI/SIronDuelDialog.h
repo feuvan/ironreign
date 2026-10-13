@@ -12,7 +12,7 @@ class SHorizontalBox;
 class SScrollBox;
 
 /**
- * Wuxia duel minigame shown as a modal (SIronRoot::PushModal) over the battle screen.
+ * Wuxia duel minigame shown as a modal over the battle screen (SIronRoot::PushModalWithEscape: Escape cannot close it).
  * Plays FBattle::ActiveDuel() round by round: the player picks Strike / Guard / Feint or one of their unused techniques
  * (FDuel::PlayVersusAI). When no duelist belongs to the player the duel plays itself, one round at a time.
  * Once the duel is over a Close button fires OnClosed exactly once; the owner then calls FBattle::FinishDuel() and pops

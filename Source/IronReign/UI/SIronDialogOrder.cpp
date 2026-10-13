@@ -2,6 +2,7 @@
 
 #include "Sim/IronLocale.h"
 #include "UI/IronAssets.h"
+#include "UI/IronAudio.h"
 #include "UI/IronSession.h"
 #include "UI/IronStyle.h"
 #include "UI/IronUI.h"
@@ -835,6 +836,7 @@ FReply SIronOrderDialog::HandleIssue()
 	std::string Error;
 	if (Session->Game().IssueOrder(MakeOrder(SelectedOfficer), Error))
 	{
+		FIronAudio::Get().PlaySfx(TEXT("Confirm"));
 		Session->NotifyStateChanged();
 		CloseDialog();
 		return FReply::Handled();
@@ -845,6 +847,7 @@ FReply SIronOrderDialog::HandleIssue()
 
 FReply SIronOrderDialog::HandleCancel()
 {
+	FIronAudio::Get().PlaySfx(TEXT("Cancel"));
 	CloseDialog();
 	return FReply::Handled();
 }

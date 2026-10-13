@@ -3,6 +3,7 @@
 #include "IronReignLog.h"
 #include "Sim/IronLocale.h"
 #include "UI/IronAssets.h"
+#include "UI/IronAudio.h"
 #include "UI/IronSession.h"
 #include "UI/IronUI.h"
 
@@ -700,7 +701,7 @@ namespace IronStyle
 
 		return SNew(SButton)
 			.ButtonStyle(&Button())
-			.OnClicked(OnClicked)
+			.OnClicked(WithClickSound(MoveTemp(OnClicked)))
 			.IsEnabled(IsEnabled)
 			.HAlign(HAlign_Center)
 			.VAlign(VAlign_Center)
@@ -936,7 +937,7 @@ namespace IronStyle
 		const IronStyleDetail::FStyleState& State = IronStyleDetail::ReadyState();
 		return SNew(SButton)
 			.ButtonStyle(&State.ChoiceStyles[bActive ? 1 : 0])
-			.OnClicked(OnClicked)
+			.OnClicked(WithClickSound(MoveTemp(OnClicked)))
 			.HAlign(HAlign_Center)
 			.VAlign(VAlign_Center)
 			[
@@ -945,5 +946,21 @@ namespace IronStyle
 				.Font(LabelFont)
 				.ColorAndOpacity(Ink())
 			];
+	}
+
+	FOnClicked WithClickSound(FOnClicked OnClicked)
+	{
+		return FOnClicked::CreateLambda([Handler = MoveTemp(OnClicked)]() -> FReply
+		{
+			FIronAudio& AudioPlayer = FIronAudio::Get();
+			const uint32 RequestsBefore = AudioPlayer.GetSfxRequestCount();
+			// Same contract as SButton: an unbound (or expired SP) handler simply does nothing.
+			const FReply Reply = Handler.IsBound() ? Handler.Execute() : FReply::Handled();
+			if (AudioPlayer.GetSfxRequestCount() == RequestsBefore)
+			{
+				AudioPlayer.PlaySfx(TEXT("Click"));
+			}
+			return Reply;
+		});
 	}
 }

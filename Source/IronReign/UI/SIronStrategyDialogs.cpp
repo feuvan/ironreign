@@ -3,6 +3,7 @@
 #include "Sim/IronGame.h"
 #include "Sim/IronLocale.h"
 #include "UI/IronAssets.h"
+#include "UI/IronAudio.h"
 #include "UI/IronSession.h"
 #include "UI/IronStyle.h"
 #include "UI/IronUI.h"
@@ -307,6 +308,7 @@ FReply SIronEventDialog::HandleChoice(int32 ChoiceIndex)
 		return FReply::Handled();
 	}
 	bAnswered = true;
+	FIronAudio::Get().PlaySfx(TEXT("Confirm"));
 	if (OnChoose)
 	{
 		OnChoose(ChoiceIndex);
@@ -464,6 +466,7 @@ FReply SIronPrisonerDialog::HandleDecision(IronSim::EPrisonerDecision Decision)
 		return FReply::Handled();
 	}
 	bAnswered = true;
+	FIronAudio::Get().PlaySfx(TEXT("Confirm"));
 	FText Message;
 	if (Session.IsValid() && Session->HasGame() && IronStrategy::GetOfficer(Session->State(), PrisonerIndex) != nullptr)
 	{
@@ -689,6 +692,7 @@ void SIronBattlePrompt::Construct(const FArguments& InArgs)
 				if (Self.IsValid() && !Self->bAnswered && Self->OnCommand)
 				{
 					Self->bAnswered = true;
+					FIronAudio::Get().PlaySfx(TEXT("Confirm"));
 					Self->OnCommand();
 				}
 				return FReply::Handled();
@@ -704,6 +708,7 @@ void SIronBattlePrompt::Construct(const FArguments& InArgs)
 				if (Self.IsValid() && !Self->bAnswered && Self->OnDelegate)
 				{
 					Self->bAnswered = true;
+					FIronAudio::Get().PlaySfx(TEXT("Confirm"));
 					Self->OnDelegate();
 				}
 				return FReply::Handled();
@@ -739,6 +744,8 @@ void SIronGameOverDialog::Construct(const FArguments& InArgs)
 		{
 			Portrait = IronStrategy::OfficerPortrait(GameState, Player->Ruler);
 		}
+		// One-shot sting; the title music takes over when the player returns to the title screen.
+		FIronAudio::Get().PlayMusic(bVictory ? TEXT("Victory") : TEXT("Defeat"), false);
 	}
 
 	const FText Title = bVictory ? IronUI::Loc("ui.strategy.victoryTitle", "The Realm Is United") : IronUI::Loc("ui.strategy.defeatTitle", "The Banner Falls");

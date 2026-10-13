@@ -74,16 +74,21 @@ namespace IronSim
 			constexpr int ExecuteTrustLoss = 10;
 			constexpr int ReleaseTrustGain = 10;
 			/** Monthly chance an AI captor releases a prisoner it failed to recruit. */
-			constexpr int AIReleaseChance = 10;
+			constexpr int AIReleaseChance = 30;
 
 			// AI: attack when local strength exceeds the defender's by this ratio (percent; Easy, Normal, Hard).
-			constexpr int AIAttackRatioPercent[3] = {190, 160, 140};
+			constexpr int AIAttackRatioPercent[3] = {170, 150, 130};
 			/** Months over which the AI's appetite for attacking other factions ramps up (independents are fair game at once). */
 			constexpr int AIWarmupMonths = 24;
+			/** Months during which the AI never takes a faction's last unthreatened city (no early wipe-outs). */
+			constexpr int AILastCityGraceMonths = 36;
+			/** After the warmup the AI demands up to this much less superiority, reached at AILateAggressionMonths. */
+			constexpr int AILateAggressionPercent = 0;
+			constexpr int AILateAggressionMonths = 180;
 			/** Share of an adjacent same-owner garrison the AI expects to come to a besieged city's aid. */
 			constexpr int AISupportPercent = 20;
 			/** Strength the AI credits to garrison troops beyond what a city's officers can lead (percent). */
-			constexpr int AIGarrisonPercent = 60;
+			constexpr int AIGarrisonPercent = 35;
 		}
 
 		constexpr int Unreachable = 1 << 29;
@@ -117,8 +122,6 @@ namespace IronSim
 		bool ValidTechnique(const FGameState& State, int Technique);
 		bool IsAliveFaction(const FGameState& State, int Faction);
 		bool IsPlayerFaction(const FGameState& State, int Faction);
-		/** Owner is an AI faction, or the player delegated the city. */
-		bool IsAIControlledCity(const FGameState& State, int City);
 
 		/** Returns Check marked as not allowed with Reason. */
 		FOrderCheck DenyCheck(FOrderCheck Check, const std::string& Reason);
@@ -196,7 +199,8 @@ namespace IronSim
 		int GiftTrustGain(const FOfficer& Envoy, int Gold);
 		std::vector<int> RecruitTargetsOf(const FGameState& State, int City, int Faction);
 		std::vector<int> SectsNearOf(const FGameState& State, int City);
-		bool IsRecruitTargeted(const FGameState& State, int Target);
+		/** Another officer of Faction is already trying to recruit Target this month. */
+		bool IsRecruitTargeted(const FGameState& State, int Target, int Faction);
 		int FoodBuyPriceOf(const FGameState& State);
 		int FoodSellPriceOf(const FGameState& State);
 		bool TradeFoodRules(FGameState& State, int City, int FoodDelta, std::string& OutError);

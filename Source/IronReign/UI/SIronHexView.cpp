@@ -1,6 +1,7 @@
 #include "UI/SIronHexView.h"
 
 #include "UI/IronAssets.h"
+#include "UI/IronAudio.h"
 #include "UI/IronSession.h"
 #include "UI/IronStyle.h"
 #include "UI/IronUI.h"
@@ -356,6 +357,7 @@ void SIronHexView::ClearAnimations()
 	MoveAnims.Reset();
 	ActiveFx.Reset();
 	FloatingTexts.Reset();
+	QueuedSounds.Reset();
 	AnimCursor = 0.0;
 	Invalidate(EInvalidateWidgetReason::Paint);
 }
@@ -398,6 +400,36 @@ void SIronHexView::AddFloat(IronSim::FHex Hex, const FString& Text, const FLinea
 	NewText.Duration = 1.1f;
 	NewText.FontSize = FontSize;
 	FloatingTexts.Add(NewText);
+}
+
+void SIronHexView::AddSound(const TCHAR* SfxName, double Start)
+{
+	if (Start <= FPlatformTime::Seconds())
+	{
+		FIronAudio::Get().PlaySfx(SfxName);
+		return;
+	}
+	FQueuedSound NewSound;
+	NewSound.Name = SfxName;
+	NewSound.Start = Start;
+	QueuedSounds.Add(MoveTemp(NewSound));
+}
+
+void SIronHexView::PlayDueSounds(double Now)
+{
+	for (int32 SoundIndex = 0; SoundIndex < QueuedSounds.Num();)
+	{
+		if (Now >= QueuedSounds[SoundIndex].Start)
+		{
+			const FString DueName = QueuedSounds[SoundIndex].Name;
+			QueuedSounds.RemoveAt(SoundIndex);
+			FIronAudio::Get().PlaySfx(DueName);
+		}
+		else
+		{
+			++SoundIndex;
+		}
+	}
 }
 
 void SIronHexView::PlayEvent(const IronSim::FBattleEvent& Event)
@@ -443,51 +475,51 @@ void SIronHexView::PlayEvent(const IronSim::FBattleEvent& Event)
 		{
 			AddFloat(TargetHex, FString::Printf(TEXT("-%d"), Event.Value), DamageColor, HitTime);
 		}
+		// Unit is the one striking (the defender for a Counter).
+		const bool bArcher = IsValidUnit(Event.Unit) && Battle->Unit(Event.Unit).Setup.Type == IronSim::ETroopType::Archer;
+		AddSound(bArcher ? TEXT("Arrow") : TEXT("Attack"), HitTime);
 		break;
 	}
 	case EEvent::GateHit:
-	{
-		const IronSim::FHex GatePos = Battle->InBounds(Event.To) ? Event.To : Battle->GateHex();
-		AddFx(EFxKind::Hit, GatePos, EventTime, IronHexViewDetail::FxSeconds);
+		// To is the gate that was hit: great cities have two gates.
+		AddFx(EFxKind::Hit, Event.To, EventTime, IronHexViewDetail::FxSeconds);
 		if (Event.Value > 0)
 		{
-			AddFloat(GatePos, FString::Printf(TEXT("-%d"), Event.Value), DamageColor, EventTime);
+			AddFloat(Event.To, FString::Printf(TEXT("-%d"), Event.Value), DamageColor, EventTime);
 		}
+		AddSound(TEXT("GateHit"), EventTime);
 		break;
-	}
 	case EEvent::GateBroken:
-	{
-		const IronSim::FHex GatePos = Battle->InBounds(Event.To) ? Event.To : Battle->GateHex();
-		AddFx(EFxKind::Hit, GatePos, EventTime, 1.0f);
-		AddFloat(GatePos, IronUI::Loc("ui.battle.fx.gateBroken", "The gate is broken!").ToString(), IronStyle::Gold(), EventTime, 22.0f);
+		AddFx(EFxKind::Hit, Event.To, EventTime, 1.0f);
+		AddFloat(Event.To, IronUI::Loc("ui.battle.fx.gateBroken", "The gate is broken!").ToString(), IronStyle::Gold(), EventTime, 22.0f);
+		AddSound(TEXT("GateHit"), EventTime);
 		break;
-	}
 	case EEvent::Tactic:
 	{
-		// The event does not name the tactic: infer it from its result for the effect.
 		const IronSim::FHex TargetHex = UnitHexOr(Event.Target, Event.To);
-		const bool bFriendly = IsValidUnit(Event.Unit) && IsValidUnit(Event.Target) && Battle->Unit(Event.Unit).Side == Battle->Unit(Event.Target).Side;
-		const bool bConfused = IsValidUnit(Event.Target) && Battle->Unit(Event.Target).ConfusedDays > 0 && Event.Value <= 1;
-		if (bFriendly)
-		{
-			AddFx(EFxKind::Rally, TargetHex, EventTime, 0.9f);
-			if (Event.Value > 0)
-			{
-				AddFloat(TargetHex, FString::Printf(TEXT("+%d"), Event.Value), GoodColor, EventTime);
-			}
-		}
-		else if (!bConfused && Battle->BurningAt(TargetHex) > 0)
+		if (Event.Tactic == static_cast<int32>(IronSim::ETactic::Fire))
 		{
 			AddFx(EFxKind::Fire, TargetHex, EventTime, 0.9f);
 			if (Event.Value > 0)
 			{
 				AddFloat(TargetHex, FString::Printf(TEXT("-%d"), Event.Value), DamageColor, EventTime);
 			}
+			AddSound(TEXT("Fire"), EventTime);
 		}
-		else
+		else if (Event.Tactic == static_cast<int32>(IronSim::ETactic::Confuse))
 		{
 			AddFx(EFxKind::Confuse, TargetHex, EventTime, 0.9f);
 			AddFloat(TargetHex, IronUI::Loc("ui.battle.fx.confused", "Confused!").ToString(), TacticColor, EventTime);
+			AddSound(TEXT("Confuse"), EventTime);
+		}
+		else if (Event.Tactic == static_cast<int32>(IronSim::ETactic::Rally))
+		{
+			AddFx(EFxKind::Rally, TargetHex, EventTime, 0.9f);
+			if (Event.Value > 0)
+			{
+				AddFloat(TargetHex, FString::Printf(TEXT("+%d"), Event.Value), GoodColor, EventTime);
+			}
+			AddSound(TEXT("Rally"), EventTime);
 		}
 		break;
 	}
@@ -502,6 +534,7 @@ void SIronHexView::PlayEvent(const IronSim::FBattleEvent& Event)
 		{
 			AddFloat(BurnHex, FString::Printf(TEXT("-%d"), Event.Value), DamageColor, EventTime);
 		}
+		AddSound(TEXT("Fire"), EventTime);
 		break;
 	}
 	case EEvent::DuelChallenge:
@@ -528,8 +561,14 @@ void SIronHexView::PlayEvent(const IronSim::FBattleEvent& Event)
 	case EEvent::Captured:
 		AddFloat(UnitHexOr(Event.Unit, Event.To), IronUI::Loc("ui.battle.fx.captured", "Captured!").ToString(), DamageColor, EventTime, 20.0f);
 		break;
-	case EEvent::Victory:
 	case EEvent::Message:
+		// Narration. An officer slain names the unit on its own hex (From == To); a challenge accepted names two hexes.
+		if (IsValidUnit(Event.Unit) && Event.From == Event.To && Battle->Unit(Event.Unit).Status == IronSim::EUnitStatus::Killed)
+		{
+			AddFloat(Event.To, IronUI::Loc("ui.battle.fx.slain", "Slain!").ToString(), DamageColor, EventTime, 20.0f);
+		}
+		break;
+	case EEvent::Victory:
 	default:
 		break;
 	}
@@ -539,6 +578,7 @@ void SIronHexView::PlayEvent(const IronSim::FBattleEvent& Event)
 EActiveTimerReturnType SIronHexView::OnAnimationTick(double /*InCurrentTime*/, float /*InDeltaTime*/)
 {
 	const double Now = FPlatformTime::Seconds();
+	PlayDueSounds(Now);
 	MoveAnims.RemoveAll([Now](const FMoveAnim& Anim) { return Now > Anim.Start + IronHexViewDetail::MoveSeconds; });
 	ActiveFx.RemoveAll([Now](const FHexFx& Effect) { return Now > Effect.Start + Effect.Duration; });
 	FloatingTexts.RemoveAll([Now](const FFloatText& Floating) { return Now > Floating.Start + Floating.Duration; });
