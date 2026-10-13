@@ -530,7 +530,8 @@ void SIronStrategyScreen::RebuildLog()
 		}
 		++Rows;
 		const FLinearColor Marker = IronStyle::FactionColor(Entry.Faction);
-		const FLinearColor TextColor = bOwn ? IronStyle::Ink() : FMath::Lerp(IronStyle::Ink(), Marker, 0.6f);
+		const FLinearColor Blended = IronStyle::Ink() * 0.4f + Marker * 0.6f;
+		const FLinearColor TextColor = bOwn ? IronStyle::Ink() : FLinearColor(Blended.R, Blended.G, Blended.B, 1.0f);
 		LogBox->AddSlot()
 		.AutoHeight()
 		.Padding(FMargin(0.0f, 1.0f))
