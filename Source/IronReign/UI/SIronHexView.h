@@ -46,11 +46,8 @@ namespace IronBattleUI
 	/** Localized faction name of a battle side. UTF-8. */
 	std::string SideName(const FIronSession* Session, const IronSim::FBattleSetup& Setup, int32 Side);
 	FLinearColor SideColor(const IronSim::FBattleSetup& Setup, int32 Side);
-	/**
-	 * Defense modifier in percent for a unit standing on Terrain (DESIGN.md section 4). The battle API does not expose
-	 * terrain defense, so this mirrors the design numbers for display only.
-	 */
-	int32 TerrainDefense(IronSim::EHexTerrain Terrain, int32 WallBonus, bool& bOutImpassable);
+	/** Terrain no unit can enter (mountains, water, walls). Gates are shown with their HP instead. */
+	bool IsImpassableTerrain(IronSim::EHexTerrain Terrain);
 	FText UnitStatusName(IronSim::EUnitStatus Status);
 }
 
@@ -165,6 +162,10 @@ private:
 	IronSim::FHex PickHex(const FVector2f& LocalPos, const FBoardLayout& Layout) const;
 	FVector2f UnitBoardPos(int32 UnitId, double Now) const;
 	IronSim::FHex UnitHexOr(int32 UnitId, IronSim::FHex Fallback) const;
+	/** Gate index (0/1) standing on Hex, or -1. */
+	int32 GateIndexAt(IronSim::FHex Hex) const;
+	/** Side whose terrain bonus the tooltip shows for an empty hex: the player's side, else the defender. */
+	int32 TooltipDefenseSide() const;
 
 	void AddFx(EFxKind Kind, IronSim::FHex Hex, double Start, float Duration);
 	void AddFloat(IronSim::FHex Hex, const FString& Text, const FLinearColor& Color, double Start, float FontSize = 18.0f);

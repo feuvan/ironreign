@@ -33,13 +33,40 @@ def unescape_cpp(literal: str) -> str:
     return "".join(out)
 
 
+def strip_comments(text: str) -> str:
+    """Blanks out // and /* */ comments (keeping newlines and string/char literals) so examples in docs are ignored."""
+    out = []
+    i, n = 0, len(text)
+    while i < n:
+        c = text[i]
+        if c in "\"'":
+            quote, j = c, i + 1
+            while j < n and text[j] != quote:
+                j += 2 if text[j] == "\\" else 1
+            out.append(text[i:j + 1])
+            i = j + 1
+        elif text.startswith("//", i):
+            j = text.find("\n", i)
+            j = n if j < 0 else j
+            i = j
+        elif text.startswith("/*", i):
+            j = text.find("*/", i + 2)
+            j = n if j < 0 else j + 2
+            out.append("\n" * text.count("\n", i, j))
+            i = j
+        else:
+            out.append(c)
+            i += 1
+    return "".join(out)
+
+
 def scan_source_strings():
     """Returns ({key: default}, [conflict messages])."""
     strings, origins, conflicts = {}, {}, []
     for path in sorted(SOURCE_DIR.rglob("*")):
         if path.suffix not in (".cpp", ".h"):
             continue
-        text = path.read_text(encoding="utf-8", errors="replace")
+        text = strip_comments(path.read_text(encoding="utf-8", errors="replace"))
         for match in LOC_CALL.finditer(text):
             key, default = match.group(1), unescape_cpp(match.group(2))
             where = f"{path.relative_to(ROOT)}:{text.count(chr(10), 0, match.start()) + 1}"

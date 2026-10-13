@@ -891,7 +891,7 @@ void SIronBattleScreen::RefreshActionCache()
 	CachedDuelTargets.clear();
 
 	const IronSim::FBattleUnit* Selected = GetPanelUnit();
-	if (Selected == nullptr || !IsHumanTurn() || IsAnyModalOpen() || Selected->Side != PlayerSide || !Selected->IsActive() || Selected->bActed)
+	if (Selected == nullptr || !IsHumanTurn() || Selected->Side != PlayerSide || !Selected->IsActive() || Selected->bActed)
 	{
 		return;
 	}
@@ -1065,11 +1065,12 @@ void SIronBattleScreen::PushScreenModal(const TSharedRef<SWidget>& Widget)
 			LocalModalHost->SetContent(Widget);
 		}
 	}
-	RefreshAll();
 }
 
 void SIronBattleScreen::PopScreenModal()
 {
+	// The root refocuses itself when a modal closes; give the board keyboard focus back on the next tick.
+	bFocusRequested = false;
 	if (LocalModals.Num() > 0)
 	{
 		LocalModals.RemoveAt(LocalModals.Num() - 1);
@@ -1879,17 +1880,33 @@ float SIronBattleScreen::GetSideTroopsFraction(int32 Side) const
 
 FText SIronBattleScreen::GetGateText() const
 {
-	return IronUI::LocF("ui.battle.gate", "Gate {hp} / {max}", {{"hp", IronSim::ToText(FMath::Max(0, Battle->GateHp()))}, {"max", IronSim::ToText(Battle->GateMaxHp())}});
+	const int32 MaxHp = Battle->GateMaxHp();
+	if (Battle->GateCount() >= 2)
+	{
+		return IronUI::LocF("ui.battle.gates", "Gates {hpA} and {hpB} / {max}", {{"hpA", IronSim::ToText(FMath::Max(0, Battle->GateHpAt(0)))}, {"hpB", IronSim::ToText(FMath::Max(0, Battle->GateHpAt(1)))}, {"max", IronSim::ToText(MaxHp)}});
+	}
+	return IronUI::LocF("ui.battle.gate", "Gate {hp} / {max}", {{"hp", IronSim::ToText(FMath::Max(0, Battle->GateHpAt(0)))}, {"max", IronSim::ToText(MaxHp)}});
 }
 
 float SIronBattleScreen::GetGateFraction() const
 {
-	return Battle->GateMaxHp() > 0 ? FMath::Clamp(static_cast<float>(Battle->GateHp()) / static_cast<float>(Battle->GateMaxHp()), 0.0f, 1.0f) : 0.0f;
+	const int32 Count = Battle->GateCount();
+	const int32 MaxHp = Battle->GateMaxHp();
+	if (Count <= 0 || MaxHp <= 0)
+	{
+		return 0.0f;
+	}
+	int32 Remaining = 0;
+	for (int32 GateIndex = 0; GateIndex < Count; ++GateIndex)
+	{
+		Remaining += FMath::Max(0, Battle->GateHpAt(GateIndex));
+	}
+	return FMath::Clamp(static_cast<float>(Remaining) / static_cast<float>(MaxHp * Count), 0.0f, 1.0f);
 }
 
 EVisibility SIronBattleScreen::GetGateVisibility() const
 {
-	return (Battle->GetSetup().Kind == IronSim::EBattleKind::Siege && Battle->GateMaxHp() > 0) ? EVisibility::Visible : EVisibility::Collapsed;
+	return (Battle->GetSetup().Kind == IronSim::EBattleKind::Siege && Battle->GateCount() > 0 && Battle->GateMaxHp() > 0) ? EVisibility::Visible : EVisibility::Collapsed;
 }
 
 FText SIronBattleScreen::GetUnitNameText() const

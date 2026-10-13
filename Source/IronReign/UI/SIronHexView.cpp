@@ -125,29 +125,9 @@ namespace IronBattleUI
 		return IronUI::ColorFromRGB(Setup.Sides[Side == 0 ? 0 : 1].Color);
 	}
 
-	int32 TerrainDefense(IronSim::EHexTerrain Terrain, int32 WallBonus, bool& bOutImpassable)
+	bool IsImpassableTerrain(IronSim::EHexTerrain Terrain)
 	{
-		bOutImpassable = false;
-		switch (Terrain)
-		{
-		case IronSim::EHexTerrain::Forest:
-			return 20;
-		case IronSim::EHexTerrain::Hill:
-			return 25;
-		case IronSim::EHexTerrain::Ford:
-			return -20;
-		case IronSim::EHexTerrain::Town:
-		case IronSim::EHexTerrain::Castle:
-		case IronSim::EHexTerrain::Gate:
-			return WallBonus;
-		case IronSim::EHexTerrain::Mountain:
-		case IronSim::EHexTerrain::Water:
-		case IronSim::EHexTerrain::Wall:
-			bOutImpassable = true;
-			return 0;
-		default:
-			return 0;
-		}
+		return Terrain == IronSim::EHexTerrain::Mountain || Terrain == IronSim::EHexTerrain::Water || Terrain == IronSim::EHexTerrain::Wall;
 	}
 
 	FText UnitStatusName(IronSim::EUnitStatus Status)
@@ -332,6 +312,32 @@ IronSim::FHex SIronHexView::UnitHexOr(int32 UnitId, IronSim::FHex Fallback) cons
 	return IsValidUnit(UnitId) ? Battle->Unit(UnitId).Pos : Fallback;
 }
 
+int32 SIronHexView::GateIndexAt(IronSim::FHex Hex) const
+{
+	if (!Battle.IsValid() || !Battle->InBounds(Hex))
+	{
+		return -1;
+	}
+	for (int32 GateIndex = 0; GateIndex < Battle->GateCount(); ++GateIndex)
+	{
+		if (Battle->GateHexAt(GateIndex) == Hex)
+		{
+			return GateIndex;
+		}
+	}
+	return -1;
+}
+
+int32 SIronHexView::TooltipDefenseSide() const
+{
+	const IronSim::FBattleSetup& BattleSetup = Battle->GetSetup();
+	if (BattleSetup.Sides[0].bPlayer)
+	{
+		return 0;
+	}
+	return 1;
+}
+
 void SIronHexView::SetHighlights(const FIronHexHighlights& InHighlights)
 {
 	Highlights = InHighlights;
@@ -441,7 +447,7 @@ void SIronHexView::PlayEvent(const IronSim::FBattleEvent& Event)
 	}
 	case EEvent::GateHit:
 	{
-		const IronSim::FHex GatePos = Battle->GateHex();
+		const IronSim::FHex GatePos = Battle->InBounds(Event.To) ? Event.To : Battle->GateHex();
 		AddFx(EFxKind::Hit, GatePos, EventTime, IronHexViewDetail::FxSeconds);
 		if (Event.Value > 0)
 		{
@@ -451,7 +457,7 @@ void SIronHexView::PlayEvent(const IronSim::FBattleEvent& Event)
 	}
 	case EEvent::GateBroken:
 	{
-		const IronSim::FHex GatePos = Battle->GateHex();
+		const IronSim::FHex GatePos = Battle->InBounds(Event.To) ? Event.To : Battle->GateHex();
 		AddFx(EFxKind::Hit, GatePos, EventTime, 1.0f);
 		AddFloat(GatePos, IronUI::Loc("ui.battle.fx.gateBroken", "The gate is broken!").ToString(), IronStyle::Gold(), EventTime, 22.0f);
 		break;
@@ -461,6 +467,7 @@ void SIronHexView::PlayEvent(const IronSim::FBattleEvent& Event)
 		// The event does not name the tactic: infer it from its result for the effect.
 		const IronSim::FHex TargetHex = UnitHexOr(Event.Target, Event.To);
 		const bool bFriendly = IsValidUnit(Event.Unit) && IsValidUnit(Event.Target) && Battle->Unit(Event.Unit).Side == Battle->Unit(Event.Target).Side;
+		const bool bConfused = IsValidUnit(Event.Target) && Battle->Unit(Event.Target).ConfusedDays > 0 && Event.Value <= 1;
 		if (bFriendly)
 		{
 			AddFx(EFxKind::Rally, TargetHex, EventTime, 0.9f);
@@ -469,7 +476,7 @@ void SIronHexView::PlayEvent(const IronSim::FBattleEvent& Event)
 				AddFloat(TargetHex, FString::Printf(TEXT("+%d"), Event.Value), GoodColor, EventTime);
 			}
 		}
-		else if (Battle->BurningAt(TargetHex) > 0)
+		else if (!bConfused && Battle->BurningAt(TargetHex) > 0)
 		{
 			AddFx(EFxKind::Fire, TargetHex, EventTime, 0.9f);
 			if (Event.Value > 0)
@@ -504,7 +511,13 @@ void SIronHexView::PlayEvent(const IronSim::FBattleEvent& Event)
 		AddFloat(UnitHexOr(Event.Target, Event.To), IronUI::Loc("ui.battle.fx.declined", "Declined").ToString(), MutedColor, EventTime);
 		break;
 	case EEvent::DuelResult:
-		AddFx(EFxKind::Hit, UnitHexOr(Event.Target, Event.To), EventTime, IronHexViewDetail::FxSeconds);
+		// Value is the winning unit id (-1 for a draw).
+		if (IsValidUnit(Event.Value) && (Event.Value == Event.Unit || Event.Value == Event.Target))
+		{
+			const int32 LoserId = Event.Value == Event.Unit ? Event.Target : Event.Unit;
+			AddFx(EFxKind::Hit, UnitHexOr(LoserId, Event.To), EventTime, IronHexViewDetail::FxSeconds);
+			AddFloat(UnitHexOr(Event.Value, Event.From), IronUI::Loc("ui.battle.fx.duelWon", "Victorious!").ToString(), IronStyle::Gold(), EventTime, 20.0f);
+		}
 		break;
 	case EEvent::Routed:
 		AddFloat(UnitHexOr(Event.Unit, Event.To), IronUI::Loc("ui.battle.fx.routed", "Routed!").ToString(), FLinearColor(1.0f, 0.6f, 0.2f, 1.0f), EventTime, 20.0f);
@@ -703,9 +716,9 @@ void SIronHexView::BuildTooltipLines(TArray<FTipLine>& OutLines) const
 	}
 
 	const IronSim::EHexTerrain Terrain = Battle->TerrainAt(HoveredHex);
-	bool bImpassable = false;
-	const int32 Defense = IronBattleUI::TerrainDefense(Terrain, BattleSetup.WallBonus, bImpassable);
-	if (bImpassable)
+	const int32 DefenseSide = (IsValidUnit(UnitId) && Battle->Unit(UnitId).IsActive()) ? Battle->Unit(UnitId).Side : TooltipDefenseSide();
+	const int32 Defense = Battle->TerrainDefenseBonus(HoveredHex, DefenseSide);
+	if (IronBattleUI::IsImpassableTerrain(Terrain))
 	{
 		OutLines.Add({IronUI::LocF("ui.battle.tip.terrainImpassable", "{terrain}: impassable", {{"terrain", IronSim::DisplayName(Terrain)}}).ToString(), Light, false});
 	}
@@ -718,9 +731,10 @@ void SIronHexView::BuildTooltipLines(TArray<FTipLine>& OutLines) const
 	{
 		OutLines.Add({IronUI::LocF("ui.battle.tip.burning", "Burning ({days} days)", {{"days", IronSim::ToText(BurnDays)}}).ToString(), FLinearColor(1.0f, 0.55f, 0.2f, 1.0f), false});
 	}
-	if (HoveredHex == Battle->GateHex() && Battle->GateMaxHp() > 0)
+	const int32 HoveredGate = GateIndexAt(HoveredHex);
+	if (HoveredGate >= 0 && Battle->GateMaxHp() > 0)
 	{
-		OutLines.Add({IronUI::LocF("ui.battle.tip.gate", "Gate {hp} / {max}", {{"hp", IronSim::ToText(Battle->GateHp())}, {"max", IronSim::ToText(Battle->GateMaxHp())}}).ToString(), IronStyle::Gold(), false});
+		OutLines.Add({IronUI::LocF("ui.battle.tip.gate", "Gate {hp} / {max}", {{"hp", IronSim::ToText(Battle->GateHpAt(HoveredGate))}, {"max", IronSim::ToText(Battle->GateMaxHp())}}).ToString(), IronStyle::Gold(), false});
 	}
 }
 
@@ -929,11 +943,16 @@ int32 SIronHexView::OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeo
 		}
 	}
 
-	// Gate hit points.
-	const IronSim::FHex GatePos = Battle->GateHex();
-	if (Battle->GateMaxHp() > 0 && Battle->GateHp() > 0 && Battle->InBounds(GatePos))
+	// Gate hit points (great cities have two gates).
+	for (int32 GateIndex = 0; GateIndex < Battle->GateCount() && Battle->GateMaxHp() > 0; ++GateIndex)
 	{
-		const float GateFraction = static_cast<float>(Battle->GateHp()) / static_cast<float>(Battle->GateMaxHp());
+		const IronSim::FHex GatePos = Battle->GateHexAt(GateIndex);
+		const int32 GateHitPoints = Battle->GateHpAt(GateIndex);
+		if (GateHitPoints <= 0 || !Battle->InBounds(GatePos))
+		{
+			continue;
+		}
+		const float GateFraction = static_cast<float>(GateHitPoints) / static_cast<float>(Battle->GateMaxHp());
 		const FVector2f BarCenter = Layout.ToLocal(HexCenter(GatePos)) + FVector2f(0.0f, -HexH * 0.38f);
 		DrawBar(OutDrawElements, RingLayer, AllottedGeometry, BarCenter, FVector2f(HexW * 0.6f, FMath::Max(4.0f, HexH * 0.07f)), GateFraction, GateFraction > 0.3f ? IronStyle::Gold() : IronStyle::Danger());
 	}

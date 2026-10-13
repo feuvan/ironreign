@@ -2,10 +2,12 @@
 
 #include "CoreMinimal.h"
 #include "Sim/IronBattle.h"
+#include "Styling/SlateColor.h"
 #include "UI/SIronRoot.h"
 #include "Widgets/DeclarativeSyntaxSupport.h"
 #include "Widgets/SCompoundWidget.h"
 
+#include <string>
 #include <vector>
 
 class FIronSession;
