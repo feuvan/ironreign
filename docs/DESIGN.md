@@ -172,6 +172,8 @@ Source/IronReign/
     IronSession   owns FGame, scenarios, save slots        (UE framework engineer)
     IronAssets    runtime PNG -> UTexture2D -> FSlateBrush (UE framework engineer)
     IronStyle     palette, fonts, button styles, widget factories (UE framework engineer)
+    IronAudio     music + sound effects from Content/Data/Audio WAVs (procedural sound waves, no .uasset);
+                  attached to the world by the player controller, volumes in Settings.json
     SIronRoot     screen stack + modal layer               (UE framework engineer)
     SIronTitleScreen / SIronNewGameScreen / SIronSaveLoadDialog (UE framework engineer)
     SIronStrategyScreen, SIronMapView, SIronCityPanel, SIronCommandPanel, SIronDialogs,
@@ -417,3 +419,82 @@ culture, and is stored in `Saved/IronReign/Settings.json`. Switching language re
 - Naming conventions: Chinese names in Chinese characters (Traditional forms for zh-Hant), Japanese uses
   kanji names (Japanese shinjitai forms) as Koei's Japanese releases do, Korean uses Hangul readings of the
   Sino-Korean names (as in Korean releases). Faction banner glyphs are also localized (`faction.<key>.glyph`).
+
+## 12. Real-time 3D presentation (Unreal Engine 5.8)
+
+The campaign map and tactical battles are rendered as **real-time 3D scenes** that use UE 5.8's renderer:
+Lumen global illumination and reflections, Virtual Shadow Maps, Sky Atmosphere, Volumetric Clouds,
+Exponential Height Fog with volumetric fog, TSR, and a cinematic post-process stack (tilt-shift depth of field
+for the "living diorama" look of modern Koei titles, bloom, filmic grading, an optional painterly/ink pass).
+Slate stays on top for all UI (panels, menus, dialogs, labels). Seasons follow the calendar (spring greens,
+summer, golden autumn, winter snow). If the 3D assets have not been imported, the game falls back to the
+2D painted map / 2D hex board automatically.
+
+### 12.1 Pipeline
+
+```
+Blender (bpy, Tools/BlenderArt)  ->  ArtSource/ (glTF .glb models, terrain textures)       [committed]
+                                 ->  Content/Data/Art3D/ (runtime JSON + heightmap)       [committed]
+                                 ->  Content/Data/Art/ (2D art: portraits, UI, icons, scenes, 2D fallbacks)
+Unreal editor Python (Content/Python/ironreign_import.py, run automatically by Content/Python/init_unreal.py
+on editor start when out of date, or explicitly by Tools/Unreal/build_assets.sh / CI)
+                                 ->  /Game/IronReign/** (.uasset meshes with Nanite, textures, materials)
+Runtime C++ (Source/IronReign/World/)  ->  spawns environment, terrain, cities, armies, battle boards
+```
+
+`/Game/IronReign` is cooked via `DirectoriesToAlwaysCook`. Generated `.uasset` files are build products
+(not committed); the import is deterministic and versioned (`ArtSource/manifest.json` `version`).
+
+### 12.2 World space
+
+- **Map units are metres.** UE X = map x * 100, UE Y = map y * 100 (cm), UE Z = height * 100. The map
+  rectangle spans X 0..240000, Y 0..150000. Map "north" (y = 0) is -Y; the default camera looks north
+  (towards -Y) from the south, tilted ~55 degrees down, so screen-right = +X.
+- **Terrain** (built at runtime as a procedural mesh from the heightmap, so the mapping is exact):
+  - `Content/Data/Art3D/Terrain/Terrain.json`: `{"width":2400,"height":1500,"gridStep":2,"minHeight":-40,"maxHeight":180,"seaLevel":0}`
+  - `Content/Data/Art3D/Terrain/Height.png`: 16-bit greyscale, (width/gridStep+1) x (height/gridStep+1) =
+    1201 x 751 px; pixel (i, j) is map point (i*gridStep, j*gridStep); height m = min + v/65535*(max-min).
+    Sea floor below 0, coast near 0, plains 2-15 m, hills 20-60 m, mountains 80-180 m (exaggerated relief).
+    Rivers are carved 2-4 m below their banks; lakes are flat basins at their surface level minus 1 m.
+  - `ArtSource/Terrain/Albedo.png` (4800 x 3000 sRGB, 2 px per metre, map-aligned, NO baked lighting:
+    painterly ground colour - grass, steppe, beaches, rock, snow caps, forest floor, roads drawn as packed
+    earth, rivers and lakes as water colour) and `ArtSource/Terrain/Masks.png` (same size, linear: R = water
+    (rivers/lakes/sea), G = forest floor, B = rock/snow-capable altitude, A = road). Imported as textures and
+    used by `M_IronTerrain` (UV = map x/2400, map y/1500).
+  - `Content/Data/Art3D/Terrain/Trees.json`: `[{"t":"pine|broad|bamboo","x":m,"y":m,"s":scale,"r":yawDegrees}, ...]`
+    (instanced with HISM; keep it under ~25k instances, none within 25 m of a city point or on roads/water).
+- **Sea and water**: one large water plane at Z = seaLevel (material `M_IronWater`, normal map
+  `ArtSource/Textures/Water_Normal.png`, depth-tinted). River/lake shading comes from the terrain mask.
+
+### 12.3 Models (`ArtSource/Models/*.glb`, imported to `/Game/IronReign/Models/SM_<Name>`)
+
+Conventions (Blender side): metres, +Z up, origin at the model's base centre on the ground, **front faces
+Blender -Y**, applied transforms, PBR Principled materials with baked image textures (glTF-compatible:
+base colour, ORM or roughness/metallic, normal). Material slots named **`Tint`** are pure white and get the
+faction/side colour at runtime (`M_IronTint`, parameter `Tint`). Keep each model under ~150k triangles
+(Nanite is enabled on import). `Content/Data/Art3D/Models.json` gives per-model runtime parameters:
+`{"frontYaw": 90, "models": {"City_2": {"scale": 1.0}, ...}}` (`frontYaw` aligns the Blender front with UE +Y;
+adjust there if imported models face the wrong way).
+
+| Model | Size (exaggerated map scale) | Notes |
+|---|---|---|
+| `City_1`, `City_2`, `City_3` | footprints ~45 / 75 / 120 m | town / walled city / great capital; gate on the front |
+| `Sect` | ~35 m | cliff temple / pagoda |
+| `Banner` | ~22 m tall | pole + `Tint` cloth, glyph area left clean |
+| `Flag` | ~10 m tall | pennant with `Tint` cloth |
+| `Tree_Pine`, `Tree_Broad`, `Tree_Bamboo` | 18-35 m tall | low/medium poly, wind-free |
+| `Unit_Infantry`, `Unit_Cavalry`, `Unit_Archer` | footprint <= 6 m | a squad diorama with `Tint` tabards/flags; used x1 on battle hexes, x6 as marching armies |
+| `Unit_Base` | 6 m disc | `Tint` plinth |
+| `Hex_<Terrain>` (13 terrains of section 4) | flat-top hex, corner radius 4 m | top surface at Z = 0, skirt down to -1 m; walls/gate run along +-Y (board rows) |
+
+### 12.4 Battle board
+
+Placed at a fixed location far from the world map (origin X = 0, Y = -100000 m) with its own camera. Hex
+(col,row) centre = (col * 6, (row + 0.5 * (col & 1)) * 6.928) metres (radius 4 m, flat-top odd-q).
+
+### 12.5 Materials and rendering (created by the import script)
+
+`M_IronTerrain` (Albedo/Masks textures, season parameters `Snow`, `Autumn`, `Wetness`), `M_IronWater`,
+`M_IronTint` (Tint colour x white base, roughness parameter), `M_IronHighlight` (emissive translucent rings
+for selection/targets), `M_IronInk` (optional post-process: edge ink lines + paper grain). Project rendering
+settings live in `Config/DefaultEngine.ini` (Lumen GI + reflections, VSM, TSR, distance fields, volumetric fog).
