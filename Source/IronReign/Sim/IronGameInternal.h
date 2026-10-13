@@ -73,11 +73,15 @@ namespace IronSim
 			constexpr int TruceMonths = 12;
 			constexpr int ExecuteTrustLoss = 10;
 			constexpr int ReleaseTrustGain = 10;
+			/** Monthly chance an AI captor releases a prisoner it failed to recruit. */
+			constexpr int AIReleaseChance = 10;
 
 			// AI: attack when local strength exceeds the defender's by this ratio (percent; Easy, Normal, Hard).
-			constexpr int AIAttackRatioPercent[3] = {210, 175, 155};
+			constexpr int AIAttackRatioPercent[3] = {190, 160, 140};
 			/** Months over which the AI's appetite for attacking other factions ramps up (independents are fair game at once). */
 			constexpr int AIWarmupMonths = 24;
+			/** Share of an adjacent same-owner garrison the AI expects to come to a besieged city's aid. */
+			constexpr int AISupportPercent = 20;
 		}
 
 		constexpr int Unreachable = 1 << 29;

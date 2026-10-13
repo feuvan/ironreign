@@ -9,7 +9,7 @@ and the map all agree.  Directions are expressed in *screen space* of the active
 so the same numbers work for the top-down map camera and the 3/4 sprite camera.  Defaults (see
 STYLE.md "Light"):
 
-    key   angle 135, elevation 40, warm  #FFF1DC
+    key   angle 135, elevation 40, warm  #FFF1DC   (sprites: 145 / 62 so fronts are lit)
     fill  angle -30 (bottom-right), elevation 35, cool #B8C8E0, no shadows, ~18 % of key
     rim   angle 60 (top-right), elevation -35 (from behind), cool-white, portraits/sprites only
     world cool sky #8C9AB0 (ambient, also fills transparent-film sprites)
@@ -117,9 +117,15 @@ def world(color=SKY_COLOR, strength=0.35, horizon=None):
 # ---------------------------------------------------------------------------------------------
 # rigs
 # ---------------------------------------------------------------------------------------------
-def rig_sprite(cam, key=3.2, fill=0.55, rim=1.2, sky=0.45, key_angle=135.0, key_elev=40.0,
+def rig_sprite(cam, key=3.2, fill=0.55, rim=1.2, sky=0.45, key_angle=145.0, key_elev=62.0,
                softness_deg=6.0):
-    """Cities, units, banners, icons: warm top-left sun + cool fill + cool rim + sky ambient."""
+    """Cities, units, banners, icons: warm top-left sun + cool fill + cool rim + sky ambient.
+
+    With the standard sprite camera (elevation 35, azimuth -20) the key (screen 145 deg / 62 deg)
+    lands at world elevation ~47 deg from the south-west, so faces read in three values:
+    roofs/tops brightest (N.L 0.73), west faces (0.56), front/south faces (0.40); east and
+    north faces only get fill + sky.
+    """
     rig = {
         "key": sun("Key", screen_dir(cam, key_angle, key_elev), key, KEY_COLOR, softness_deg),
         "fill": sun("Fill", screen_dir(cam, -30.0, 35.0), fill, FILL_COLOR, 20.0, shadow=False),

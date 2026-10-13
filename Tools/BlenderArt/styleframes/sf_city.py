@@ -39,18 +39,20 @@ def city_materials():
     }
 
 
-def build_city(mb, rng, width=7.6, depth=6.0, wall_h=1.5):
-    """Walled city (City_2 scale): wall ring + corner towers, big gate tower, hall, houses."""
-    geo.wall_ring(mb, width, depth, height=wall_h, thickness=0.85, gate_gap=2.6, tower=1.25,
+def build_city(mb, rng, width=6.8, depth=5.6, wall_h=1.5):
+    """Walled city (City_2 scale): wall ring + corner towers, hero gate tower, a keep on a stone
+    podium at the back and a few houses.  Tall elements are kept on the centre line so the
+    silhouette reads at 96 px."""
+    geo.wall_ring(mb, width, depth, height=wall_h, thickness=0.85, gate_gap=2.6, tower=1.2,
                   merlon=(0.3, 0.22, 0.3), gap=0.22, batter=0.12)
-    geo.gate_tower(mb, (0, -depth / 2, 0), width=3.4, depth=1.7, base_h=wall_h + 0.55,
-                   hall_h=0.8)
+    geo.gate_tower(mb, (0, -depth / 2, 0), width=3.4, depth=1.8, base_h=wall_h + 0.7,
+                   hall_h=0.85)
     mb.box((0, 0, 0), (width - 0.6, depth - 0.6, 0.05), "Ground")
-    geo.hall(mb, (0, depth * 0.16, 0.05), width=3.0, depth=1.6, height=0.85, roof_h=0.95,
-             platform=0.3)
-    for (x, y, rot) in [(-2.4, -1.1, 0.0), (2.4, -1.1, 0.0), (-2.6, 1.3, 1.5708),
-                        (2.6, 1.3, 1.5708)]:
-        geo.house(mb, (x, y, 0.05), width=rng.uniform(1.2, 1.4), depth=0.9,
+    geo.gate_tower(mb, (0, depth * 0.22, 0.05), width=2.6, depth=1.6, base_h=0.9, hall_h=0.8,
+                   door=False)
+    for (x, y, rot) in [(-2.15, -0.6, 1.5708), (2.15, -0.6, 1.5708), (-2.0, 1.4, 0.0),
+                        (2.0, 1.4, 0.0)]:
+        geo.house(mb, (x, y, 0.05), width=rng.uniform(1.1, 1.3), depth=0.85,
                   height=0.6, roof_h=0.45, rot_z=rot, lift=0.06)
 
 
@@ -70,7 +72,7 @@ def main():
     cam = cameras.sprite_camera(elevation_deg=35, azimuth_deg=-20)
     cameras.fit_ortho(cam, [city], margin_px=1.5, anchor="bottom_center")
     lights.rig_sprite(cam)
-    ink.enable(thickness_px=0.9, inner_scale=0.5, inner_alpha=0.55, as_pass=True,
+    ink.enable(thickness_px=0.6, alpha=0.85, inner_scale=0.6, inner_alpha=0.6, as_pass=True,
                crease_angle=125, calligraphy=0.3, pressure_noise=0.15)
     post.comp_painterly(size=4, sharpness=0.7, eccentricity=0.8, amount=0.6, saturation=1.0,
                         ink_opacity=0.9)

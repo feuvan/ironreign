@@ -557,13 +557,15 @@ def pavilion(mb, center, width, depth, height, cols=(4, 2), pillar_r=0.07, mat_p
 
 
 def gate_tower(mb, center=(0, 0, 0), width=3.2, depth=1.8, base_h=1.9, hall_h=0.75,
-               two_storey=True, mat="Stone"):
+               two_storey=True, mat="Stone", door=True):
     """City gate: battered stone base with an arched tunnel + red-pillared tower hall with a
-    double-eave hip-gable roof.  ``center`` is the ground centre (gate faces -y)."""
+    double-eave hip-gable roof.  ``center`` is the ground centre (gate faces -y).
+    ``door=False`` gives a keep / drum tower on a solid stone podium."""
     cx, cy, cz = center
     mb.box((cx, cy, cz), (width, depth, base_h), mat, taper=(0.12, 0.1))
-    arch_door(mb, (cx, cy - depth / 2 - 0.004, cz), width * 0.26, base_h * 0.62, "DoorDark",
-              slope=0.1 / base_h)
+    if door:
+        arch_door(mb, (cx, cy - depth / 2 - 0.004, cz), width * 0.26, base_h * 0.62, "DoorDark",
+                  slope=0.1 / base_h)
     # walkway platform
     top = cz + base_h
     mb.box((cx, cy, top), (width - 0.24, depth - 0.2, 0.06), "StoneDark")
@@ -651,13 +653,13 @@ def tree_broadleaf(mb, base, height=1.0, radius=0.42, rng=None, leaf="Foliage", 
     mb.cylinder((bx, by, bz), (bx, by, bz + height * 0.55), radius * 0.12, radius * 0.07, trunk,
                 segments=5 if detail == 0 else 7)
     cz = bz + height - radius
-    mb.sphere((bx, by, cz), radius * 0.8, leaf, seg, rings, displace=_lumpy(rng, 0.15))
+    mb.sphere((bx, by, cz), radius * 0.8, leaf, seg, rings, displace=_lumpy(rng, 0.22))
     for i in range(blobs - 1):
         a = TAU * i / (blobs - 1) + rng.uniform(-0.4, 0.4)
         r = radius * rng.uniform(0.45, 0.62)
         d = radius * rng.uniform(0.38, 0.55)
         mb.sphere((bx + math.cos(a) * d, by + math.sin(a) * d, cz + rng.uniform(-0.25, 0.15) * radius),
-                  r, leaf, seg, rings, displace=_lumpy(rng, 0.18))
+                  r, leaf, seg, rings, displace=_lumpy(rng, 0.25))
 
 
 def tree_pine(mb, base, height=1.2, radius=0.35, rng=None, leaf="FoliageDark", trunk="Trunk",

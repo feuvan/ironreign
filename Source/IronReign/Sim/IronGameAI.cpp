@@ -70,6 +70,25 @@ namespace IronSim
 				return Base * (100 + Data.Defense / 40) / 100;
 			}
 
+			/** Defense of City plus a share of the garrisons that can rush to its aid from neighboring cities of the same owner. */
+			long long SupportedDefensePower(const FGameState& State, int City)
+			{
+				const FCity& Data = At(State.Cities, City);
+				long long Support = 0;
+				if (Data.Owner >= 0)
+				{
+					for (const int Neighbor : State.Neighbors(City))
+					{
+						const FCity& Ally = At(State.Cities, Neighbor);
+						if (Ally.Owner == Data.Owner)
+						{
+							Support += Power(Ally.Troops, Ally.Training, Balance::GarrisonUnitStat) * Balance::AISupportPercent / 100;
+						}
+					}
+				}
+				return CityDefensePower(State, City) + Support;
+			}
+
 			int MilitaryScore(const FOfficer& Officer)
 			{
 				return StatOf(Officer, EStat::Command) * 2 + StatOf(Officer, EStat::Martial) + StatOf(Officer, EStat::Strategy);
@@ -335,7 +354,7 @@ namespace IronSim
 				const int Ratio = Balance::AIAttackRatioPercent[ClampInt(static_cast<int>(State.Difficulty), 0, 2)];
 				// Aggression against other factions ramps up over the first two years of the campaign.
 				const int MonthsPlayed = (State.Year - State.StartYear) * 12 + State.Month - 1;
-				const int FactionRatio = Ratio + Ratio * std::max(0, Balance::AIWarmupMonths - MonthsPlayed) / (2 * Balance::AIWarmupMonths);
+				const int FactionRatio = Ratio + Ratio * std::max(0, Balance::AIWarmupMonths - MonthsPlayed) / Balance::AIWarmupMonths;
 
 				int BestTarget = -1;
 				long long BestScore = 0;
@@ -345,6 +364,11 @@ namespace IronSim
 				{
 					const int Owner = At(State.Cities, Target).Owner;
 					if (Owner == Faction || AlreadyTargeted(State, Faction, Target))
+					{
+						continue;
+					}
+					// During the opening years nobody is finished off: a faction's last city is left alone.
+					if (Owner >= 0 && MonthsPlayed < Balance::AIWarmupMonths && CountOf(State.FactionCities(Owner)) <= 1)
 					{
 						continue;
 					}
@@ -370,7 +394,7 @@ namespace IronSim
 					}
 					const int Troops = static_cast<int>(std::min<long long>(Available, Capacity));
 					const long long Attack = Power(Troops, Data.Training, StatOf(At(State.Officers, Chosen.front()), EStat::Command));
-					const long long Defense = std::max<long long>(1, CityDefensePower(State, Target));
+					const long long Defense = std::max<long long>(1, SupportedDefensePower(State, Target));
 					const long long Score = Attack * 100 / Defense;
 					// Off-plan targets need overwhelming odds.
 					const int Needed = Owner < 0 ? Ratio : (Owner == War.Target ? FactionRatio : FactionRatio * 3 / 2);
@@ -535,7 +559,10 @@ namespace IronSim
 						{
 							continue;
 						}
-						const int Spare = CountOf(OfficersInCity(State, Source, Faction)) - DesiredOfficers(State, War, Source);
+						const int Present = CountOf(OfficersInCity(State, Source, Faction));
+						const bool bEmptyTarget = OfficersInCity(State, Target, Faction).empty();
+						// A city without any governor may borrow from any city that has two or more officers.
+						const int Spare = bEmptyTarget ? std::min(1, Present - 1) : Present - DesiredOfficers(State, War, Source);
 						std::vector<int> Idle = IdleNonRulers(State, Source, Faction);
 						for (int Moved = 0; Moved < Spare && Missing > 0 && !Idle.empty(); ++Moved)
 						{
@@ -619,6 +646,35 @@ namespace IronSim
 					Issue(State, Order);
 				}
 
+				// Granaries with more than a year of food supply cities that will run short before the harvest.
+				for (const int Hungry : War.Controlled)
+				{
+					const FCity& Needy = At(State.Cities, Hungry);
+					const int Monthly = GarrisonFood(Needy.Troops);
+					const int Wanted = Monthly * (MonthsUntilHarvest(State.Month) + 3) - Needy.Food;
+					if (Monthly <= 0 || Wanted <= 0)
+					{
+						continue;
+					}
+					for (const int Source : War.Controlled)
+					{
+						const FCity& Granary = At(State.Cities, Source);
+						const int Spare = Granary.Food - GarrisonFood(Granary.Troops) * 14;
+						std::vector<int> Idle = IdleNonRulers(State, Source, Faction);
+						std::vector<int> Path;
+						int Tenths = 0;
+						if (Source == Hungry || Spare < 3000 || CountOf(Idle) < 2 || !FindRoute(State, Faction, Source, Hungry, Path, Tenths))
+						{
+							continue;
+						}
+						const int Courier = TakeBest(Idle, State, [](const FOfficer& Officer) { return -StatOf(Officer, EStat::Politics); });
+						FOrder Order = MakeOrder(EOrderType::Transport, Courier, Source);
+						Order.TargetCity = Hungry;
+						Order.Food = std::min(Spare, Wanted);
+						Issue(State, Order);
+						break;
+					}
+				}
 			}
 
 			void PlanDomestic(FGameState& State, int City, int Faction, const FCityPlan& Plan)
@@ -963,7 +1019,7 @@ namespace IronSim
 						LogPlayer(State, LocF("log.prisoner.turned", "{officer}, held prisoner by the {faction}, has agreed to serve them.", {{"officer", Name}, {"faction", FactionLabel(State, Captor)}}), true);
 					}
 				}
-				else if (State.Rng.Chance(30))
+				else if (State.Rng.Chance(Balance::AIReleaseChance))
 				{
 					if (ValidFaction(State, Former))
 					{
