@@ -1,4 +1,5 @@
 """Shared helpers for the Iron Reign localization tools."""
+import collections
 import json
 import pathlib
 import re
@@ -123,6 +124,22 @@ def load_json(path: pathlib.Path) -> dict:
         return json.load(handle)
 
 
+def load_json_with_duplicates(path: pathlib.Path):
+    """Returns (data, [keys defined more than once in the same object]); json.load silently keeps the last value."""
+    duplicates = []
+
+    def pairs_hook(pairs):
+        seen = set()
+        for key, _ in pairs:
+            if key in seen:
+                duplicates.append(key)
+            seen.add(key)
+        return dict(pairs)
+
+    with open(path, encoding="utf-8") as handle:
+        return json.load(handle, object_pairs_hook=pairs_hook), duplicates
+
+
 def save_json(path: pathlib.Path, data: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8", newline="\n") as handle:
@@ -132,3 +149,8 @@ def save_json(path: pathlib.Path, data: dict) -> None:
 
 def placeholders(text: str) -> set:
     return set(PLACEHOLDER.findall(text or ""))
+
+
+def placeholder_counts(text: str) -> collections.Counter:
+    """Multiset of placeholders: translations must keep each placeholder as many times as English does."""
+    return collections.Counter(PLACEHOLDER.findall(text or ""))

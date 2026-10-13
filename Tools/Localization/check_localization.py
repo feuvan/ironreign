@@ -2,13 +2,15 @@
 """Verifies the string tables of every culture.
 
 Fails when a culture misses a key of the English tables, when placeholders ({city}...) differ from
-English, or when the English tables are stale compared with the code/scenarios (run extract_strings.py).
+English (same names, same number of occurrences), when a key is defined twice in one file, or when the
+English tables are stale compared with the code/scenarios (run extract_strings.py).
 With --warn-missing, keys missing from a culture are reported as warnings instead of errors (used while a
 translation pass is still in progress).
 """
 import sys
 
-from loclib import LOC_DIR, SCENARIO_DIR, TARGET_CULTURES, load_json, placeholders, scan_source_strings, scenario_strings
+from loclib import (LOC_DIR, SCENARIO_DIR, TARGET_CULTURES, load_json, load_json_with_duplicates, placeholder_counts,
+                    scan_source_strings, scenario_strings)
 
 
 def main() -> int:
@@ -45,7 +47,10 @@ def main() -> int:
         translated = {}
         folder = LOC_DIR / culture
         for path in sorted(folder.glob("*.json")) if folder.exists() else []:
-            for key, text in load_json(path).items():
+            table, duplicates = load_json_with_duplicates(path)
+            for key in sorted(set(duplicates)):
+                errors.append(f"{culture}/{path.name}: '{key}' is defined more than once in the file")
+            for key, text in table.items():
                 if key in translated and translated[key] != text:
                     errors.append(f"{culture}/{path.name}: '{key}' is defined twice with different text")
                 translated[key] = text
@@ -58,8 +63,9 @@ def main() -> int:
         for key, text in translated.items():
             if key not in english_union:
                 warnings.append(f"{culture}: unused key '{key}'")
-            elif placeholders(text) != placeholders(english_union[key]):
-                errors.append(f"{culture}: placeholders differ for '{key}': {sorted(placeholders(text))} vs {sorted(placeholders(english_union[key]))}")
+            elif placeholder_counts(text) != placeholder_counts(english_union[key]):
+                ours, theirs = placeholder_counts(text), placeholder_counts(english_union[key])
+                errors.append(f"{culture}: placeholders differ for '{key}': {sorted(ours.elements())} vs {sorted(theirs.elements())}")
         print(f"{culture}: {len(translated)} translated, {len(missing)} missing")
 
     for message in warnings[:20]:
