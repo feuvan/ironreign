@@ -965,7 +965,8 @@ void SIronStrategyScreen::ShowEventModal()
 		return;
 	}
 	TWeakPtr<SIronStrategyScreen> WeakSelf = SharedThis(this);
-	RootPtr->PushModal(SNew(SIronEventDialog)
+	// Events must be answered: Escape does not close them.
+	RootPtr->PushModalWithEscape(SNew(SIronEventDialog)
 		.Session(Session)
 		.OnChoose([WeakSelf](int32 ChoiceIndex)
 		{
@@ -973,7 +974,7 @@ void SIronStrategyScreen::ShowEventModal()
 			{
 				Self->HandleEventChoice(ChoiceIndex);
 			}
-		}));
+		}), nullptr);
 }
 
 void SIronStrategyScreen::HandleEventChoice(int32 ChoiceIndex)
@@ -1001,7 +1002,7 @@ void SIronStrategyScreen::ShowPrisonerModal(int32 Prisoner)
 		return;
 	}
 	TWeakPtr<SIronStrategyScreen> WeakSelf = SharedThis(this);
-	RootPtr->PushModal(SNew(SIronPrisonerDialog)
+	RootPtr->PushModalWithEscape(SNew(SIronPrisonerDialog)
 		.Session(Session)
 		.Prisoner(Prisoner)
 		.OnDecided([WeakSelf](int32 Decided, const FText& Message)
@@ -1010,7 +1011,7 @@ void SIronStrategyScreen::ShowPrisonerModal(int32 Prisoner)
 			{
 				Self->HandlePrisonerDecided(Decided, Message);
 			}
-		}));
+		}), nullptr);
 }
 
 void SIronStrategyScreen::HandlePrisonerDecided(int32 Prisoner, const FText& Message)
@@ -1066,7 +1067,7 @@ void SIronStrategyScreen::ShowBattlePrompt()
 	}
 
 	TWeakPtr<SIronStrategyScreen> WeakSelf = SharedThis(this);
-	RootPtr->PushModal(SNew(SIronBattlePrompt)
+	RootPtr->PushModalWithEscape(SNew(SIronBattlePrompt)
 		.Session(Session)
 		.Setup(Setup)
 		.City(BesiegedCity)
@@ -1084,7 +1085,7 @@ void SIronStrategyScreen::ShowBattlePrompt()
 			{
 				Self->DelegatePlayerBattle();
 			}
-		}));
+		}), nullptr);
 }
 
 void SIronStrategyScreen::StartPlayerBattle()
@@ -1235,7 +1236,7 @@ void SIronStrategyScreen::ShowGameOver()
 	}
 	const TWeakPtr<SIronRoot> WeakRoot = Root;
 	const TSharedPtr<FIronSession> SessionRef = Session;
-	RootPtr->PushModal(SNew(SIronGameOverDialog)
+	RootPtr->PushModalWithEscape(SNew(SIronGameOverDialog)
 		.Session(Session)
 		.OnReturn([WeakRoot, SessionRef]()
 		{
@@ -1250,7 +1251,7 @@ void SIronStrategyScreen::ShowGameOver()
 			{
 				SessionRef->EndGame();
 			}
-		}));
+		}), nullptr);
 }
 
 // -------------------------------------------------------------------------------------------------
