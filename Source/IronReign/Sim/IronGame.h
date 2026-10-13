@@ -135,5 +135,19 @@ namespace IronSim
 		/** "Year 212, Month 3 (Spring)" or with the day during execution. */
 		std::string DateText() const;
 		int CityCount(int Faction) const;
+
+		// ----- Additions (rules engineer) -----
+		/** Expected gold income of City at the end of this month (difficulty scaling included). */
+		int GoldIncome(int City) const;
+		/** Expected food from City's next harvest (month 9). */
+		int HarvestYield(int City) const;
+		/** Food City's garrison eats per month. */
+		int FoodConsumption(int City) const;
+		/** Gold City pays its officers (including those marching from it) per month. */
+		int OfficerUpkeep(int City) const;
+		/** Loyalty an officer gains from a reward of Gold (for the reward dialog preview). */
+		int RewardLoyaltyGain(int Gold) const;
+		/** True if Prisoner is held by the player and DecidePrisoner can be called for them. */
+		bool CanDecidePrisoner(int Prisoner) const;
 	};
 }

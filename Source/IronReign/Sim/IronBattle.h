@@ -179,6 +179,8 @@ namespace IronSim
 		FHex To;
 		/** Damage, chance, morale change... depending on Type. */
 		int Value = 0;
+		/** Which tactic, for Tactic / TacticFailed events. */
+		ETactic Tactic = ETactic::Fire;
 		std::string Text;
 	};
 
@@ -233,6 +235,17 @@ namespace IronSim
 		FHex CastleHex() const { return Castle; }
 		int GateHp() const { return GateHitPoints; }
 		int GateMaxHp() const { return GateMaxHitPoints; }
+		/** Gates of a siege map: 0 on field maps, 1, or 2 for great cities. Index 0 is GateHex()/GateHp(). */
+		int GateCount() const;
+		FHex GateHexAt(int Index) const;
+		/** Remaining HP of a gate (0 once broken; the hex then shows Rubble). Every gate has GateMaxHp(). */
+		int GateHpAt(int Index) const;
+		/** Column of the city wall on siege maps, -1 on field maps. */
+		int WallColumn() const { return WallCol; }
+		/** Percent defense bonus a unit of Side gets on Hex (forest +20, hill +25, ford -20, walls...). */
+		int TerrainDefenseBonus(FHex Hex, int Side) const;
+		/** Troops of the side's units still on the field. */
+		int TotalTroops(int Side) const;
 
 		const std::vector<FBattleUnit>& Units() const { return BattleUnits; }
 		const FBattleUnit& Unit(int UnitId) const { return BattleUnits[static_cast<size_t>(UnitId)]; }
@@ -255,6 +268,10 @@ namespace IronSim
 		/** Expected troops lost by the target if UnitId attacks it now. */
 		int PreviewDamage(int UnitId, int TargetId) const;
 		int MovePoints(int UnitId) const;
+		/** The unit belongs to the active side and may still move this turn (not moved, not acted, not confused). */
+		bool CanMove(int UnitId) const;
+		/** The unit belongs to the active side and may still act this turn (attack, tactic, duel or wait). */
+		bool CanAct(int UnitId) const;
 
 		// Actions. Each returns false when illegal and changes nothing.
 		bool Move(int UnitId, FHex Destination);
@@ -297,6 +314,11 @@ namespace IronSim
 		/** Full human-readable log. */
 		const std::vector<std::string>& Log() const { return BattleLog; }
 
+		// Test and scripting hooks: edit the board after Setup (no events, no rule checks).
+		void DebugSetTerrain(FHex Hex, EHexTerrain Terrain);
+		bool DebugPlaceUnit(int UnitId, FHex Hex);
+		void DebugSetUnit(int UnitId, int Troops, int Morale);
+
 	private:
 		// Implementation detail; owned by the battle engine. Extend freely.
 		friend struct FBattleInternals;
@@ -323,6 +345,56 @@ namespace IronSim
 		std::vector<FBattleEvent> PendingEvents;
 		std::vector<std::string> BattleLog;
 		FRng Rng;
+
+		/** Column of the city wall (sieges), -1 on field maps. */
+		int WallCol = -1;
+		/** Second gate of great cities; Col -1 when absent. Its max HP is GateMaxHitPoints too. */
+		FHex SecondGate = {-1, -1};
+		int SecondGateHitPoints = 0;
+		bool bAnyGateBroken = false;
+		/** Duel challenges already issued by the AI (Challenger * 4096 + Target), so it never repeats one. */
+		std::vector<int> AIChallenges;
+
+		// IronBattleMap.cpp
+		void GenerateMap();
+		void DeployUnits();
+
+		// IronBattle.cpp
+		bool IsValidUnit(int UnitId) const;
+		int HexIndex(FHex Hex) const;
+		/** Movement cost of entering Hex for a unit of Type/Side ignoring units and fire, -1 if impassable. */
+		int TerrainEnterCost(FHex Hex, ETroopType Type, int Side) const;
+		int EnterCost(FHex Hex, const FBattleUnit& Mover) const;
+		bool HasEnemyNeighbor(FHex Hex, int Side) const;
+		/** Hexes the unit could reach if it were its turn (ignores bMoved/bActed). */
+		std::vector<FReachableHex> ComputeReach(int UnitId) const;
+		/** Gate slot (0/1) of an intact gate adjacent to Hex with the lowest HP, or -1. */
+		int AdjacentIntactGate(FHex Hex) const;
+		FHex GateSlotHex(int Slot) const;
+		int GateSlotHp(int Slot) const;
+		double DefenseMultiplier(FHex Hex, int Side) const;
+		/** Expected attack damage before the target's terrain and the random factor. */
+		double RawDamage(int AttackerId, int AttackerTroops, int AttackerMorale, int TargetId, bool bRanged) const;
+		double ExpectedDamage(int AttackerId, int TargetId, FHex TargetPos, bool bRanged) const;
+		double ExpectedGateDamage(int UnitId) const;
+		double ExpectedFireDamage(int UnitId, FHex TargetPos) const;
+		int RallyAmount(int UnitId) const;
+		int AcceptChance(int ChallengerId, int TargetId) const;
+		int RollDamage(double Expected);
+		int InflictLosses(int TargetId, int Damage, int SourceId, int MoraleBase);
+		void CheckFall(int UnitId, int ByUnit);
+		void UnitFalls(int UnitId, int ByUnit, EUnitStatus NewStatus);
+		void ShiftSideMorale(int Side, int Delta, int ExceptUnit);
+		void Emit(EBattleEventType Type, int UnitId, int TargetId, FHex From, FHex To, int Value, const std::string& Text);
+		void AddLog(const std::string& Text);
+		std::string SideName(int Side) const;
+		void StartDuel(int ChallengerId, int ChallengedId);
+		void DeclineChallenge(int ChallengerId, int ChallengedId);
+		void ResolveInterruptions();
+		void BeginDay();
+		void BeginSideTurn(int Side);
+		void CheckVictory();
+		void EndBattle(int Winner, const std::string& Reason);
 	};
 
 	/** Builds and fully AI-resolves a battle. */
