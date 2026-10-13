@@ -410,7 +410,7 @@ def iron(name="Iron", color="iron", roughness=0.42, metallic=0.85, vary=0.12):
 
 
 def lamellar(name="Lamellar", color="iron", lacing="lacing_red", plate=(0.026, 0.055),
-             metallic=0.75, roughness=0.42, bump=0.8, vary=0.15):
+             metallic=0.75, roughness=0.42, bump=0.8, vary=0.15, specular=0.5):
     """Lamellar armour: staggered rows of small plates (UV metres; u around, v down) with
     coloured lacing showing in the gaps.  ``color`` 'iron' / 'bronze' / '#hex'."""
     mat, nb, created = new(name)
@@ -435,7 +435,7 @@ def lamellar(name="Lamellar", color="iron", lacing="lacing_red", plate=(0.026, 0
     col = nb.mix(lacing, plate_col, nb.math("SUBTRACT", 1.0, br.outputs["Fac"]))
     metal = nb.math("MULTIPLY", nb.math("SUBTRACT", 1.0, br.outputs["Fac"]), metallic)
     p = nb.principled(Base_Color=col, Metallic=metal, Roughness=roughness,
-                      Normal=nb.bump(height, bump, 0.004))
+                      Specular_IOR_Level=specular, Normal=nb.bump(height, bump, 0.004))
     nb.output(p.outputs[0])
     return mat
 

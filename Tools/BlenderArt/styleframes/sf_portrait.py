@@ -38,7 +38,7 @@ def portrait_materials():
         "Gold": M.gold_leaf("Gold", "#A88238", roughness=0.4),
         "Bronze": M.gold_leaf("Bronze", "#8A6A3A", roughness=0.35),
         "Lamellar": M.lamellar("Lamellar", "#2A2E34", lacing="#6A1C14", plate=(0.013, 0.028),
-                               metallic=0.35, roughness=0.4),
+                               metallic=0.6, roughness=0.4, specular=0.4, bump=0.6),
         "Plume": M.hair_strands("Plume", "#7A140C", roughness=0.5, random_color=0.2,
                                 reflection=0.5),
         "Silk": M.cloth("Silk", "#7E1F17", sheen=0.5, roughness=0.55),
@@ -118,9 +118,9 @@ def main():
         bg = background(os.path.join(out, "portrait_bg.png"), W * SS, H * SS, SEED)
     eye_c = (lm["eye_l"] + lm["eye_r"]) / 2
     cam = cameras.portrait_camera(eye_c, head_height=0.232, yaw_deg=20, pitch_deg=-4,
-                                  eye_line=0.38, head_frac=0.5)
+                                  eye_line=0.38, head_frac=0.6)
     cameras.center_on(cam, [head_obj, gear], 0.5)
-    lights.rig_portrait(cam, eye_c)
+    lights.rig_portrait(cam, eye_c, fill=5.0)
     post.comp_painterly(size=7, sharpness=0.5, eccentricity=1.3, amount=0.8, background=bg,
                         ink=False)
     raw = os.path.join(out, "portrait_raw_%dx.png" % SS)

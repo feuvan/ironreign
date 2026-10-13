@@ -148,12 +148,15 @@ def rig_map(cam=None, key=3.0, sky=0.55, azimuth_deg=135.0, elevation_deg=38.0, 
     return rig
 
 
-def rig_portrait(cam, target, key=170.0, fill=5.0, rim=45.0, sky=0.03, key_angle=140.0,
-                 key_elev=8.0, distance=1.6, key_size=0.5):
+def rig_portrait(cam, target, key=48.0, fill=3.0, rim=16.0, sky=0.04, key_angle=140.0,
+                 key_elev=15.0, distance=1.6, key_size=0.5):
     """Dramatic bust lighting: big warm soft-box from the upper left (front), weak cool fill from
     the right, strong cool rim from behind/top-right to cut the silhouette out of the dark ground.
 
     Energies are Watts for area lights at ``distance`` metres from ``target`` (head ~0.25 m).
+    Calibration: a 0.5 m, 48 W key at 1.6 m gives irradiance ~6 W/m2, i.e. a face-on surface
+    renders at ~1.9 x albedo - skin lands around 0.6 linear and dark armour stays dark.  (Much
+    hotter keys look fine on skin under Filmic but wash every dark material out to grey.)
     """
     t = Vector(target)
     kd = screen_dir(cam, key_angle, key_elev)

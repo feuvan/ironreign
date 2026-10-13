@@ -48,4 +48,6 @@ jobs:
         run: python3 Tools/validate_scenario.py
 
       - name: Check string tables
-        run: python3 Tools/Localization/check_localization.py
+        # --warn-missing: untranslated keys are warnings while the zh-Hans/zh-Hant/ja/ko pass is in progress;
+        # placeholder mismatches and stale English tables still fail. Drop the flag once translations are complete.
+        run: python3 Tools/Localization/check_localization.py --warn-missing

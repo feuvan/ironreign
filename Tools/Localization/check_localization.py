@@ -3,6 +3,8 @@
 
 Fails when a culture misses a key of the English tables, when placeholders ({city}...) differ from
 English, or when the English tables are stale compared with the code/scenarios (run extract_strings.py).
+With --warn-missing, keys missing from a culture are reported as warnings instead of errors (used while a
+translation pass is still in progress).
 """
 import sys
 
@@ -10,6 +12,7 @@ from loclib import LOC_DIR, SCENARIO_DIR, TARGET_CULTURES, load_json, placeholde
 
 
 def main() -> int:
+    warn_missing = "--warn-missing" in sys.argv[1:]
     errors, warnings = [], []
     en_dir = LOC_DIR / "en"
     if not en_dir.exists():
@@ -47,10 +50,11 @@ def main() -> int:
                     errors.append(f"{culture}/{path.name}: '{key}' is defined twice with different text")
                 translated[key] = text
         missing = [k for k in english_union if not translated.get(k)]
+        report = warnings if warn_missing else errors
         for key in missing[:8]:
-            errors.append(f"{culture}: missing '{key}'")
+            report.append(f"{culture}: missing '{key}'")
         if len(missing) > 8:
-            errors.append(f"{culture}: ... {len(missing) - 8} more missing keys")
+            report.append(f"{culture}: ... {len(missing) - 8} more missing keys")
         for key, text in translated.items():
             if key not in english_union:
                 warnings.append(f"{culture}: unused key '{key}'")

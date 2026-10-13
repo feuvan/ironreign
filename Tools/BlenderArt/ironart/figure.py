@@ -505,7 +505,7 @@ def torso(mb, lm, shoulder_w=0.44, chest_d=0.24, mat="Lamellar", segments=48, sl
             ring.append(mb.v((ca * r * sx, 0.02 + sa * r * sy, top + dz)))
         rings.append(ring)
     for k in range(len(rings) - 1):
-        mb.quad_strip(rings[k], rings[k + 1], mat, True, True)
+        mb.quad_strip(rings[k + 1], rings[k], mat, True, True)     # outward winding
     return top - 0.055 * slope
 
 
@@ -526,10 +526,10 @@ def robe_collar(mb, lm, mat="SilkInner", outer="Silk", width=0.04):
              center=(0, 0.018, 0), scale_xy=(1.0, 0.95))
 
 
-def neck_scarf(mb, lm, mat="Silk", inner="SilkInner", radius=0.064, height=0.04, folds=9):
+def neck_scarf(mb, lm, mat="Silk", inner="SilkInner", radius=0.068, height=0.055, folds=9):
     """Silk scarf wrapped around the neck base (general's red neckerchief) with soft folds, over a
     cream inner collar."""
-    nz = lm["neck"].z - 0.03
+    nz = lm["neck"].z - 0.012
     cy = 0.018
     prof = []
     for k in range(7):

@@ -107,8 +107,14 @@ class MeshBuilder:
             for i, val in d.items():
                 dd[i + base] = val
 
-    def build(self, name, materials=None, col=None, auto_smooth_deg=40.0, merge_dist=0.0):
-        """Create the mesh object. ``materials``: {slot_name: bpy Material} (missing -> grey)."""
+    def build(self, name, materials=None, col=None, auto_smooth_deg=40.0, merge_dist=0.0,
+              recalc_normals=False):
+        """Create the mesh object. ``materials``: {slot_name: bpy Material} (missing -> grey).
+
+        ``recalc_normals`` makes face winding consistent/outward per connected piece (bmesh); use
+        it for closed shells whose builder winding you are unsure of.  Builders in this module
+        already wind faces outward (CCW seen from outside).
+        """
         me = bpy.data.meshes.new(name)
         me.from_pydata([tuple(v) for v in self.verts], [], self.faces)
         me.polygons.foreach_set("material_index", self.face_mat)
@@ -138,11 +144,14 @@ class MeshBuilder:
             me.materials.append(m)
         obj = bpy.data.objects.new(name, me)
         (col or bpy.context.scene.collection).objects.link(obj)
-        if merge_dist > 0:
+        if merge_dist > 0 or recalc_normals:
             import bmesh
             bm = bmesh.new()
             bm.from_mesh(me)
-            bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=merge_dist)
+            if merge_dist > 0:
+                bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=merge_dist)
+            if recalc_normals:
+                bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
             bm.to_mesh(me)
             bm.free()
         return obj
