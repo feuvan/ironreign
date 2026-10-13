@@ -79,18 +79,12 @@ cmake -S Tests -B build -G Ninja && cmake --build build && ctest --test-dir buil
 
 ## 持续集成
 
-`.github/workflows/ci.yml` 包含三个作业：
+`.github/workflows/ci.yml` 只运行与引擎无关的检查：
 
-1. **Rules engine**：在 Ubuntu 上分别用 gcc 和 clang 编译并运行规则引擎测试。
+1. **Rules engine**：在 Ubuntu 上分别用 gcc 和 clang 编译并运行规则引擎测试（含 Unity Build 检查与二十年无头 AI 战役）。
 2. **Data**：校验剧本与各语言字符串表。
-3. **Unreal Engine 5.8**：在 Epic 官方容器镜像 `ghcr.io/epicgames/unreal-engine:dev-slim-5.8` 中编译 `IronReignEditor`、运行 `IronReign.*` 自动化测试；推送到 `main` 或手动触发（勾选 package）时还会烘焙并打包 Linux 版本作为构建产物。
 
-Epic 的镜像是私有的，需要：
-
-- 将 GitHub 账号与 Epic Games 账号关联（参见 Epic 的 “Unreal Engine on GitHub” 说明）；
-- 在仓库 Secrets 中设置 `GHCR_USERNAME`（该 GitHub 用户名）与 `GHCR_TOKEN`（具有 `read:packages` 权限的个人访问令牌）。
-
-可选的仓库变量：`UE_IMAGE`（覆盖镜像标签）与 `UE_RUNNER`（引擎镜像较大，可改用更大磁盘的 runner 或自托管 runner）。未配置凭据时该作业会给出警告并跳过。
+Unreal Engine 工程本身在本地编译与运行（见「开始使用」）。
 
 ## 许可
 

@@ -404,9 +404,9 @@ buttons, round history text.
 
 - `Tests/` (CMake): unit tests for JSON, state load/save round-trip, orders, execution, battle, duel,
   and a headless AI-only campaign (no crashes, invariants hold, conquests happen).
-- GitHub Actions (`.github/workflows/ci.yml`): (1) Sim tests with gcc and clang; (2) Unreal build of
-  `IronReignEditor` + automation tests + Linux package in Epic's `ghcr.io/epicgames/unreal-engine` 5.8
-  container (requires GHCR credentials of an Epic-linked GitHub account, see README).
+- GitHub Actions (`.github/workflows/ci.yml`) runs only engine-independent checks: the rules engine tests with
+  gcc and clang (including the unity-build check and the AI campaign) and the scenario/localization checks.
+  The Unreal project is built and run locally.
 
 ## 11. Localization
 
