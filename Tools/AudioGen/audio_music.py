@@ -300,9 +300,9 @@ def victory() -> np.ndarray:
     mix.add("guzheng", off + mix.bar(1, 3.0), ins.gliss(up, 0.045, 0.6, mix.rng, accel=0.3))
     chord = [d3 - 12, d3 - 5, d3, d4, d4 + 4, d4 + 7, d5]
     for i, m in enumerate(chord):
-        mix.add("guzheng", off + mix.bar(2) + 0.02 * i, ins.pluck(float(midi_hz(m)), 4.0, 0.75, "guzheng", rng=mix.rng))
+        mix.add("guzheng", off + mix.bar(2) + 0.02 * i, ins.pluck(float(midi_hz(m)), 6.5, 0.75, "guzheng", rng=mix.rng))
     guqin = jianpu("1,:4 | 5,:4 | 1,:4~", d3, vel=0.9)
-    mix.plucks("guqin", guqin, "guqin", ring=4.0, offset=off)
+    mix.plucks("guqin", guqin, "guqin", ring=6.5, offset=off)
 
     levels = {"dizi": -1, "guzheng": -5, "guqin": -6, "drum": -4, "gong": -6, "roll": -8, "cymbal": -12}
     sends = {"dizi": 0.35, "guzheng": 0.32, "guqin": 0.3, "drum": 0.2, "gong": 0.25, "roll": 0.2, "cymbal": 0.3}
