@@ -512,7 +512,6 @@ IRON_TEST(GameMonthEndEconomy)
 	IRON_EXPECT_EQ(After.Food, Before.Food - 666);
 	IRON_EXPECT_EQ(After.Order, Before.Order - 1);
 	IRON_EXPECT_EQ(After.Population, Before.Population + (Before.PopulationMax - Before.Population) * 50 / 4000);
-	IRON_EXPECT(State.Orders.size() == State.Orders.size());
 
 	// The month 2 bandit event is waiting for the player.
 	const FPendingEvent* Event = Game.CurrentEvent();

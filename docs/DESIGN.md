@@ -96,6 +96,20 @@ and gold allows, train, develop; attack a neighbor when local strength > 1.6x th
 frontier cities from the interior. Difficulty scales AI income (Easy 0.8, Normal 1.0, Hard 1.25) and
 aggression.
 
+**As implemented (rules engine, tuned by 20-year AI campaigns; constants in `Sim/IronGameInternal.h`
+`GameRules::Balance`).** Garrisons eat Troops/15 food per month; harvest = Farm x 30 x OrderFactor; draft
+capacity = Population/25 per month, recruits arrive at training 30. Market: 12 gold per 100 food, x0.7 in
+month 9 rising to x1.35 by month 8, selling pays 60% of the buy price. Sieges: gate HP = 300 + 2 x Defense,
+wall bonus = 15 + Defense/30 (max 60); garrison detachments have stats 40, <= 4400 troops, up to 5.
+Loyalty drifts toward 50 + RulerCharm/5 - affinity distance/3 - (Ambition-50)/5; below 40 officers may leave;
+officers over 60 may die of old age (rare). AI captors release 30% of prisoners. Alliance 36 months, truce 12.
+AI attacks when its estimate exceeds 1.7 / 1.5 / 1.3 x the defender (Easy/Normal/Hard), doubled at the start
+and easing over 24 months; for 36 months it never takes a faction's last unthreatened city; uncommanded
+garrison troops count 35%, 20% of neighbouring garrisons count as support; each AI faction picks a focus
+enemy, shifts troops/officers/supplies to that front, and armies carry march food + 35 days.
+Observed: first elimination between months 37 and 73, 22-59 conquests in 20 years, starvation/bankruptcy
+under 0.1% of city-months.
+
 **Events.** Data-driven (see schema). Player events show a modal with choices; world events apply
 effects automatically and are logged.
 
