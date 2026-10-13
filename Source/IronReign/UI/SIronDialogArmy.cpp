@@ -326,7 +326,7 @@ void SIronArmyDialog::ToggleOfficer(int32 Officer)
 	ErrorText = FText::GetEmpty();
 	if (Chosen.Contains(Officer))
 	{
-		Chosen.Remove(Officer);
+		(void)Chosen.Remove(Officer);
 	}
 	else if (Chosen.Num() < IronSim::MaxArmyUnits)
 	{
@@ -345,8 +345,8 @@ void SIronArmyDialog::MakeCommander(int32 Officer)
 {
 	if (Chosen.Contains(Officer))
 	{
-		Chosen.Remove(Officer);
-		Chosen.Insert(Officer, 0);
+		(void)Chosen.Remove(Officer);
+		(void)Chosen.Insert(Officer, 0);
 	}
 }
 

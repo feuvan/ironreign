@@ -20,7 +20,7 @@ namespace IronCityPanelDetail
 {
 	uint32 Mix(uint32 Hash, int32 Value)
 	{
-		return HashCombine(Hash, GetTypeHash(Value));
+		return (Hash ^ static_cast<uint32>(Value)) * 16777619u + 0x9E3779B9u;
 	}
 
 	FString FieldIcon(int32 FieldIndex)

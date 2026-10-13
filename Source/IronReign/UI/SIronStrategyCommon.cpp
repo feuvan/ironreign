@@ -465,19 +465,10 @@ namespace IronStrategy
 					+ SVerticalBox::Slot()
 					.AutoHeight()
 					.HAlign(HAlign_Center)
+					.Padding(FMargin(0.0f, 0.0f, 0.0f, 10.0f))
 					[
+						// MakeHeader draws the title with its own ornamental divider underneath.
 						IronStyle::MakeHeader(Title, 26.0f, false)
-					]
-					+ SVerticalBox::Slot()
-					.AutoHeight()
-					.Padding(FMargin(0.0f, 4.0f, 0.0f, 10.0f))
-					[
-						SNew(SBox)
-						.HeightOverride(12.0f)
-						[
-							SNew(SImage)
-							.Image(IronStyle::Divider())
-						]
 					]
 					+ SVerticalBox::Slot()
 					.FillHeight(1.0f)

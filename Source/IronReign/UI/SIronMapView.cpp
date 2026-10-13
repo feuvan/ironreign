@@ -270,8 +270,8 @@ void SIronMapView::LoadArtInfo()
 	if (FPaths::FileExists(AreaPath) && FFileHelper::LoadFileToString(AreaText, *AreaPath))
 	{
 		TArray<FString> Parts;
-		AreaText.ParseIntoArrayWS(Parts);
-		if (Parts.Num() >= 4)
+		const int32 PartCount = AreaText.ParseIntoArrayWS(Parts);
+		if (PartCount >= 4 && Parts.Num() >= 4)
 		{
 			const float ParsedW = FCString::Atof(*Parts[2]);
 			const float ParsedH = FCString::Atof(*Parts[3]);

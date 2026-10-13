@@ -48,8 +48,8 @@ SIronStrategyScreen::~SIronStrategyScreen()
 {
 	if (Session.IsValid())
 	{
-		Session->OnStateChanged.Remove(StateChangedHandle);
-		Session->OnCultureChanged.Remove(CultureChangedHandle);
+		(void)Session->OnStateChanged.Remove(StateChangedHandle);
+		(void)Session->OnCultureChanged.Remove(CultureChangedHandle);
 	}
 }
 
@@ -493,8 +493,8 @@ uint32 SIronStrategyScreen::ComputeLogSignature() const
 	if (!GameState.Log.empty())
 	{
 		const IronSim::FLogEntry& Last = GameState.Log.back();
-		Hash = HashCombine(Hash, GetTypeHash(IronUI::ToFString(Last.Text)));
-		Hash = HashCombine(Hash, GetTypeHash(Last.Day + Last.Month * 31 + Last.Year * 400));
+		Hash = (Hash ^ GetTypeHash(IronUI::ToFString(Last.Text))) * 16777619u;
+		Hash = (Hash ^ static_cast<uint32>(Last.Day + Last.Month * 31 + Last.Year * 400)) * 16777619u;
 	}
 	return Hash == 0 ? 2 : Hash;
 }
@@ -661,12 +661,12 @@ bool SIronStrategyScreen::HandleSpaceKey()
 	}
 	if (Flow == EIronStrategyFlow::Planning)
 	{
-		HandleEndTurn();
+		(void)HandleEndTurn();
 		return true;
 	}
 	if (Flow == EIronStrategyFlow::Running)
 	{
-		HandleSpeed(SpeedIndex == 0 ? FMath::Clamp(ResumeSpeedIndex, 1, IronStrategyScreenDetail::SpeedSteps - 1) : 0);
+		(void)HandleSpeed(SpeedIndex == 0 ? FMath::Clamp(ResumeSpeedIndex, 1, IronStrategyScreenDetail::SpeedSteps - 1) : 0);
 		return true;
 	}
 	return false;
@@ -831,15 +831,8 @@ void SIronStrategyScreen::AdvanceExecution(float DeltaSeconds)
 	{
 		return;
 	}
-	if (Session->State().bDayInProgress)
-	{
-		// Finish the battles of an interrupted day right away.
-		DayFraction = 1.0f;
-	}
-	else
-	{
-		DayFraction += DeltaSeconds * FMath::Max(0.1f, Session->GetDaysPerSecond()) * Multiplier;
-	}
+	// A day interrupted by a player battle simply continues with the next Step().
+	DayFraction += DeltaSeconds * FMath::Max(0.1f, Session->GetDaysPerSecond()) * Multiplier;
 	if (DayFraction >= 1.0f)
 	{
 		DayFraction = FMath::Min(DayFraction - 1.0f, 0.95f);
