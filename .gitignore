@@ -18,3 +18,8 @@ Build/
 Plugins/*/Binaries/
 Plugins/*/Intermediate/
 
+
+# Localization tool downloads
+Tools/Localization/.cache/
+__pycache__/
+Packaged/

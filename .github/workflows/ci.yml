@@ -1,0 +1,155 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "claude/**"]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      package:
+        description: "Also cook and package a Linux build"
+        type: boolean
+        default: false
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rules-engine:
+    name: Rules engine tests (${{ matrix.compiler }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Ninja
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
+
+      - name: Configure
+        run: |
+          if [ "${{ matrix.compiler }}" = "clang" ]; then CXX=clang++; else CXX=g++; fi
+          cmake -S Tests -B build -G Ninja -DCMAKE_CXX_COMPILER="$CXX" -DCMAKE_BUILD_TYPE=RelWithDebInfo
+
+      - name: Build (includes a unity-build check of Source/IronReign/Sim)
+        run: cmake --build build
+
+      - name: Test (unit tests + headless AI campaign)
+        run: ctest --test-dir build --output-on-failure
+
+  data:
+    name: Scenario and localization checks
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate scenarios
+        run: python3 Tools/validate_scenario.py
+
+      - name: Check string tables
+        run: python3 Tools/Localization/check_localization.py
+
+  unreal:
+    name: Unreal Engine 5.8 (build, automation tests, package)
+    runs-on: ${{ vars.UE_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 300
+    env:
+      # Epic's images are private: the account behind GHCR_TOKEN must be linked to an Epic Games account
+      # (https://www.unrealengine.com/en-US/ue-on-github) and the token needs the read:packages scope.
+      UE_IMAGE: ${{ vars.UE_IMAGE || 'ghcr.io/epicgames/unreal-engine:dev-slim-5.8' }}
+      UE_ROOT: /home/ue4/UnrealEngine
+      HAS_UE_CREDENTIALS: ${{ secrets.GHCR_TOKEN != '' && secrets.GHCR_USERNAME != '' }}
+      PACKAGE: ${{ (github.event_name == 'workflow_dispatch' && inputs.package) || github.ref == 'refs/heads/main' }}
+    steps:
+      - name: Explain skipped Unreal build
+        if: env.HAS_UE_CREDENTIALS != 'true'
+        run: echo "::warning title=Unreal build skipped::Set the GHCR_USERNAME and GHCR_TOKEN repository secrets (Epic-linked GitHub account, read:packages) to build with ${UE_IMAGE}."
+
+      - uses: actions/checkout@v4
+        if: env.HAS_UE_CREDENTIALS == 'true'
+
+      - name: Make room for the engine image
+        if: env.HAS_UE_CREDENTIALS == 'true'
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost || true
+          sudo docker image prune --all --force
+          # The engine image is large; keep Docker's data on the runner's bigger /mnt disk.
+          sudo systemctl stop docker docker.socket
+          sudo mkdir -p /mnt/docker
+          echo '{"data-root": "/mnt/docker"}' | sudo tee /etc/docker/daemon.json
+          sudo systemctl start docker
+          df -h / /mnt
+
+      - name: Log in to GitHub Container Registry
+        if: env.HAS_UE_CREDENTIALS == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ secrets.GHCR_USERNAME }}
+          password: ${{ secrets.GHCR_TOKEN }}
+
+      - name: Pull ${{ env.UE_IMAGE }}
+        if: env.HAS_UE_CREDENTIALS == 'true'
+        run: docker pull "$UE_IMAGE"
+
+      - name: Prepare workspace for the container user
+        if: env.HAS_UE_CREDENTIALS == 'true'
+        run: chmod -R a+rwX "$GITHUB_WORKSPACE"
+
+      - name: Build IronReignEditor (Linux, Development)
+        if: env.HAS_UE_CREDENTIALS == 'true'
+        run: |
+          docker run --rm -v "$GITHUB_WORKSPACE:/project" -w /project "$UE_IMAGE" \
+            "$UE_ROOT/Engine/Build/BatchFiles/Linux/Build.sh" IronReignEditor Linux Development \
+            -Project=/project/IronReign.uproject -WaitMutex -NoHotReloadFromIDE
+
+      - name: Run automation tests (IronReign.*)
+        if: env.HAS_UE_CREDENTIALS == 'true'
+        run: |
+          docker run --rm -v "$GITHUB_WORKSPACE:/project" -w /project "$UE_IMAGE" \
+            "$UE_ROOT/Engine/Binaries/Linux/UnrealEditor-Cmd" /project/IronReign.uproject \
+            -ExecCmds="Automation RunTests IronReign" -TestExit="Automation Test Queue Empty" \
+            -ReportExportPath=/project/Saved/AutomationReport \
+            -unattended -nopause -nullrhi -nosplash -nosound -stdout -log=AutomationTests.log
+          python3 - <<'PY'
+          import json, sys, pathlib
+          report = pathlib.Path("Saved/AutomationReport/index.json")
+          if not report.exists():
+              sys.exit("Automation report missing: the editor did not run the tests")
+          data = json.loads(report.read_text(encoding="utf-8-sig"))
+          print(f"Automation: {data.get('succeeded', 0)} succeeded, {data.get('succeededWithWarnings', 0)} with warnings, {data.get('failed', 0)} failed")
+          for test in data.get("tests", []):
+              if test.get("state") == "Fail":
+                  print(f"::error title={test.get('fullTestPath')}::" + "; ".join(e.get("event", {}).get("message", "") for e in test.get("entries", [])))
+          sys.exit(1 if data.get("failed", 0) else 0)
+          PY
+
+      - name: Cook and package (Linux)
+        if: env.HAS_UE_CREDENTIALS == 'true' && env.PACKAGE == 'true'
+        run: |
+          docker run --rm -v "$GITHUB_WORKSPACE:/project" -w /project "$UE_IMAGE" \
+            "$UE_ROOT/Engine/Build/BatchFiles/RunUAT.sh" BuildCookRun \
+            -project=/project/IronReign.uproject -platform=Linux -clientconfig=Development \
+            -build -cook -stage -pak -archive -archivedirectory=/project/Packaged \
+            -nop4 -utf8output -unattended -nocompileeditor
+
+      - name: Upload logs
+        if: always() && env.HAS_UE_CREDENTIALS == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: unreal-logs
+          path: |
+            Saved/Logs/
+            Saved/AutomationReport/
+          if-no-files-found: ignore
+
+      - name: Upload Linux build
+        if: env.HAS_UE_CREDENTIALS == 'true' && env.PACKAGE == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: IronReign-Linux
+          path: Packaged/
+          if-no-files-found: error

@@ -1,0 +1,1588 @@
+{
+  "format": "ironreign",
+  "version": 1,
+  "key": "broken_mandate",
+  "name": "The Broken Mandate",
+  "description": "Year 212. The boy emperor is dead and the Mandate of Heaven lies shattered. Six powers rise from the ruins of the Nine Provinces: the forge-lords of the north, the steppe riders of the west, the last loyalists of the Azure Court, the merchant princes of the sea, the poets of the southern lotus, and the outlaws of the Black Mountains. Only one banner will fly over Luojing.",
+  "startYear": 212,
+  "startMonth": 1,
+  "map": {
+    "width": 2400,
+    "height": 1500,
+    "image": "Art/Map/WorldMap.png",
+    "land": [
+      [
+        [
+          0,
+          0
+        ],
+        [
+          2250,
+          0
+        ],
+        [
+          2215,
+          80
+        ],
+        [
+          2140,
+          150
+        ],
+        [
+          2095,
+          235
+        ],
+        [
+          2010,
+          300
+        ],
+        [
+          1985,
+          345
+        ],
+        [
+          2040,
+          400
+        ],
+        [
+          2055,
+          470
+        ],
+        [
+          2030,
+          545
+        ],
+        [
+          2080,
+          610
+        ],
+        [
+          2160,
+          690
+        ],
+        [
+          2235,
+          760
+        ],
+        [
+          2240,
+          830
+        ],
+        [
+          2150,
+          880
+        ],
+        [
+          2085,
+          935
+        ],
+        [
+          2110,
+          1000
+        ],
+        [
+          2160,
+          1060
+        ],
+        [
+          2120,
+          1140
+        ],
+        [
+          2010,
+          1220
+        ],
+        [
+          1900,
+          1300
+        ],
+        [
+          1820,
+          1380
+        ],
+        [
+          1770,
+          1460
+        ],
+        [
+          1755,
+          1500
+        ],
+        [
+          0,
+          1500
+        ]
+      ],
+      [
+        [
+          2235,
+          980
+        ],
+        [
+          2310,
+          955
+        ],
+        [
+          2365,
+          1010
+        ],
+        [
+          2340,
+          1085
+        ],
+        [
+          2265,
+          1100
+        ],
+        [
+          2220,
+          1045
+        ]
+      ],
+      [
+        [
+          2300,
+          300
+        ],
+        [
+          2350,
+          280
+        ],
+        [
+          2380,
+          330
+        ],
+        [
+          2330,
+          360
+        ]
+      ]
+    ],
+    "lakes": [
+      [
+        [
+          1120,
+          1010
+        ],
+        [
+          1190,
+          985
+        ],
+        [
+          1265,
+          1000
+        ],
+        [
+          1290,
+          1045
+        ],
+        [
+          1240,
+          1085
+        ],
+        [
+          1160,
+          1080
+        ],
+        [
+          1110,
+          1050
+        ]
+      ],
+      [
+        [
+          300,
+          560
+        ],
+        [
+          350,
+          545
+        ],
+        [
+          380,
+          580
+        ],
+        [
+          340,
+          610
+        ],
+        [
+          295,
+          595
+        ]
+      ]
+    ],
+    "mountains": [
+      {
+        "points": [
+          [
+            620,
+            90
+          ],
+          [
+            680,
+            200
+          ],
+          [
+            650,
+            330
+          ],
+          [
+            700,
+            470
+          ],
+          [
+            650,
+            600
+          ]
+        ],
+        "width": 90
+      },
+      {
+        "points": [
+          [
+            880,
+            60
+          ],
+          [
+            1050,
+            95
+          ],
+          [
+            1250,
+            80
+          ],
+          [
+            1420,
+            110
+          ]
+        ],
+        "width": 50
+      },
+      {
+        "points": [
+          [
+            560,
+            770
+          ],
+          [
+            700,
+            760
+          ],
+          [
+            820,
+            730
+          ],
+          [
+            920,
+            700
+          ]
+        ],
+        "width": 80
+      },
+      {
+        "points": [
+          [
+            250,
+            930
+          ],
+          [
+            380,
+            970
+          ],
+          [
+            520,
+            980
+          ],
+          [
+            620,
+            960
+          ]
+        ],
+        "width": 70
+      },
+      {
+        "points": [
+          [
+            1730,
+            740
+          ],
+          [
+            1790,
+            800
+          ],
+          [
+            1820,
+            890
+          ],
+          [
+            1800,
+            990
+          ]
+        ],
+        "width": 55
+      },
+      {
+        "points": [
+          [
+            1180,
+            1440
+          ],
+          [
+            1360,
+            1470
+          ],
+          [
+            1560,
+            1460
+          ]
+        ],
+        "width": 60
+      }
+    ],
+    "hills": [
+      {
+        "points": [
+          [
+            1700,
+            260
+          ],
+          [
+            1800,
+            240
+          ],
+          [
+            1900,
+            250
+          ]
+        ],
+        "width": 70
+      },
+      {
+        "points": [
+          [
+            460,
+            600
+          ],
+          [
+            560,
+            640
+          ],
+          [
+            640,
+            700
+          ]
+        ],
+        "width": 70
+      },
+      {
+        "points": [
+          [
+            760,
+            840
+          ],
+          [
+            880,
+            860
+          ],
+          [
+            980,
+            840
+          ]
+        ],
+        "width": 60
+      },
+      {
+        "points": [
+          [
+            1550,
+            1260
+          ],
+          [
+            1650,
+            1300
+          ],
+          [
+            1720,
+            1360
+          ]
+        ],
+        "width": 70
+      },
+      {
+        "points": [
+          [
+            1550,
+            820
+          ],
+          [
+            1600,
+            900
+          ],
+          [
+            1560,
+            980
+          ]
+        ],
+        "width": 50
+      },
+      {
+        "points": [
+          [
+            300,
+            1250
+          ],
+          [
+            450,
+            1300
+          ],
+          [
+            600,
+            1280
+          ]
+        ],
+        "width": 80
+      }
+    ],
+    "rivers": [
+      {
+        "points": [
+          [
+            400,
+            240
+          ],
+          [
+            480,
+            280
+          ],
+          [
+            560,
+            330
+          ],
+          [
+            680,
+            390
+          ],
+          [
+            800,
+            430
+          ],
+          [
+            930,
+            475
+          ],
+          [
+            1060,
+            540
+          ],
+          [
+            1180,
+            595
+          ],
+          [
+            1300,
+            620
+          ],
+          [
+            1420,
+            640
+          ],
+          [
+            1560,
+            690
+          ],
+          [
+            1700,
+            720
+          ],
+          [
+            1850,
+            700
+          ],
+          [
+            1990,
+            660
+          ],
+          [
+            2120,
+            650
+          ]
+        ],
+        "width": 12
+      },
+      {
+        "points": [
+          [
+            290,
+            1050
+          ],
+          [
+            420,
+            1125
+          ],
+          [
+            560,
+            1085
+          ],
+          [
+            700,
+            1095
+          ],
+          [
+            860,
+            1125
+          ],
+          [
+            1005,
+            1115
+          ],
+          [
+            1115,
+            1055
+          ]
+        ],
+        "width": 14
+      },
+      {
+        "points": [
+          [
+            1280,
+            1060
+          ],
+          [
+            1340,
+            1150
+          ],
+          [
+            1450,
+            1190
+          ],
+          [
+            1580,
+            1170
+          ],
+          [
+            1720,
+            1120
+          ],
+          [
+            1860,
+            1060
+          ],
+          [
+            1980,
+            1035
+          ],
+          [
+            2115,
+            1020
+          ]
+        ],
+        "width": 15
+      },
+      {
+        "points": [
+          [
+            640,
+            860
+          ],
+          [
+            740,
+            930
+          ],
+          [
+            860,
+            1000
+          ],
+          [
+            960,
+            1070
+          ],
+          [
+            1005,
+            1115
+          ]
+        ],
+        "width": 7
+      },
+      {
+        "points": [
+          [
+            1080,
+            1420
+          ],
+          [
+            1100,
+            1300
+          ],
+          [
+            1150,
+            1180
+          ],
+          [
+            1170,
+            1080
+          ]
+        ],
+        "width": 7
+      }
+    ],
+    "forests": [
+      {
+        "x": 1080,
+        "y": 1300,
+        "r": 90
+      },
+      {
+        "x": 1180,
+        "y": 1360,
+        "r": 70
+      },
+      {
+        "x": 1600,
+        "y": 1240,
+        "r": 70
+      },
+      {
+        "x": 1700,
+        "y": 1200,
+        "r": 60
+      },
+      {
+        "x": 880,
+        "y": 980,
+        "r": 60
+      },
+      {
+        "x": 1380,
+        "y": 420,
+        "r": 55
+      },
+      {
+        "x": 430,
+        "y": 860,
+        "r": 60
+      },
+      {
+        "x": 1830,
+        "y": 1150,
+        "r": 60
+      },
+      {
+        "x": 760,
+        "y": 1180,
+        "r": 70
+      },
+      {
+        "x": 1300,
+        "y": 1300,
+        "r": 50
+      },
+      {
+        "x": 2000,
+        "y": 880,
+        "r": 50
+      },
+      {
+        "x": 560,
+        "y": 1300,
+        "r": 70
+      }
+    ],
+    "deserts": [
+      {
+        "x": 150,
+        "y": 380,
+        "r": 220
+      },
+      {
+        "x": 330,
+        "y": 170,
+        "r": 160
+      },
+      {
+        "x": 120,
+        "y": 700,
+        "r": 160
+      }
+    ],
+    "labels": [
+      {
+        "text": "Western Steppe",
+        "x": 230,
+        "y": 560,
+        "size": 1.2
+      },
+      {
+        "text": "Northern Marches",
+        "x": 1330,
+        "y": 150,
+        "size": 1.0
+      },
+      {
+        "text": "Central Plain",
+        "x": 1390,
+        "y": 470,
+        "size": 1.2
+      },
+      {
+        "text": "Eastern Sea",
+        "x": 2290,
+        "y": 560,
+        "size": 1.3
+      },
+      {
+        "text": "Cloud Lake",
+        "x": 1200,
+        "y": 1040,
+        "size": 0.7
+      },
+      {
+        "text": "Black Mountains",
+        "x": 1880,
+        "y": 930,
+        "size": 0.8
+      },
+      {
+        "text": "Southern Wilds",
+        "x": 1290,
+        "y": 1420,
+        "size": 1.0
+      },
+      {
+        "text": "Qin Mountains",
+        "x": 700,
+        "y": 700,
+        "size": 0.8
+      }
+    ]
+  },
+  "techniques": [],
+  "factions": [
+    {
+      "key": "iron_banner",
+      "name": "Iron Banner",
+      "nameZh": "铁旗军",
+      "glyph": "燕",
+      "color": "#B3282D",
+      "ruler": "yan_tieshan",
+      "capital": "tiezhou"
+    },
+    {
+      "key": "wolf_riders",
+      "name": "Wolf Riders",
+      "nameZh": "西狼骑",
+      "glyph": "赫",
+      "color": "#B07A2A",
+      "ruler": "helian_bo",
+      "capital": "liangzhou"
+    },
+    {
+      "key": "azure_court",
+      "name": "Azure Court",
+      "nameZh": "青庭",
+      "glyph": "刘",
+      "color": "#2F6DB5",
+      "ruler": "liu_chengxuan",
+      "capital": "luojing"
+    },
+    {
+      "key": "sea_league",
+      "name": "Sea League",
+      "nameZh": "东海盟",
+      "glyph": "沈",
+      "color": "#1F8F8A",
+      "ruler": "shen_jiuling",
+      "capital": "haizhou"
+    },
+    {
+      "key": "southern_lotus",
+      "name": "Southern Lotus",
+      "nameZh": "南莲",
+      "glyph": "苏",
+      "color": "#4C9A3C",
+      "ruler": "su_wanqing",
+      "capital": "lianzhou"
+    },
+    {
+      "key": "black_mountain",
+      "name": "Black Mountain Brotherhood",
+      "nameZh": "黑山寨",
+      "glyph": "墨",
+      "color": "#4A4A55",
+      "ruler": "mo_xuan",
+      "capital": "heishan"
+    }
+  ],
+  "cities": [
+    {
+      "key": "tiezhou",
+      "name": "Tiezhou",
+      "nameZh": "铁州",
+      "description": "Forge-city of the north, seat of the Iron Banner. Its smiths arm half the realm.",
+      "x": 1140,
+      "y": 270,
+      "size": 3,
+      "terrain": "plains",
+      "owner": "iron_banner",
+      "population": 280000,
+      "populationMax": 450000,
+      "farm": 600,
+      "farmMax": 1200,
+      "commerce": 600,
+      "commerceMax": 1200,
+      "defense": 700,
+      "defenseMax": 1200,
+      "order": 75,
+      "troops": 22000,
+      "training": 65,
+      "gold": 3000,
+      "food": 40000
+    },
+    {
+      "key": "yanmen",
+      "name": "Yanmen Pass",
+      "nameZh": "雁门",
+      "description": "A fortress astride the wild-goose pass; whoever holds it holds the northern road.",
+      "x": 840,
+      "y": 210,
+      "size": 2,
+      "terrain": "mountains",
+      "owner": "iron_banner",
+      "population": 150000,
+      "populationMax": 300000,
+      "farm": 400,
+      "farmMax": 900,
+      "commerce": 380,
+      "commerceMax": 900,
+      "defense": 450,
+      "defenseMax": 900,
+      "order": 65,
+      "troops": 12000,
+      "training": 55,
+      "gold": 1500,
+      "food": 20000
+    },
+    {
+      "key": "beiyuan",
+      "name": "Beiyuan",
+      "nameZh": "北原",
+      "description": "Horse markets and barley fields on the northern plains.",
+      "x": 1470,
+      "y": 225,
+      "size": 2,
+      "terrain": "plains",
+      "owner": "iron_banner",
+      "population": 150000,
+      "populationMax": 300000,
+      "farm": 400,
+      "farmMax": 900,
+      "commerce": 380,
+      "commerceMax": 900,
+      "defense": 450,
+      "defenseMax": 900,
+      "order": 65,
+      "troops": 12000,
+      "training": 55,
+      "gold": 1500,
+      "food": 20000
+    },
+    {
+      "key": "liangzhou",
+      "name": "Liangzhou",
+      "nameZh": "凉州",
+      "description": "Walled oasis at the edge of the steppe, capital of the Wolf Riders.",
+      "x": 390,
+      "y": 390,
+      "size": 3,
+      "terrain": "plains",
+      "owner": "wolf_riders",
+      "population": 280000,
+      "populationMax": 450000,
+      "farm": 600,
+      "farmMax": 1200,
+      "commerce": 600,
+      "commerceMax": 1200,
+      "defense": 700,
+      "defenseMax": 1200,
+      "order": 75,
+      "troops": 22000,
+      "training": 65,
+      "gold": 3000,
+      "food": 40000
+    },
+    {
+      "key": "yumen",
+      "name": "Yumen",
+      "nameZh": "玉门",
+      "description": "The Jade Gate, last post before the endless grass.",
+      "x": 165,
+      "y": 195,
+      "size": 1,
+      "terrain": "plains",
+      "owner": "wolf_riders",
+      "population": 70000,
+      "populationMax": 160000,
+      "farm": 250,
+      "farmMax": 600,
+      "commerce": 200,
+      "commerceMax": 600,
+      "defense": 300,
+      "defenseMax": 600,
+      "order": 60,
+      "troops": 6000,
+      "training": 45,
+      "gold": 800,
+      "food": 10000
+    },
+    {
+      "key": "tianshui",
+      "name": "Tianshui",
+      "nameZh": "天水",
+      "description": "Terraced hill town guarding the western approaches.",
+      "x": 540,
+      "y": 660,
+      "size": 2,
+      "terrain": "hills",
+      "owner": "wolf_riders",
+      "population": 150000,
+      "populationMax": 300000,
+      "farm": 400,
+      "farmMax": 900,
+      "commerce": 380,
+      "commerceMax": 900,
+      "defense": 450,
+      "defenseMax": 900,
+      "order": 65,
+      "troops": 12000,
+      "training": 55,
+      "gold": 1500,
+      "food": 20000
+    },
+    {
+      "key": "luojing",
+      "name": "Luojing",
+      "nameZh": "洛京",
+      "description": "The old imperial capital on the Great River. The Azure Court still holds its palaces.",
+      "x": 1230,
+      "y": 630,
+      "size": 3,
+      "terrain": "river",
+      "owner": "azure_court",
+      "population": 280000,
+      "populationMax": 450000,
+      "farm": 600,
+      "farmMax": 1200,
+      "commerce": 600,
+      "commerceMax": 1200,
+      "defense": 700,
+      "defenseMax": 1200,
+      "order": 75,
+      "troops": 22000,
+      "training": 65,
+      "gold": 3000,
+      "food": 40000
+    },
+    {
+      "key": "wancheng",
+      "name": "Wancheng",
+      "nameZh": "宛城",
+      "description": "Granary city south of the capital.",
+      "x": 1110,
+      "y": 870,
+      "size": 2,
+      "terrain": "plains",
+      "owner": "azure_court",
+      "population": 150000,
+      "populationMax": 300000,
+      "farm": 400,
+      "farmMax": 900,
+      "commerce": 380,
+      "commerceMax": 900,
+      "defense": 450,
+      "defenseMax": 900,
+      "order": 65,
+      "troops": 12000,
+      "training": 55,
+      "gold": 1500,
+      "food": 20000
+    },
+    {
+      "key": "chenliu",
+      "name": "Chenliu",
+      "nameZh": "陈留",
+      "description": "Prosperous crossroads of the central plain.",
+      "x": 1500,
+      "y": 570,
+      "size": 2,
+      "terrain": "plains",
+      "owner": "azure_court",
+      "population": 150000,
+      "populationMax": 300000,
+      "farm": 400,
+      "farmMax": 900,
+      "commerce": 380,
+      "commerceMax": 900,
+      "defense": 450,
+      "defenseMax": 900,
+      "order": 65,
+      "troops": 12000,
+      "training": 55,
+      "gold": 1500,
+      "food": 20000
+    },
+    {
+      "key": "haizhou",
+      "name": "Haizhou",
+      "nameZh": "海州",
+      "description": "Harbor of a thousand sails, ruled by the salt merchants of the Sea League.",
+      "x": 1950,
+      "y": 540,
+      "size": 3,
+      "terrain": "coast",
+      "owner": "sea_league",
+      "population": 280000,
+      "populationMax": 450000,
+      "farm": 600,
+      "farmMax": 1200,
+      "commerce": 600,
+      "commerceMax": 1200,
+      "defense": 700,
+      "defenseMax": 1200,
+      "order": 75,
+      "troops": 22000,
+      "training": 65,
+      "gold": 3000,
+      "food": 40000
+    },
+    {
+      "key": "langya",
+      "name": "Langya",
+      "nameZh": "琅琊",
+      "description": "Coastal hills famed for scholars and sea trade.",
+      "x": 1830,
+      "y": 315,
+      "size": 2,
+      "terrain": "hills",
+      "owner": "sea_league",
+      "population": 150000,
+      "populationMax": 300000,
+      "farm": 400,
+      "farmMax": 900,
+      "commerce": 380,
+      "commerceMax": 900,
+      "defense": 450,
+      "defenseMax": 900,
+      "order": 65,
+      "troops": 12000,
+      "training": 55,
+      "gold": 1500,
+      "food": 20000
+    },
+    {
+      "key": "wujun",
+      "name": "Wujun",
+      "nameZh": "吴郡",
+      "description": "Silk town at the mouth of the Southern River.",
+      "x": 1980,
+      "y": 1020,
+      "size": 2,
+      "terrain": "river",
+      "owner": "sea_league",
+      "population": 150000,
+      "populationMax": 300000,
+      "farm": 400,
+      "farmMax": 900,
+      "commerce": 380,
+      "commerceMax": 900,
+      "defense": 450,
+      "defenseMax": 900,
+      "order": 65,
+      "troops": 12000,
+      "training": 55,
+      "gold": 1500,
+      "food": 20000
+    },
+    {
+      "key": "lianzhou",
+      "name": "Lianzhou",
+      "nameZh": "莲州",
+      "description": "Lotus-pond capital of the south, rich in rice and poetry.",
+      "x": 1350,
+      "y": 1200,
+      "size": 3,
+      "terrain": "river",
+      "owner": "southern_lotus",
+      "population": 280000,
+      "populationMax": 450000,
+      "farm": 600,
+      "farmMax": 1200,
+      "commerce": 600,
+      "commerceMax": 1200,
+      "defense": 700,
+      "defenseMax": 1200,
+      "order": 75,
+      "troops": 22000,
+      "training": 65,
+      "gold": 3000,
+      "food": 40000
+    },
+    {
+      "key": "jiangling",
+      "name": "Jiangling",
+      "nameZh": "江陵",
+      "description": "River fortress controlling the upper Southern River.",
+      "x": 1005,
+      "y": 1110,
+      "size": 2,
+      "terrain": "river",
+      "owner": "southern_lotus",
+      "population": 150000,
+      "populationMax": 300000,
+      "farm": 400,
+      "farmMax": 900,
+      "commerce": 380,
+      "commerceMax": 900,
+      "defense": 450,
+      "defenseMax": 900,
+      "order": 65,
+      "troops": 12000,
+      "training": 55,
+      "gold": 1500,
+      "food": 20000
+    },
+    {
+      "key": "guiyang",
+      "name": "Guiyang",
+      "nameZh": "桂阳",
+      "description": "Cassia-scented forest town in the southern hills.",
+      "x": 1650,
+      "y": 1320,
+      "size": 1,
+      "terrain": "forest",
+      "owner": "southern_lotus",
+      "population": 70000,
+      "populationMax": 160000,
+      "farm": 250,
+      "farmMax": 600,
+      "commerce": 200,
+      "commerceMax": 600,
+      "defense": 300,
+      "defenseMax": 600,
+      "order": 60,
+      "troops": 6000,
+      "training": 45,
+      "gold": 800,
+      "food": 10000
+    },
+    {
+      "key": "heishan",
+      "name": "Heishan",
+      "nameZh": "黑山",
+      "description": "Stronghold of the Black Mountain Brotherhood, outlaws turned warlords.",
+      "x": 1680,
+      "y": 840,
+      "size": 2,
+      "terrain": "hills",
+      "owner": "black_mountain",
+      "population": 150000,
+      "populationMax": 300000,
+      "farm": 400,
+      "farmMax": 900,
+      "commerce": 380,
+      "commerceMax": 900,
+      "defense": 450,
+      "defenseMax": 900,
+      "order": 65,
+      "troops": 12000,
+      "training": 55,
+      "gold": 1500,
+      "food": 20000
+    },
+    {
+      "key": "xuyang",
+      "name": "Xuyang",
+      "nameZh": "许阳",
+      "description": "Market town seized by the Brotherhood last winter.",
+      "x": 1410,
+      "y": 930,
+      "size": 1,
+      "terrain": "plains",
+      "owner": "black_mountain",
+      "population": 70000,
+      "populationMax": 160000,
+      "farm": 250,
+      "farmMax": 600,
+      "commerce": 200,
+      "commerceMax": 600,
+      "defense": 300,
+      "defenseMax": 600,
+      "order": 60,
+      "troops": 6000,
+      "training": 45,
+      "gold": 800,
+      "food": 10000
+    },
+    {
+      "key": "hedong",
+      "name": "Hedong",
+      "nameZh": "河东",
+      "description": "Ferry town on the Great River, home of the Stone Bell Monastery.",
+      "x": 930,
+      "y": 480,
+      "size": 1,
+      "terrain": "river",
+      "population": 70000,
+      "populationMax": 160000,
+      "farm": 250,
+      "farmMax": 600,
+      "commerce": 200,
+      "commerceMax": 600,
+      "defense": 300,
+      "defenseMax": 600,
+      "order": 55,
+      "troops": 3000,
+      "training": 35,
+      "gold": 800,
+      "food": 10000
+    },
+    {
+      "key": "qinchuan",
+      "name": "Qinchuan",
+      "nameZh": "秦川",
+      "description": "Valley city ringed by peaks; the Cloudpeak Sword Sect trains above it.",
+      "x": 660,
+      "y": 900,
+      "size": 2,
+      "terrain": "mountains",
+      "population": 150000,
+      "populationMax": 300000,
+      "farm": 400,
+      "farmMax": 900,
+      "commerce": 380,
+      "commerceMax": 900,
+      "defense": 450,
+      "defenseMax": 900,
+      "order": 55,
+      "troops": 6000,
+      "training": 35,
+      "gold": 1500,
+      "food": 20000
+    },
+    {
+      "key": "baidi",
+      "name": "Baidi",
+      "nameZh": "白帝",
+      "description": "White Emperor fortress on the gorges of the Southern River.",
+      "x": 420,
+      "y": 1140,
+      "size": 1,
+      "terrain": "mountains",
+      "population": 70000,
+      "populationMax": 160000,
+      "farm": 250,
+      "farmMax": 600,
+      "commerce": 200,
+      "commerceMax": 600,
+      "defense": 300,
+      "defenseMax": 600,
+      "order": 55,
+      "troops": 3000,
+      "training": 35,
+      "gold": 800,
+      "food": 10000
+    },
+    {
+      "key": "xiangnan",
+      "name": "Xiangnan",
+      "nameZh": "湘南",
+      "description": "Misty forest town; Moonwell Hall keeps its secrets here.",
+      "x": 1080,
+      "y": 1380,
+      "size": 1,
+      "terrain": "forest",
+      "population": 70000,
+      "populationMax": 160000,
+      "farm": 250,
+      "farmMax": 600,
+      "commerce": 200,
+      "commerceMax": 600,
+      "defense": 300,
+      "defenseMax": 600,
+      "order": 55,
+      "troops": 3000,
+      "training": 35,
+      "gold": 800,
+      "food": 10000
+    },
+    {
+      "key": "donghai",
+      "name": "Donghai",
+      "nameZh": "东海",
+      "description": "Fishing port on the eastern cape, loyal to no lord.",
+      "x": 2160,
+      "y": 780,
+      "size": 1,
+      "terrain": "coast",
+      "population": 70000,
+      "populationMax": 160000,
+      "farm": 250,
+      "farmMax": 600,
+      "commerce": 200,
+      "commerceMax": 600,
+      "defense": 300,
+      "defenseMax": 600,
+      "order": 55,
+      "troops": 3000,
+      "training": 35,
+      "gold": 800,
+      "food": 10000
+    }
+  ],
+  "roads": [
+    {
+      "a": "tiezhou",
+      "b": "yanmen",
+      "days": 10,
+      "kind": "road"
+    },
+    {
+      "a": "tiezhou",
+      "b": "beiyuan",
+      "days": 11,
+      "kind": "road"
+    },
+    {
+      "a": "tiezhou",
+      "b": "hedong",
+      "days": 10,
+      "kind": "road"
+    },
+    {
+      "a": "tiezhou",
+      "b": "luojing",
+      "days": 12,
+      "kind": "road"
+    },
+    {
+      "a": "yanmen",
+      "b": "hedong",
+      "days": 12,
+      "kind": "pass"
+    },
+    {
+      "a": "yanmen",
+      "b": "liangzhou",
+      "days": 19,
+      "kind": "pass"
+    },
+    {
+      "a": "beiyuan",
+      "b": "langya",
+      "days": 12,
+      "kind": "road"
+    },
+    {
+      "a": "beiyuan",
+      "b": "chenliu",
+      "days": 12,
+      "kind": "road"
+    },
+    {
+      "a": "yumen",
+      "b": "liangzhou",
+      "days": 10,
+      "kind": "road"
+    },
+    {
+      "a": "liangzhou",
+      "b": "tianshui",
+      "days": 10,
+      "kind": "road"
+    },
+    {
+      "a": "tianshui",
+      "b": "hedong",
+      "days": 17,
+      "kind": "pass"
+    },
+    {
+      "a": "tianshui",
+      "b": "qinchuan",
+      "days": 12,
+      "kind": "pass"
+    },
+    {
+      "a": "qinchuan",
+      "b": "wancheng",
+      "days": 18,
+      "kind": "pass"
+    },
+    {
+      "a": "qinchuan",
+      "b": "baidi",
+      "days": 14,
+      "kind": "pass"
+    },
+    {
+      "a": "baidi",
+      "b": "jiangling",
+      "days": 20,
+      "kind": "river"
+    },
+    {
+      "a": "hedong",
+      "b": "luojing",
+      "days": 11,
+      "kind": "river"
+    },
+    {
+      "a": "luojing",
+      "b": "wancheng",
+      "days": 9,
+      "kind": "road"
+    },
+    {
+      "a": "luojing",
+      "b": "chenliu",
+      "days": 9,
+      "kind": "road"
+    },
+    {
+      "a": "chenliu",
+      "b": "heishan",
+      "days": 11,
+      "kind": "road"
+    },
+    {
+      "a": "chenliu",
+      "b": "haizhou",
+      "days": 15,
+      "kind": "road"
+    },
+    {
+      "a": "wancheng",
+      "b": "xuyang",
+      "days": 10,
+      "kind": "road"
+    },
+    {
+      "a": "xuyang",
+      "b": "heishan",
+      "days": 9,
+      "kind": "road"
+    },
+    {
+      "a": "xuyang",
+      "b": "lianzhou",
+      "days": 9,
+      "kind": "road"
+    },
+    {
+      "a": "wancheng",
+      "b": "jiangling",
+      "days": 9,
+      "kind": "road"
+    },
+    {
+      "a": "jiangling",
+      "b": "lianzhou",
+      "days": 12,
+      "kind": "river"
+    },
+    {
+      "a": "jiangling",
+      "b": "xiangnan",
+      "days": 9,
+      "kind": "road"
+    },
+    {
+      "a": "xiangnan",
+      "b": "lianzhou",
+      "days": 11,
+      "kind": "road"
+    },
+    {
+      "a": "lianzhou",
+      "b": "guiyang",
+      "days": 11,
+      "kind": "road"
+    },
+    {
+      "a": "guiyang",
+      "b": "wujun",
+      "days": 15,
+      "kind": "road"
+    },
+    {
+      "a": "wujun",
+      "b": "haizhou",
+      "days": 16,
+      "kind": "road"
+    },
+    {
+      "a": "heishan",
+      "b": "wujun",
+      "days": 15,
+      "kind": "pass"
+    },
+    {
+      "a": "langya",
+      "b": "haizhou",
+      "days": 8,
+      "kind": "road"
+    },
+    {
+      "a": "haizhou",
+      "b": "donghai",
+      "days": 11,
+      "kind": "road"
+    },
+    {
+      "a": "donghai",
+      "b": "wujun",
+      "days": 10,
+      "kind": "road"
+    }
+  ],
+  "officers": [],
+  "sects": [],
+  "relations": [
+    {
+      "a": "azure_court",
+      "b": "southern_lotus",
+      "trust": 62
+    },
+    {
+      "a": "sea_league",
+      "b": "southern_lotus",
+      "trust": 55
+    },
+    {
+      "a": "iron_banner",
+      "b": "azure_court",
+      "trust": 18
+    },
+    {
+      "a": "wolf_riders",
+      "b": "iron_banner",
+      "trust": 28
+    },
+    {
+      "a": "black_mountain",
+      "b": "azure_court",
+      "trust": 12
+    },
+    {
+      "a": "black_mountain",
+      "b": "sea_league",
+      "trust": 25
+    },
+    {
+      "a": "iron_banner",
+      "b": "sea_league",
+      "trust": 45
+    }
+  ],
+  "events": []
+}
