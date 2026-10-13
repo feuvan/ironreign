@@ -309,7 +309,7 @@ def roof_tiles(name="RoofTile", color="roof_tile", channel=0.16, course=0.22, bu
 
 
 def lacquer(name="Lacquer", color="lacquer", roughness=0.32, coat=1.0, coat_roughness=0.06,
-            vary=0.08, gradient=0.0, sheen_band=0.0, band=(0.60, 0.75)):
+            vary=0.08, gradient=0.0, sheen_band=0.0, band=(0.60, 0.75), specular=0.45):
     """Red (or black) lacquer: deep base + clear glossy coat; very subtle brushing variation.
 
     ``gradient`` > 0 brightens the top / darkens the bottom of the object's bounding box (the
@@ -337,7 +337,7 @@ def lacquer(name="Lacquer", color="lacquer", roughness=0.32, coat=1.0, coat_roug
             for k in ("Red", "Green", "Blue"):
                 nb.link(g, gc.inputs[k])
             base = nb.mix(base, gc.outputs[0], 1.0, blend="MULTIPLY", clamp=False)
-        p = nb.principled(Base_Color=base, Roughness=roughness, Specular_IOR_Level=0.45,
+        p = nb.principled(Base_Color=base, Roughness=roughness, Specular_IOR_Level=specular,
                           Coat_Weight=coat, Coat_Roughness=coat_roughness)
         nb.output(p.outputs[0])
     return mat
@@ -487,14 +487,16 @@ def lamellar(name="Lamellar", color="iron", lacing="lacing_red", plate=(0.008, 0
 
 
 def parchment(name="Parchment", color="paper", fibre=0.5, stain=0.12, roughness=0.92,
-              calib=None):
+              calib=None, edge_attr=None, edge_color="PaperDark"):
     """Aged paper: isotropic fibre mottling (no directional streaks - those read as wood veneer)
     + soft low-frequency stains (Object coords, works without UVs).
 
     The noise is zero-mean around ``color`` so the *average* field lands on the token: with the
     calibrated UI rig (``lights.rig_ui``) the mean of a flat field is within 3 levels of ``color``
     per channel (measured & asserted by the UI style frame).  ``calib`` (r, g, b linear multipliers)
-    corrects a measured residual if a recipe changes the rig.
+    corrects a measured residual if a recipe changes the rig.  ``edge_attr`` (a 0..1 mesh float
+    attribute, e.g. written per profile ring by the UI builders) mixes ``edge_color`` (at 0) into
+    ``color`` (at 1): the aged-edge gradient of a panel border, uniform along the edge.
     """
     mat, nb, created = new(name)
     if not created:
@@ -512,7 +514,12 @@ def parchment(name="Parchment", color="paper", fibre=0.5, stain=0.12, roughness=
     stc = nb.ramp(st.outputs["Fac"], [(0.30, (1 - stain * 0.8, 1 - stain, 1 - stain * 1.4, 1)),
                                       (0.50, (1, 1, 1, 1)),
                                       (0.70, (1 + stain * 0.4, 1 + stain * 0.4, 1 + stain * 0.4, 1))])
-    col = nb.mix(tuple(lin) + (1,), fib, 1.0, blend="MULTIPLY", clamp=False)
+    base = tuple(lin) + (1,)
+    if edge_attr:
+        t = nb.attr(edge_attr).outputs["Fac"]
+        base = nb.mix(palette.lin4(edge_color) if isinstance(edge_color, str) else edge_color,
+                      base, t)
+    col = nb.mix(base, fib, 1.0, blend="MULTIPLY", clamp=False)
     col = nb.mix(col, stc, 1.0, blend="MULTIPLY", clamp=False)
     p = nb.principled(Base_Color=col, Roughness=roughness, Specular_IOR_Level=0.15,
                       Normal=nb.bump(f.outputs["Fac"], 0.03, 0.002))

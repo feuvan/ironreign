@@ -798,7 +798,7 @@ namespace IronSim
 		}
 		if (!Outcome.bFinished)
 		{
-			EndBattle(1, LocF("battle.summary.calledOff", "The battle at {location} was broken off; {winner} holds the field.", {{"location", Config.Location.empty() ? Loc("battle.location.unknown", "the battlefield") : Config.Location}, {"winner", SideName(1)}}));
+			EndBattle(1, LocF("battle.summary.calledOff", "{location}: the battle was broken off; {winner} holds the field.", {{"location", Config.Location.empty() ? Loc("battle.location.unknown", "the battlefield") : Config.Location}, {"winner", SideName(1)}}));
 		}
 	}
 }

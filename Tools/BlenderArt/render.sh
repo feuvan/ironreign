@@ -34,8 +34,9 @@ start=$(date +%s.%N)
 filter() {
   if [ "${IRONART_VERBOSE:-0}" = "1" ]; then cat; else
     # Blender noise: progress lines, prefs, OIIO debug, mesh validation chatter and Freestyle's
-    # harmless "strokes set empty" message for line sets that select nothing.
-    grep --line-buffered -v -E '^(Fra:[0-9]+ |Blender quit$|Read prefs:|OIIO DEBUG|Warning: (degenerated|edge [0-9]+ - [0-9]+ appears)|Error: strokes set empty$|$)' || true
+    # harmless "strokes set empty" message for line sets that select nothing, and Blender's
+    # end-of-run "Not freed memory blocks" leak report.
+    grep --line-buffered -v -E '^(Fra:[0-9]+ |Blender quit$|Read prefs:|OIIO DEBUG|Warning: (degenerated|edge [0-9]+ - [0-9]+ appears)|Error: strokes set empty$|Error: Not freed memory blocks|$)' || true
   fi
 }
 run() { nice -n "$NICE" "$BLENDER" -b --factory-startup -noaudio --python-exit-code 1 \

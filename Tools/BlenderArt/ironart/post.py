@@ -804,18 +804,38 @@ def region_mean(img, box=None, mask=None):
     return tuple(float(v) for v in img[..., :3][m].mean(0) * 255.0)
 
 
-def nine_slice_uniformity(img, margins):
-    """Max per-row std across the horizontal stretch zone and per-column std across the vertical
-    one (8-bit levels, RGB max).  A 9-slice stretches those pixels, so any variation along them
-    becomes streaks; the studio limit is 2 levels."""
+def _detrended_std(lines, window=9):
+    """Std of each 1D line (axis 1) after removing its moving average (``window`` px): a smooth
+    gradient scores ~0, noise / streak-causing variation scores its amplitude."""
+    k = np.ones(window, np.float32) / window
+    pad = window // 2
+    out = []
+    for c in range(lines.shape[2]):
+        a = lines[..., c]
+        p = np.pad(a, ((0, 0), (pad, pad)), mode="edge")
+        sm = np.stack([np.convolve(row, k, mode="valid") for row in p])
+        out.append((a - sm).std(axis=1))
+    return np.max(np.stack(out, -1), -1)
+
+
+def nine_slice_uniformity(img, margins, detrend=True):
+    """How much the 9-slice *border strips* vary along their stretch direction (8-bit levels).
+
+    Returns ``(row, col)``: the worst top/bottom border row across the horizontal stretch zone and
+    the worst left/right border column across the vertical one.  A 9-slice stretches those pixels,
+    so variation along them becomes streaks; the studio limit is 2 levels.  ``detrend`` removes a
+    9 px moving average first, so a smooth vertical gradient (lacquer glow, safe to stretch) is
+    allowed while noise is not.
+    """
     l, t, r, b = margins
     H, W = img.shape[:2]
     rgb = img[..., :3] * 255.0
-    rows = rgb[:, l:W - r]                    # every row, across the stretchable columns
-    cols = rgb[t:H - b, :]                    # every column, across the stretchable rows
-    row_std = float(rows.std(axis=1).max()) if rows.shape[1] > 1 else 0.0
-    col_std = float(cols.std(axis=0).max()) if cols.shape[0] > 1 else 0.0
-    return row_std, col_std
+    rows = np.concatenate([rgb[:t, l:W - r], rgb[H - b:, l:W - r]], 0)          # (n, len, 3)
+    cols = np.concatenate([rgb[t:H - b, :l], rgb[t:H - b, W - r:]], 1)
+    cols = np.transpose(cols, (1, 0, 2))
+    if detrend:
+        return float(_detrended_std(rows).max()), float(_detrended_std(cols).max())
+    return float(rows.std(axis=1).max()), float(cols.std(axis=1).max())
 
 
 def border_alpha_max(img, ring=1):

@@ -346,7 +346,7 @@ namespace IronSim
 		}
 		DeployUnits();
 
-		Emit(EBattleEventType::Message, -1, -1, FHex(), FHex(), 0, LocF("battle.log.begin", "The battle of {location} begins: {attacker} ({attackerTroops} troops) against {defender} ({defenderTroops} troops).", {{"location", BattleDetail::LocationOf(Config)}, {"attacker", SideName(0)}, {"attackerTroops", ToText(TotalTroops(0))}, {"defender", SideName(1)}, {"defenderTroops", ToText(TotalTroops(1))}}));
+		Emit(EBattleEventType::Message, -1, -1, FHex(), FHex(), 0, LocF("battle.log.begin", "{location}: battle begins, {attacker} ({attackerTroops} troops) against {defender} ({defenderTroops} troops).", {{"location", BattleDetail::LocationOf(Config)}, {"attacker", SideName(0)}, {"attackerTroops", ToText(TotalTroops(0))}, {"defender", SideName(1)}, {"defenderTroops", ToText(TotalTroops(1))}}));
 		Emit(EBattleEventType::DayStart, -1, -1, FHex(), FHex(), CurrentDay, LocF("battle.log.dayStart", "Day {day} begins.", {{"day", ToText(CurrentDay)}}));
 		BeginSideTurn(0);
 		CheckVictory();
@@ -1538,7 +1538,7 @@ namespace IronSim
 		}
 		if (CurrentDay >= Config.MaxDays)
 		{
-			EndBattle(1, LocF("battle.summary.dayLimit", "{winner} held {location} until day {day}; the assault has failed.", {{"winner", SideName(1)}, {"location", BattleDetail::LocationOf(Config)}, {"day", ToText(CurrentDay)}}));
+			EndBattle(1, LocF("battle.summary.dayLimit", "{location}: {winner} held out until day {day}; the assault has failed.", {{"winner", SideName(1)}, {"location", BattleDetail::LocationOf(Config)}, {"day", ToText(CurrentDay)}}));
 			return;
 		}
 		++CurrentDay;
@@ -1602,7 +1602,7 @@ namespace IronSim
 			const int FoodDays = Config.Sides[SideIndex].FoodDays;
 			if (CurrentDay > FoodDays)
 			{
-				EndBattle(1 - SideIndex, LocF("battle.summary.food", "{loser} ran out of food at {location} on day {day} and withdrew; {winner} holds the field.", {{"loser", SideName(SideIndex)}, {"winner", SideName(1 - SideIndex)}, {"location", BattleDetail::LocationOf(Config)}, {"day", ToText(CurrentDay)}}));
+				EndBattle(1 - SideIndex, LocF("battle.summary.food", "{location}: {loser} ran out of food on day {day} and withdrew; {winner} holds the field.", {{"loser", SideName(SideIndex)}, {"winner", SideName(1 - SideIndex)}, {"location", BattleDetail::LocationOf(Config)}, {"day", ToText(CurrentDay)}}));
 				return;
 			}
 			if (FoodDays - CurrentDay < 2)
@@ -1625,7 +1625,7 @@ namespace IronSim
 			const int Holder = UnitAt(Castle);
 			if (Holder >= 0 && BattleUnits[static_cast<size_t>(Holder)].Side == 0)
 			{
-				EndBattle(0, LocF("battle.summary.castle", "{winner} stormed the castle of {location} on day {day}.", {{"winner", SideName(0)}, {"location", BattleDetail::LocationOf(Config)}, {"day", ToText(CurrentDay)}}));
+				EndBattle(0, LocF("battle.summary.castle", "{location}: {winner} stormed the castle on day {day}.", {{"winner", SideName(0)}, {"location", BattleDetail::LocationOf(Config)}, {"day", ToText(CurrentDay)}}));
 				return;
 			}
 		}
@@ -1648,12 +1648,12 @@ namespace IronSim
 			}
 			if (!bAnyActive)
 			{
-				EndBattle(1 - SideIndex, LocF("battle.summary.wipedOut", "{winner} won at {location} on day {day}: {loser} has no troops left on the field.", {{"winner", SideName(1 - SideIndex)}, {"loser", SideName(SideIndex)}, {"location", BattleDetail::LocationOf(Config)}, {"day", ToText(CurrentDay)}}));
+				EndBattle(1 - SideIndex, LocF("battle.summary.wipedOut", "{location}: {winner} won on day {day}; {loser} has no troops left on the field.", {{"winner", SideName(1 - SideIndex)}, {"loser", SideName(SideIndex)}, {"location", BattleDetail::LocationOf(Config)}, {"day", ToText(CurrentDay)}}));
 				return;
 			}
 			if (Commander && !Commander->IsActive())
 			{
-				EndBattle(1 - SideIndex, LocF("battle.summary.commanderFell", "{winner} won at {location} on day {day}: {loser}'s commander {commander} has fallen.", {{"winner", SideName(1 - SideIndex)}, {"loser", SideName(SideIndex)}, {"commander", Commander->Setup.Name}, {"location", BattleDetail::LocationOf(Config)}, {"day", ToText(CurrentDay)}}));
+				EndBattle(1 - SideIndex, LocF("battle.summary.commanderFell", "{location}: {winner} won on day {day}; {loser}'s commander {commander} has fallen.", {{"winner", SideName(1 - SideIndex)}, {"loser", SideName(SideIndex)}, {"commander", Commander->Setup.Name}, {"location", BattleDetail::LocationOf(Config)}, {"day", ToText(CurrentDay)}}));
 				return;
 			}
 		}

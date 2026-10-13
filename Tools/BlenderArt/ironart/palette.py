@@ -74,12 +74,12 @@ MAT = {
     "eye_white": "#D8D0C4",
     "iris": "#3A2416",
     # terrain / map (RTK IX relief map look)
-    "plain": "#A9A86A",           # ochre-sage lowland
+    "plain": "#98A26C",           # sage lowland (renders ~#97A26E, hue 75-85)
     "grass": "#7E9A5C",           # sage green
     "meadow": "#93A867",
     "steppe": "#C8B282",          # sandy steppe
     "desert": "#D4BC8A",
-    "hill": "#9A9468",
+    "hill": "#949A6A",
     "rock": "#8A8578",
     "mountain": "#7C838C",        # blue-grey mountain
     "mountain_dark": "#5A6068",
@@ -91,9 +91,10 @@ MAT = {
     "trunk": "#4A3626",
     "sea_deep": "#1D3A52",        # deep teal-indigo
     "sea": "#2A5068",
-    "sea_shallow": "#4E8288",     # lighter coastal shallows
+    "sea_shallow": "#5E9A9A",     # bright coastal shallows
     "beach": "#CDBB8E",
     "river": "#4F86A8",           # clear blue ribbon
+    "river_bank": "#3A6A88",      # 1 px darker bank line
     "lake": "#3F7290",
     "dirt": "#8E7552",
     "road": "#A8916A",

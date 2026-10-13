@@ -132,27 +132,108 @@ def meander(points, step=6.0, amount=10.0, scale=60.0, seed=0):
     return out + nrm * (off * fade)[:, None]
 
 
-def polyline_distance(h, w, points, scale=1.0, return_t=False):
-    """Distance (px) from every pixel centre to a polyline; optionally the arc parameter 0..1."""
-    x, y = grid(h, w, scale)
+def polyline_distance(h, w, points, scale=1.0, return_t=False, block_rows=256):
+    """Distance (px) from every pixel centre to a polyline; optionally the arc parameter 0..1.
+
+    float32 and computed in blocks of ``block_rows`` rows, so a full 4800 x 3000 map field stays
+    at a few hundred MB.  Note: ``t`` jumps across the bisectors of a bend (nearest segment
+    switches) - never modulate heights with raw ``t`` far from the line (use :func:`smooth_t` or
+    position noise), or the jump shows as a straight cliff line.
+    """
     pts = np.asarray(points, np.float32)
     best = np.full((h, w), np.inf, np.float32)
-    best_t = np.zeros((h, w), np.float32)
-    seglen = np.hypot(*np.diff(pts, axis=0).T)
-    cum = np.concatenate([[0], np.cumsum(seglen)])
-    total = max(cum[-1], 1e-6)
-    for i, (a, b) in enumerate(zip(pts[:-1], pts[1:])):
-        d = b - a
-        L2 = float(d @ d) + 1e-9
-        t = np.clip(((x - a[0]) * d[0] + (y - a[1]) * d[1]) / L2, 0, 1)
-        px = a[0] + t * d[0] - x
-        py = a[1] + t * d[1] - y
-        dist = np.sqrt(px * px + py * py)
-        m = dist < best
-        best = np.where(m, dist, best)
-        if return_t:
-            best_t = np.where(m, (cum[i] + t * seglen[i]) / total, best_t)
+    best_t = np.zeros((h, w), np.float32) if return_t else None
+    seglen = np.hypot(*np.diff(pts, axis=0).T).astype(np.float32)
+    cum = np.concatenate([[0], np.cumsum(seglen)]).astype(np.float32)
+    total = max(float(cum[-1]), 1e-6)
+    xs = ((np.arange(w, dtype=np.float32) + 0.5) * scale)[None, :]
+    for r0 in range(0, h, block_rows):
+        r1 = min(h, r0 + block_rows)
+        y = ((np.arange(r0, r1, dtype=np.float32) + 0.5) * scale)[:, None]
+        bb = best[r0:r1]
+        bt = best_t[r0:r1] if return_t else None
+        for i, (a, b) in enumerate(zip(pts[:-1], pts[1:])):
+            d = b - a
+            L2 = float(d @ d) + 1e-9
+            t = np.clip(((xs - a[0]) * d[0] + (y - a[1]) * d[1]) / L2, 0, 1)
+            px = a[0] + t * d[0] - xs
+            py = a[1] + t * d[1] - y
+            dist = np.sqrt(px * px + py * py)
+            m = dist < bb
+            np.copyto(bb, dist, where=m)
+            if return_t:
+                np.copyto(bt, (cum[i] + t * seglen[i]) / total, where=m)
     return (best, best_t) if return_t else best
+
+
+def smooth_t(t, dist, sigma=6.0):
+    """Blur a polyline parameter field so it can modulate shapes without bisector seams."""
+    from . import post
+    return post.gaussian(t, sigma)
+
+
+def nearest_on_polyline(points, p):
+    """Closest point on a polyline to ``p`` and the unit tangent there."""
+    pts = np.asarray(points, np.float32)
+    p = np.asarray(p, np.float32)
+    best, bq, bd = 1e18, None, None
+    for a, b in zip(pts[:-1], pts[1:]):
+        d = b - a
+        t = float(np.clip(((p - a) @ d) / (d @ d + 1e-9), 0, 1))
+        q = a + t * d
+        dd = float(((q - p) ** 2).sum())
+        if dd < best:
+            best, bq, bd = dd, q, d / (np.linalg.norm(d) + 1e-9)
+    return bq, bd
+
+
+def join_tributary(trib, main, overrun=2.0):
+    """Snap a tributary polyline's last point onto the (meandered) main river and run it
+    ``overrun`` px past the bank, so the two water masks always connect."""
+    trib = np.asarray(trib, np.float32).copy()
+    q, _tan = nearest_on_polyline(main, trib[-1])
+    d = q - trib[-2]
+    d = d / (np.linalg.norm(d) + 1e-9)
+    trib[-1] = q
+    return np.vstack([trib, q + d * overrun])
+
+
+def components(mask):
+    """4-connected components of a boolean mask (numpy BFS, no scipy). Returns a label array."""
+    lab = np.zeros(mask.shape, np.int32)
+    h, w = mask.shape
+    n = 0
+    ys, xs = np.nonzero(mask)
+    for y0, x0 in zip(ys, xs):
+        if lab[y0, x0]:
+            continue
+        n += 1
+        stack = [(y0, x0)]
+        lab[y0, x0] = n
+        while stack:
+            y, x = stack.pop()
+            for yy, xx in ((y - 1, x), (y + 1, x), (y, x - 1), (y, x + 1)):
+                if 0 <= yy < h and 0 <= xx < w and mask[yy, xx] and not lab[yy, xx]:
+                    lab[yy, xx] = n
+                    stack.append((yy, xx))
+    return lab
+
+
+def check_rivers(river, land, thresh=0.5):
+    """Every river component must touch the sea (land < 0.5 next to it).  Returns a list of
+    problems (empty = ok): ``["component 2 (34 px) ends inland at (x, y)", ...]``."""
+    from . import post
+    r = river > thresh
+    sea_near = post.gaussian((land < 0.5).astype(np.float32), 1.5) > 0.05
+    lab = components(r)
+    problems = []
+    for k in range(1, lab.max() + 1):
+        m = lab == k
+        if not (m & sea_near).any():
+            ys, xs = np.nonzero(m)
+            problems.append("river component %d (%d px) does not reach the sea, near (%d, %d)"
+                            % (k, m.sum(), xs.mean(), ys.mean()))
+    return problems
 
 
 # ---------------------------------------------------------------------------------------------
@@ -182,9 +263,13 @@ def blur(arr, sigma):
 BIOME_DEFAULTS = {
     "hill_start": 0.10,       # normalised height where lowland turns to hill colour
     "rock_start": 0.30,       # mountain rock begins
-    "snow_start": 0.66,       # snow line (with noise +-0.05)
-    "beach_px": 2.5,          # sand rim width along the coast
-    "shallow_px": 26.0,       # width (px) of the light coastal shallows; deep sea beyond ~4x
+    "snow_start": 0.58,       # snow line (with noise +-0.05): caps run along the crests
+    "snow_slope": 0.3,        # how much steep slopes shed snow (0 = none)
+    "forest_floor": 0.45,     # lerp to forest_dark under the 3D trees (a floor, not a stain)
+    "beach_px": 1.5,          # sand strip along gentle coasts (px of the field)
+    "shallow_px": 10.0,       # bright coastal shallows band (px of the field) ...
+    "shallow_fade_px": 20.0,  # ... fading into the sea over this many px
+    "bank_alpha": 0.5,        # darker 1 px bank line along rivers (river_bank colour)
     "paint_scale": 90.0,      # size of the hand-painted colour blotches (px)
     "paint_amount": 0.09,     # strength of blotches
     "brush_amount": 0.05,     # strength of the streaky brush-stroke texture
@@ -201,7 +286,7 @@ def _lerp(a, b, t):
 
 
 def paint_albedo(height, land, moisture=None, steppe=None, forest=None, river=None, lake=None,
-                 seed=0, params=None):
+                 seed=0, params=None, bank=None, px=1.0):
     """Hand-painted biome albedo (sRGB float HxWx3) for a relief map.
 
     height    normalised heights (0 sea level .. 1 peak), land only matters
@@ -210,6 +295,9 @@ def paint_albedo(height, land, moisture=None, steppe=None, forest=None, river=No
     steppe    0..1 sandy steppe/desert mask
     forest    0..1 forest-floor mask (darker green under the 3D trees)
     river     0..1 river water mask (clear blue ribbon), ``lake`` likewise
+    bank      0..1 river bank line mask (painted ``river_bank`` at ``bank_alpha``)
+    px        field pixels per *target* pixel (2 when the fields are computed at 2x): widths in
+              ``params`` are in target px
     """
     p = dict(BIOME_DEFAULTS, **(params or {}))
     h, w = height.shape
@@ -234,26 +322,31 @@ def paint_albedo(height, land, moisture=None, steppe=None, forest=None, river=No
     rock = _lerp(_c("mountain"), _c("rock"), smoothstep(-0.3, 0.5, brush))
     rock = _lerp(rock, _c("mountain_dark"), smoothstep(1.0, 2.5, sl) * 0.35)
     col = _lerp(col, rock, smoothstep(p["rock_start"], p["rock_start"] + 0.14, hn))
-    sn = p["snow_start"] + 0.05 * fbm_at(x, y, 30, 3, seed=seed + 13)
-    snow = smoothstep(sn, sn + 0.07, height) * (1 - 0.6 * smoothstep(1.2, 2.6, sl))
+    sn = p["snow_start"] + 0.05 * fbm_at(x, y, 30 * px, 3, seed=seed + 13)
+    snow = smoothstep(sn, sn + 0.07, height) * (1 - p["snow_slope"] * smoothstep(1.2, 2.6, sl))
     col = _lerp(col, _c("snow"), snow)
     if forest is not None:
-        col = _lerp(col, _c("forest_dark"), np.clip(forest, 0, 1) * 0.85)
+        col = _lerp(col, _c("forest_dark"), np.clip(forest, 0, 1) * p["forest_floor"])
     # hand-painted blotches + brush streaks
     col = col * (1 + p["paint_amount"] * paint[..., None] + p["brush_amount"] * brush[..., None])
-    # coast: beach rim then sea shallows -> deep
-    near_sea = coast_proximity(1 - land, p["beach_px"] * 0.6)
-    beach = smoothstep(0.35, 0.8, near_sea) * (height < 0.08)
-    col = _lerp(col, _c("beach"), beach * 0.8)
-    shallow = coast_proximity(land, p["shallow_px"] * 0.5)
-    shallow = np.clip(shallow + 0.12 * fbm_at(x, y, 40, 3, seed=seed + 17), 0, 1)
-    sea = _lerp(_c("sea"), _c("sea_shallow"), smoothstep(0.25, 0.9, shallow))
-    deep = coast_proximity(land, p["shallow_px"] * 2.0)
-    sea = _lerp(_c("sea_deep"), sea, smoothstep(0.02, 0.5, deep))
-    sea = sea * (1 + 0.035 * paint[..., None])
+    # coast: a thin sand strip on gentle coasts, then bright shallows -> sea -> deep
+    from . import post
+    landm = (np.asarray(land) > 0.5).astype(np.float32)
+    sea_blur = post.gaussian(1.0 - landm, p["beach_px"] * px * 0.7)
+    gentle = 1.0 - smoothstep(0.6, 1.4, sl)
+    beach = smoothstep(0.06, 0.3, sea_blur) * landm * (height < 0.1) * gentle
+    col = _lerp(col, _c("beach"), beach * 0.9)
+    near = post.gaussian(landm, p["shallow_px"] * px * 0.5)            # ~shallow_px wide band
+    far = post.gaussian(landm, (p["shallow_px"] + p["shallow_fade_px"]) * px * 0.5)
+    wob = 0.08 * fbm_at(x, y, 40 * px, 3, seed=seed + 17)
+    sea = _lerp(_c("sea_deep"), _c("sea"), smoothstep(0.0, 0.12, far + wob * 0.5))
+    sea = _lerp(sea, _c("sea_shallow"), smoothstep(0.01, 0.22, near + wob))
+    sea = sea * (1 + 0.03 * paint[..., None])
     col = _lerp(sea, col, land)
     if lake is not None:
         col = _lerp(col, _c("lake"), lake)
+    if bank is not None:
+        col = _lerp(col, _c("river_bank"), np.clip(bank, 0, 1) * p["bank_alpha"])
     if river is not None:
         col = _lerp(col, _c("river"), river)
     return np.clip(col, 0, 1)

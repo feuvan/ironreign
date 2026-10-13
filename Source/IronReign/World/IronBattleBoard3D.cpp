@@ -5,6 +5,7 @@
 #include "World/IronWorldAssets.h"
 #include "World/IronWorldMath.h"
 
+#include "Algo/Reverse.h"
 #include "Camera/CameraActor.h"
 #include "Camera/CameraComponent.h"
 #include "Components/DirectionalLightComponent.h"
@@ -99,6 +100,14 @@ namespace IronBattleBoard3DDetail
 	constexpr double DuskBearingDegrees = 250.0;
 	constexpr double HorizonElevationDegrees = 13.0;
 	constexpr double SunSmoothTime = 0.8;
+
+	// Point lights in candela (illuminance = I / d^2 lux), scaled to the environment's ~8 lux sun: a hit lights the
+	// ground under it at ~2-3x the sun for a moment, a burning hex glows orange around itself.
+	constexpr double HitCandela = 110.0;
+	constexpr double FireBurstCandela = 220.0;
+	constexpr double BurnCandela = 70.0;
+	constexpr double SwirlCandela = 70.0;
+	constexpr double PulseCandela = 90.0;
 
 	constexpr int32 MaxFxQuads = 240;
 	constexpr int32 MaxLights = 40;
@@ -1156,7 +1165,7 @@ void AIronBattleBoard3D::RefreshHighlightLayers()
 		return;
 	}
 	bHighlightsDirty = false;
-	if (Highlights.Reachable != BuiltHighlights.Reachable || HighlightMeshes.Num() == 0)
+	if (Highlights.Reachable != BuiltHighlights.Reachable)
 	{
 		FillHexLayer(IronBoard3D::ELayer::Reachable, Highlights.Reachable);
 	}
@@ -1228,6 +1237,11 @@ void AIronBattleBoard3D::SetSeason(int32 Month)
 	if (Environment != nullptr)
 	{
 		Environment->SetSeason(SeasonMonth, true);
+		// The environment just placed its sun for the new season: that is what the strategy map gets back later.
+		if (bSunOverridden && Environment->GetSun() != nullptr)
+		{
+			SavedSunRotation = Environment->GetSun()->GetComponentRotation();
+		}
 	}
 	if (GroundMaterial != nullptr)
 	{
@@ -1476,7 +1490,7 @@ TArray<IronSim::FHex> AIronBattleBoard3D::FindPath(const IronSim::FHex& From, co
 	for (int32 Sample = 1; Sample <= Samples; ++Sample)
 	{
 		IronSim::FHex Step;
-		LocalMToHex(FMath::Lerp(StartM, EndM, static_cast<double>(Sample) / static_cast<double>(Samples)), BoardCols, BoardRows, Step);
+		LocalMToHex(StartM + (EndM - StartM) * (static_cast<double>(Sample) / static_cast<double>(Samples)), BoardCols, BoardRows, Step);
 		if (Step != Path.Last())
 		{
 			Path.Add(Step);
@@ -1761,12 +1775,12 @@ void AIronBattleBoard3D::PlayEvent(const IronSim::FBattleEvent& Event)
 	{
 		if (IsValidUnit(Event.Unit))
 		{
-			FTrack Cast;
-			Cast.Kind = ETrack::Cast;
-			Cast.Unit = Event.Unit;
-			Cast.Start = EventStart;
-			Cast.Duration = CastSeconds;
-			AddTrack(MoveTemp(Cast));
+			FTrack Casting;
+			Casting.Kind = ETrack::Cast;
+			Casting.Unit = Event.Unit;
+			Casting.Start = EventStart;
+			Casting.Duration = CastSeconds;
+			AddTrack(MoveTemp(Casting));
 		}
 		const double EffectStart = EventStart + EffectDelaySeconds;
 		FTrack Effect;
@@ -2106,7 +2120,7 @@ void AIronBattleBoard3D::UpdateTrack(IronBoard3D::FTrack& Track, double Elapsed)
 		const FVector& SegmentStart = Track.Points[Segment];
 		const FVector& SegmentEnd = Track.Points[Segment + 1];
 		const bool bGlide = Track.Variant == 1;
-		FVector Position = FMath::Lerp(SegmentStart, SegmentEnd, bGlide ? IronWorld::EaseInOut(Alpha) : Alpha);
+		FVector Position = SegmentStart + (SegmentEnd - SegmentStart) * (bGlide ? IronWorld::EaseInOut(Alpha) : Alpha);
 		if (!bGlide)
 		{
 			// One hop per hex.
@@ -2170,7 +2184,7 @@ void AIronBattleBoard3D::UpdateTrack(IronBoard3D::FTrack& Track, double Elapsed)
 				continue;
 			}
 			const double Spread = 45.0 * (static_cast<double>(Arrow) - 0.5 * static_cast<double>(Track.Quads.Num() - 1));
-			const FVector Position = FMath::Lerp(Launch, Land, Along) + Side * Spread + FVector(0.0, 0.0, 420.0 * FMath::Sin(UE_DOUBLE_PI * Along));
+			const FVector Position = Launch + (Land - Launch) * Along + Side * Spread + FVector(0.0, 0.0, 420.0 * FMath::Sin(UE_DOUBLE_PI * Along));
 			PlaceQuad(Track.Quads[Arrow], Position, 0.32f, Rgb(ArrowRgb), true);
 		}
 		break;
@@ -2190,7 +2204,7 @@ void AIronBattleBoard3D::UpdateTrack(IronBoard3D::FTrack& Track, double Elapsed)
 			}
 		}
 		const FVector Impact = Track.Points.Num() > 0 ? Track.Points[0] : HexLocalCm(Track.To);
-		PlaceLight(Track.Light, Impact + FVector(0.0, 0.0, 220.0), static_cast<float>(520.0 * Strength * Fade * Fade));
+		PlaceLight(Track.Light, Impact + FVector(0.0, 0.0, 220.0), static_cast<float>(HitCandela * Strength * Fade * Fade));
 		if (Track.Quads.Num() > 0)
 		{
 			PlaceQuad(Track.Quads[0], Impact + FVector(0.0, 0.0, 15.0), 6.5f, WithAlpha(Track.Color, 0.7 * Fade * Fade), false);
@@ -2245,7 +2259,7 @@ void AIronBattleBoard3D::UpdateTrack(IronBoard3D::FTrack& Track, double Elapsed)
 		const FVector Centre = Track.Points.Num() > 0 ? Track.Points[0] : HexLocalCm(Track.To);
 		const double Envelope = Progress < 0.12 ? Progress / 0.12 : FMath::Pow(1.0 - (Progress - 0.12) / 0.88, 1.5);
 		const double Flicker = 0.75 + 0.25 * static_cast<double>(FMath::PerlinNoise1D(static_cast<float>(Clock * 9.0)));
-		PlaceLight(Track.Light, Centre + FVector(0.0, 0.0, 200.0), static_cast<float>(1100.0 * Envelope * Flicker));
+		PlaceLight(Track.Light, Centre + FVector(0.0, 0.0, 200.0), static_cast<float>(FireBurstCandela * Envelope * Flicker));
 		const int32 Embers = Track.Quads.Num() - 1;
 		for (int32 Ember = 0; Ember < Embers; ++Ember)
 		{
@@ -2273,7 +2287,7 @@ void AIronBattleBoard3D::UpdateTrack(IronBoard3D::FTrack& Track, double Elapsed)
 	{
 		const FVector Centre = IsValidUnit(Track.Other) && UnitVisuals[Track.Other].bShown ? UnitLocalNow(Track.Other) : (Track.Points.Num() > 0 ? Track.Points[0] : HexLocalCm(Track.To));
 		const double Envelope = FMath::Sin(UE_DOUBLE_PI * Progress);
-		PlaceLight(Track.Light, Centre + FVector(0.0, 0.0, 250.0), static_cast<float>(320.0 * Envelope));
+		PlaceLight(Track.Light, Centre + FVector(0.0, 0.0, 250.0), static_cast<float>(SwirlCandela * Envelope));
 		for (int32 Ring = 0; Ring < Track.Quads.Num(); ++Ring)
 		{
 			const double Angle = Elapsed * 6.5 + 2.0 * UE_DOUBLE_PI * static_cast<double>(Ring) / 3.0;
@@ -2294,7 +2308,7 @@ void AIronBattleBoard3D::UpdateTrack(IronBoard3D::FTrack& Track, double Elapsed)
 	case ETrack::Pulse:
 	{
 		const FVector Centre = IsValidUnit(Track.Other) && UnitVisuals[Track.Other].bShown ? UnitLocalNow(Track.Other) : (Track.Points.Num() > 0 ? Track.Points[0] : HexLocalCm(Track.To));
-		PlaceLight(Track.Light, Centre + FVector(0.0, 0.0, 250.0), static_cast<float>(380.0 * FMath::Sin(UE_DOUBLE_PI * Progress)));
+		PlaceLight(Track.Light, Centre + FVector(0.0, 0.0, 250.0), static_cast<float>(PulseCandela * FMath::Sin(UE_DOUBLE_PI * Progress)));
 		for (int32 Ring = 0; Ring < Track.Quads.Num(); ++Ring)
 		{
 			const double RingAlpha = (Elapsed - 0.28 * static_cast<double>(Ring)) / 0.75;
@@ -2577,7 +2591,7 @@ void AIronBattleBoard3D::UpdateBurning()
 		const FVector Centre = HexLocalCm(Fire.Hex);
 		const double Time = Clock + static_cast<double>(Fire.Phase);
 		const double Flicker = 0.7 + 0.3 * static_cast<double>(FMath::PerlinNoise1D(static_cast<float>(Time * 7.0))) + 0.1 * FMath::Sin(Time * 23.0);
-		PlaceLight(Fire.Light, Centre + FVector(0.0, 0.0, 180.0), static_cast<float>(260.0 * Flicker));
+		PlaceLight(Fire.Light, Centre + FVector(0.0, 0.0, 180.0), static_cast<float>(BurnCandela * Flicker));
 		for (int32 Ember = 0; Ember < Fire.Quads.Num(); ++Ember)
 		{
 			const double Cycle = FMath::Frac((Time + 0.29 * static_cast<double>(Ember)) / BurnEmberCycleSeconds);
@@ -2887,7 +2901,6 @@ void AIronBattleBoard3D::SetHighlights(const TArray<IronSim::FHex>& Reachable, c
 	NewHighlights.Reachable = Reachable;
 	NewHighlights.AttackTargets = AttackTargets;
 	NewHighlights.TacticTargets = TacticTargets;
-	NewHighlights.DuelTargets = Highlights.DuelTargets;
 	NewHighlights.SelectedUnit = SelectedUnit;
 	NewHighlights.HoveredHex = HoveredHex;
 	SetHighlights(NewHighlights);
