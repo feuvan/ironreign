@@ -45,6 +45,11 @@ class HeadParams:
     socket: float = 1.0         # eye-socket depth
     lips: float = 1.0
     age: float = 0.3            # 0 young .. 1 old (sagging cheeks, deeper sockets)
+    lid_upper: float = 0.25     # upper lid edge elevation (rad) above the eye axis at the centre
+    lid_lower: float = 0.22     # lower lid edge elevation (rad) below the eye axis
+    eye_tilt: float = 0.07      # outer-corner lift (rad per rad of azimuth)
+    eye_width: float = 1.22     # half-width of the opening (rad of azimuth around the eyeball)
+    eye_depth: float = 0.0025   # cornea front behind the un-carved face surface (m)
     seed: int = 0
 
 
@@ -102,16 +107,16 @@ def head_masses(p):
         ((0, -0.066 * D, -0.064), (0.026, 0.020, 0.018 * p.lips), 0),               # muzzle
         ((0, -0.082 * D, -0.058), (0.0185, 0.0085, 0.0062 * p.lips), 0),            # upper lip
         ((0, -0.079 * D, -0.0705), (0.0165, 0.0085, 0.0058 * p.lips), 0),           # lower lip
-        ((0, -0.083 * D - 0.004 * nb, -0.012 * nl), (0.0085 * nw, 0.0115 * nb, 0.027 * nl),
-         math.radians(22)),                                                          # nose bridge
-        ((0, -0.099 * D - 0.003 * nl, -0.034 * nl), (0.0095 * nw, 0.0095, 0.009), 0),  # nose tip
-        ((0.0125 * nw, -0.086 * D, -0.039 * nl), (0.0074 * nw, 0.0088, 0.0064), 0),  # ala L
-        ((-0.0125 * nw, -0.086 * D, -0.039 * nl), (0.0074 * nw, 0.0088, 0.0064), 0),  # ala R
+        ((0, -0.077 * D - 0.004 * nb, -0.017 * nl), (0.0078 * nw, 0.0095 * nb, 0.026 * nl),
+         math.radians(-28)),                                                         # nose bridge
+        ((0, -0.097 * D - 0.003 * nl, -0.035 * nl), (0.0088 * nw, 0.0088, 0.0085), 0),  # nose tip
+        ((0.012 * nw, -0.082 * D, -0.039 * nl), (0.0066 * nw, 0.0076, 0.0058), 0),   # ala L
+        ((-0.012 * nw, -0.082 * D, -0.039 * nl), (0.0066 * nw, 0.0076, 0.0058), 0),  # ala R
     ]
     return m
 
 
-def head(params=None, segments=192, rings=128, mat="Skin", blend=0.008):
+def head(params=None, segments=320, rings=224, mat="Skin", blend=0.008):
     """Sculpt the head as a smooth union of anatomical masses evaluated along radial rays from
     the skull centre (the head is star-shaped from there), then carve eye sockets and add
     detail offsets.  Returns ``(MeshBuilder, landmarks)``."""
@@ -130,10 +135,45 @@ def head(params=None, segments=192, rings=128, mat="Skin", blend=0.008):
     es = 0.031 * p.eye_spacing
     ez = 0.004
     off = np.zeros_like(r)
-    # eye sockets (deeper under the brow, open towards the cheek)
+    # --- eyes: eyeball centres from the un-carved face; lids = skin conforming to a sphere
+    #     slightly larger than the eyeball, with an almond opening pushed in behind the eyeball
+    r_eye = 0.0118 * p.eye_size
+    front_dir = d[:, 1] < -0.2
+    eye_specs = []
     for sgn in (1, -1):
-        off -= 0.0125 * p.socket * (1 + 0.25 * p.age) * _g2(x - sgn * es, z - ez - 0.002, 0.0135, 0.0105) * fw
-        off += 0.0022 * _g2(x - sgn * (es + 0.004), z - ez + 0.017, 0.012, 0.004) * fw   # lower lid/cheek pad
+        k = np.argmin(np.where(front_dir, (x - sgn * es) ** 2 + (z - ez) ** 2, np.inf))
+        c = np.array([sgn * es, y[k] + p.eye_depth + r_eye, ez])
+        eye_specs.append((Vector(c), r_eye, sgn))
+    for (c, re_, sgn) in eye_specs:
+        c = np.array(c)
+        rl = re_ * 1.05
+        t_lid = _exit_dist(d, c, np.array([rl, rl, rl]))
+        hit = np.isfinite(t_lid)
+        tl = np.where(hit, t_lid, 0.0)
+        q = (d * tl[:, None] - c) / rl
+        yaw = sgn * 0.10                                      # eyes look slightly outward
+        qx = q[:, 0] * math.cos(yaw) - q[:, 1] * math.sin(yaw)
+        qy = q[:, 0] * math.sin(yaw) + q[:, 1] * math.cos(yaw)
+        az = np.arctan2(qx, -qy)
+        el = np.arcsin(np.clip(q[:, 2], -1, 1))
+        ang = np.sqrt((az / (p.eye_width + 0.25)) ** 2 + (el / 1.05) ** 2)
+        w = np.where(hit & (qy < 0.35), 1.0 - np.clip((ang - 0.72) / 0.32, 0, 1), 0.0)
+        w = w * w * (3 - 2 * w)
+        r = r * (1 - w) + tl * w
+        kk = np.cos(np.clip(az / p.eye_width, -1, 1) * math.pi / 2) ** 0.75
+        tilt = p.eye_tilt * az * sgn
+        e_top = p.lid_upper * kk + tilt - 0.02
+        e_bot = -p.lid_lower * kk + tilt + 0.02
+        m = 0.07
+        o = (np.clip((e_top - el) / m + 0.5, 0, 1) * np.clip((el - e_bot) / m + 0.5, 0, 1)
+             * np.clip((p.eye_width - np.abs(az)) / m + 0.5, 0, 1)) * (w > 0.5)
+        r = r - o * rl * 1.3
+    P = d * r[:, None]
+    x, y, z = P[:, 0], P[:, 1], P[:, 2]
+    for sgn in (1, -1):
+        # brow-to-lid concavity and the cheek pad under the lower lid
+        off -= 0.004 * p.socket * (1 + 0.25 * p.age) * _g2(x - sgn * (es + 0.002), z - ez - 0.016, 0.014, 0.006) * fw
+        off += 0.0012 * _g2(x - sgn * (es + 0.004), z - ez + 0.02, 0.012, 0.004) * fw
     off -= 0.0035 * _g2(x, z - 0.008, 0.006, 0.006) * fw          # nasion dip
     off -= 0.0018 * _g2(x, z + 0.064, 0.02, 0.0014) * fw          # mouth line
     for sgn in (1, -1):
@@ -175,8 +215,9 @@ def head(params=None, segments=192, rings=128, mat="Skin", blend=0.008):
     mz = -0.064
     lm = {
         "params": p,
-        "eye_l": Vector((es, surf_y(es, ez + 0.013), ez)),           # subject's left = +x
-        "eye_r": Vector((-es, surf_y(-es, ez + 0.013), ez)),
+        "eye_l": eye_specs[0][0],                                      # subject's left = +x
+        "eye_r": eye_specs[1][0],
+        "eye_specs": eye_specs,
         "nose_tip": Vector((0, surf_y(0, tip_z), tip_z)),
         "mouth": Vector((0, surf_y(0, mz), mz)),
         "chin": Vector((0, surf_y(0, -0.095), -0.095)),
@@ -205,40 +246,27 @@ def ears(mb, lm, mat="Skin", size=1.0):
         mb.transform(s, m)
 
 
-def eyes(mb, lm, mat_lid="Skin", size=1.0, lid_open=1.0, lash_mat="Brow"):
-    """Upper/lower lids (spherical shells with an almond opening) + a dark lash line, built into
-    ``mb``.  Returns ``[(centre, radius, side_sign), ...]`` for :func:`eyeballs`."""
+def eyes(mb, lm, lash_mat="Brow", lash=1.0):
+    """Lash line: a thin dark tapered tube along the upper-lid edge (the crisp painted eye line).
+    The lids themselves are part of the head surface (see :func:`head`).  Returns the eye specs
+    ``[(centre, radius, side_sign), ...]`` for :func:`eyeballs`."""
     p = lm["params"]
-    r = 0.0118 * p.eye_size * size
-    out = []
-    for key, sgn in (("eye_l", 1), ("eye_r", -1)):
-        surf = lm[key]
-        c = Vector((surf.x, surf.y + r * 0.78, surf.z))
-        out.append((c, r, sgn))
-        rl = r * 1.075
-        out_tilt = 0.06
-
-        def lid_fn(upper, c=c, sgn=sgn):
-            def fn(u, v):
-                az = (-1.0 + 2.0 * u) * 1.45                  # around the front, radians
-                k = math.cos(az * 0.95) ** 0.8 if abs(az * 0.95) < math.pi / 2 else 0.0
-                tilt = out_tilt * az * sgn                     # outer corner slightly higher
-                if upper:
-                    e0 = (0.05 + 0.25 * k * lid_open) + tilt
-                    e = e0 + (1.45 - e0) * v
-                else:
-                    e0 = -(0.05 + 0.21 * k * lid_open) + tilt
-                    e = e0 - (1.30 + e0) * v
-                dirv = Vector((math.sin(az) * math.cos(e), -math.cos(az) * math.cos(e), math.sin(e)))
-                return tuple(c + dirv * rl)
-            return fn
-        mb.grid(lid_fn(True), 18, 6, mat_lid, smooth=True)
-        mb.grid(lid_fn(False), 18, 5, mat_lid, smooth=True, flip=True)
-        pts = [lid_fn(True)(u, 0.0) for u in np.linspace(0.08, 0.95, 14)]
-        pts = [tuple(Vector(q) + (Vector(q) - c).normalized() * r * 0.05) for q in pts]
-        mb.tube(pts, r * 0.07, lash_mat, 5,
-                radius_fn=lambda t: 0.5 + 0.8 * math.sin(math.pi * min(1.0, t * 1.1)))
-    return out
+    for (c, r, sgn) in lm["eye_specs"]:
+        rl = r * 1.07
+        pts = []
+        for u in np.linspace(-0.92, 0.95, 16):
+            az = u * p.eye_width
+            kk = math.cos(min(1.0, abs(az) / p.eye_width) * math.pi / 2) ** 0.75
+            e = p.lid_upper * kk + p.eye_tilt * az * sgn - 0.02
+            yaw = sgn * 0.10
+            dx, dy = math.sin(az) * math.cos(e), -math.cos(az) * math.cos(e)
+            v = Vector((dx * math.cos(yaw) + dy * math.sin(yaw), -dx * math.sin(yaw) + dy * math.cos(yaw),
+                        math.sin(e)))
+            pts.append(tuple(c + v * rl))
+        if lash > 0:
+            mb.tube(pts, r * 0.075 * lash, lash_mat, 5,
+                    radius_fn=lambda t: 0.35 + 0.9 * math.sin(math.pi * min(1.0, 0.15 + t * 0.95)))
+    return lm["eye_specs"]
 
 
 def eyeballs(eye_specs, material, look=(0.0, 0.0), name="Eye"):
@@ -496,6 +524,44 @@ def robe_collar(mb, lm, mat="SilkInner", outer="Silk", width=0.04):
     # inner collar (white/red) ring around the neck
     mb.lathe([(0.058, z0 - 0.02), (0.062, z0 + 0.012), (0.056, z0 + 0.03)], mat, 32,
              center=(0, 0.018, 0), scale_xy=(1.0, 0.95))
+
+
+def neck_scarf(mb, lm, mat="Silk", inner="SilkInner", radius=0.064, height=0.04, folds=9):
+    """Silk scarf wrapped around the neck base (general's red neckerchief) with soft folds, over a
+    cream inner collar."""
+    nz = lm["neck"].z - 0.03
+    cy = 0.018
+    prof = []
+    for k in range(7):
+        t = k / 6
+        prof.append((radius * (1.0 + 0.22 * math.sin(math.pi * t)), nz - height * 0.5 + height * t))
+    s0 = mb.n
+    mb.lathe(prof, mat, 48, center=(0, cy, 0), smooth=True)
+    for i in range(s0, mb.n):
+        v = mb.verts[i]
+        a = math.atan2(v.y - cy, v.x)
+        k = 1.0 + 0.06 * math.sin(a * folds) * math.sin((v.z - nz) * 60)
+        mb.verts[i] = Vector((v.x * k, cy + (v.y - cy) * k, v.z))
+    mb.lathe([(radius * 0.92, nz + height * 0.45), (radius * 0.86, nz + height * 0.75),
+              (radius * 0.80, nz + height * 0.9)], inner, 40, center=(0, cy, 0), smooth=True)
+
+
+def cape(mb, lm, shoulder_w=0.44, mat="Silk", length=0.4, folds=7, spread=1.0):
+    """Cloak hanging behind the shoulders (visible at the sides and behind the neck)."""
+    top = lm["neck"].z - 0.05
+
+    def fn(u, v):
+        # phi: 0 = subject's left side (+x), 90 deg = the back (+y), 180 deg = right side
+        a = math.radians(-15 + 210 * u)
+        rx = shoulder_w / 2 * (1.05 + 0.15 * v) * spread
+        ry = 0.12 * (1.0 + 0.2 * v)
+        fold = 1.0 + 0.05 * v * math.sin(u * folds * TAU)
+        x = math.cos(a) * rx * fold
+        y = 0.04 + math.sin(a) * ry * fold
+        z = top + 0.02 - length * v - 0.03 * math.cos(math.pi * (u - 0.5)) * (1 - v)
+        return (x, y, z)
+    mb.grid(fn, 40, 10, mat, smooth=True)
+    mb.grid(fn, 40, 10, mat, smooth=True, flip=True)
 
 
 def pauldrons(mb, lm, shoulder_w=0.44, tiers=3, mat="Lamellar", trim="Bronze", size=1.0):

@@ -30,7 +30,7 @@ SEED = 21
 
 def portrait_materials():
     return {
-        "Skin": M.skin("Skin", "#B8784F", sss=0.22, roughness=0.5, blush=0.35),
+        "Skin": M.skin("Skin", "#B57852", sss=0.2, roughness=0.56, blush=0.35),
         "Eye": M.eye("Eye", iris="#2E1C10", sclera="#BFB2A2"),
         "Brow": M.hair_mesh("Brow", "#1C1714", strand_scale=400, direction="X"),
         "Beard": M.hair_mesh("Beard", "#17120F", strand_scale=260, direction="Z", roughness=0.6),
@@ -42,6 +42,7 @@ def portrait_materials():
         "Plume": M.hair_strands("Plume", "#6E150E", roughness=0.55, random_color=0.15),
         "Silk": M.cloth("Silk", "#7E1F17", sheen=0.5, roughness=0.55),
         "SilkInner": M.cloth("SilkInner", "#D8CBB0", sheen=0.3, roughness=0.7),
+        "Cape": M.cloth("Cape", "#6E1A14", sheen=0.6, roughness=0.6),
         "HairBlack": M.hair_strands("HairBlack", melanin=0.97, redness=0.3, roughness=0.4,
                                     random_color=0.1),
     }
@@ -64,20 +65,21 @@ def background(path, w, h, seed):
 
 
 def build_general(rng):
-    p = F.HeadParams(jaw=1.05, chin=1.1, brow=1.25, cheekbone=1.1, nose_bridge=1.1, socket=1.15,
+    p = F.HeadParams(jaw=1.05, chin=1.1, brow=1.05, cheekbone=1.1, nose_bridge=1.1, socket=1.15,
                      age=0.45, seed=SEED)
     mb, lm = F.head(p)
     F.ears(mb, lm)
-    specs = F.eyes(mb, lm, lid_open=0.95)
+    specs = F.eyes(mb, lm)
     F.neck(mb, lm, radius=0.056)
     head_obj = mb.build("Head", MATS)
     scene.add_modifier(head_obj, "SUBSURF", levels=1, render_levels=1)
-    eyes = F.eyeballs(specs, MATS["Eye"], look=(0.3, 0.05))
+    eyes = F.eyeballs(specs, MATS["Eye"], look=(0.3, -0.04))
     gb = F.geo.MeshBuilder()
     F.beard(gb, lm, length=0.12, fullness=0.55, style="full", strands=0, rng=rng)
     helm = F.helmet(gb, lm, plume=False, rng=rng)
     F.torso(gb, lm, shoulder_w=0.44, chest_d=0.24)
-    F.robe_collar(gb, lm)
+    F.neck_scarf(gb, lm)
+    F.cape(gb, lm, shoulder_w=0.44, mat="Cape")
     F.pauldrons(gb, lm, shoulder_w=0.44, tiers=3)
     F.mirror_plate(gb, lm, radius=0.034, z_offset=-0.25, y=-0.112)
     gear = gb.build("Gear", MATS)
@@ -88,7 +90,7 @@ def build_general(rng):
                           MATS["HairBlack"], 0.0004, 0.0001),
         F.geo.hair_curves("Brows", F.brow_strands(lm, 700, thickness=1.4, angle=0.5, rng=rng),
                           MATS["HairBlack"], 0.00035, 0.00012),
-        F.geo.hair_curves("Plume", F.plume_strands(lm, 1400, length=0.075, rng=rng,
+        F.geo.hair_curves("Plume", F.plume_strands(lm, 1600, length=0.05, rng=rng, radius=0.045,
                                                    top=helm["finial_z"]),
                           MATS["Plume"], 0.0005, 0.00015),
     ]
@@ -114,10 +116,9 @@ def main():
         bg = background(os.path.join(out, "portrait_bg.png"), W * SS, H * SS, SEED)
     eye_c = (lm["eye_l"] + lm["eye_r"]) / 2
     cam = cameras.portrait_camera(eye_c, head_height=0.232, yaw_deg=20, pitch_deg=-4,
-                                  eye_line=0.38, head_frac=0.45)
+                                  eye_line=0.38, head_frac=0.53)
     cameras.center_on(cam, [head_obj, gear], 0.5)
-    lights.rig_portrait(cam, eye_c, key=120, fill=12, rim=90)
-    bpy.data.objects["Key"].data.size = 0.5
+    lights.rig_portrait(cam, eye_c)
     post.comp_painterly(size=7, sharpness=0.5, eccentricity=1.3, amount=0.8, background=bg,
                         ink=False)
     raw = os.path.join(out, "portrait_raw_%dx.png" % SS)

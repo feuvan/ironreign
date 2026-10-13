@@ -148,8 +148,8 @@ def rig_map(cam=None, key=3.0, sky=0.55, azimuth_deg=135.0, elevation_deg=38.0, 
     return rig
 
 
-def rig_portrait(cam, target, key=180.0, fill=22.0, rim=140.0, sky=0.05, key_angle=140.0,
-                 key_elev=35.0, distance=1.6):
+def rig_portrait(cam, target, key=150.0, fill=8.0, rim=90.0, sky=0.04, key_angle=152.0,
+                 key_elev=20.0, distance=1.6, key_size=0.5):
     """Dramatic bust lighting: big warm soft-box from the upper left (front), weak cool fill from
     the right, strong cool rim from behind/top-right to cut the silhouette out of the dark ground.
 
@@ -160,10 +160,42 @@ def rig_portrait(cam, target, key=180.0, fill=22.0, rim=140.0, sky=0.05, key_ang
     fd = screen_dir(cam, -15.0, 25.0)
     rd = screen_dir(cam, 40.0, -45.0)
     rig = {
-        "key": area("Key", t + kd * distance, t, key, size=0.9, color=KEY_COLOR),
+        "key": area("Key", t + kd * distance, t, key, size=key_size, color=KEY_COLOR),
         "fill": area("Fill", t + fd * distance * 1.2, t, fill, size=1.6, color=FILL_COLOR,
                      shadow=False),
         "rim": area("Rim", t + rd * distance, t, rim, size=0.5, size_y=1.2, color=RIM_COLOR),
         "world": world("#3A3530", sky),
     }
+    return rig
+
+
+def rig_ui(cam, flat_gain=1.0, ambient=0.18, key_angle=135.0, key_elev=50.0, softness_deg=3.0,
+           warm=True):
+    """Calibrated UI light: a flat face-up surface renders at exactly ``flat_gain`` x its albedo
+    (Standard view), so palette colours (Paper, Lacquer, Gold...) land where DESIGN.md says.
+
+    Cycles: sun strength S on albedo A at elevation e gives A * S * sin(e) / pi; a uniform world of
+    strength w adds A * w.  We solve S for ``flat_gain - ambient``.  Bevels facing the top-left get
+    up to ~1.3x, those facing bottom-right fall to the ambient level -> embossed look.
+    """
+    e = math.radians(key_elev)
+    S = (flat_gain - ambient) * math.pi / math.sin(e)
+    rig = {"key": sun("Key", screen_dir(cam, key_angle, key_elev), S,
+                      KEY_COLOR if warm else "#FFFFFF", softness_deg)}
+    w = bpy.data.worlds.get("IronWorld") or bpy.data.worlds.new("IronWorld")
+    bpy.context.scene.world = w
+    w.use_nodes = True
+    nt = w.node_tree
+    nt.nodes.clear()
+    out = nt.nodes.new("ShaderNodeOutputWorld")
+    bg = nt.nodes.new("ShaderNodeBackground")
+    bg.inputs["Color"].default_value = (1.0, 1.0, 1.0, 1.0)
+    bg.inputs["Strength"].default_value = ambient
+    nt.links.new(bg.outputs[0], out.inputs["Surface"])
+    rig["world"] = w
+    if warm:
+        # KEY_COLOR is not pure white: compensate its luminance so the gain stays calibrated
+        kc = palette.lin(KEY_COLOR)
+        lum = 0.2126 * kc[0] + 0.7152 * kc[1] + 0.0722 * kc[2]
+        rig["key"].data.energy = S / lum
     return rig

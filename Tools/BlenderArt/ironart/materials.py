@@ -40,7 +40,8 @@ class NB:
     """Minimal helper around a node tree: ``nb.node(type, inputs={...}, **props)`` and ``nb.link``.
 
     Input values may be plain values (assigned to ``default_value``) or output sockets (linked).
-    Colour inputs accept palette tokens / '#hex' strings.
+    Colour inputs accept palette tokens / '#hex' strings (sRGB, converted to linear) or 3/4-tuples
+    (taken as *linear* values).
     """
 
     def __init__(self, tree):
@@ -61,6 +62,9 @@ class NB:
             self.links.new(value, sock)
         elif isinstance(value, str):
             sock.default_value = palette.lin4(value) if len(sock.default_value) == 4 else palette.lin(value)
+        elif isinstance(value, (tuple, list)) and hasattr(sock.default_value, "__len__") \
+                and len(sock.default_value) == 4 and len(value) == 3:
+            sock.default_value = tuple(value) + (1.0,)        # tuples are LINEAR colours
         else:
             sock.default_value = value
         return sock
