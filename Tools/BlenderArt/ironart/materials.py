@@ -309,11 +309,23 @@ def roof_tiles(name="RoofTile", color="roof_tile", channel=0.16, course=0.22, bu
 
 
 def lacquer(name="Lacquer", color="lacquer", roughness=0.32, coat=1.0, coat_roughness=0.06,
-            vary=0.08):
-    """Red (or black) lacquer: deep base + clear glossy coat; very subtle brushing variation."""
+            vary=0.08, gradient=0.0):
+    """Red (or black) lacquer: deep base + clear glossy coat; very subtle brushing variation.
+
+    ``gradient`` > 0 brightens the top / darkens the bottom of the object's bounding box (the
+    classic lacquered-button glow; uniform horizontally so 9-slices stretch cleanly).
+    """
     mat, nb, created = new(name)
     if created:
         base = _vary(nb, color, vary, 4.0) if vary else color
+        if gradient > 0:
+            sep = nb.node("ShaderNodeSeparateXYZ")
+            nb.link(nb.coord("Generated"), sep.inputs[0])
+            g = nb.maprange(sep.outputs["Y"], 0.0, 1.0, 1.0 - gradient, 1.0 + gradient)
+            gc = nb.node("ShaderNodeCombineColor")
+            for k in ("Red", "Green", "Blue"):
+                nb.link(g, gc.inputs[k])
+            base = nb.mix(base, gc.outputs[0], 1.0, blend="MULTIPLY", clamp=False)
         p = nb.principled(Base_Color=base, Roughness=roughness, Specular_IOR_Level=0.45,
                           Coat_Weight=coat, Coat_Roughness=coat_roughness)
         nb.output(p.outputs[0])
@@ -545,24 +557,31 @@ def skin(name="Skin", color="skin", sss=0.25, roughness=0.48, blush=0.25, vary=0
 
 
 def hair_strands(name="HairStrands", color="hair_black", melanin=None, redness=0.25,
-                 roughness=0.35, random_color=0.1, radial_roughness=0.4):
+                 roughness=0.35, random_color=0.1, radial_roughness=0.4, reflection=None):
     """Principled Hair BSDF for curve hair (beards, brows, plumes, buns).
 
     Natural hair: pass ``melanin`` (0 blond/white .. 1 black) - physically based, never greyish.
     Dyed/horsehair colours (red tassels): leave ``melanin=None`` and give ``color``.
+    ``reflection`` (0..1) switches to the Huang model and scales the primary (white) highlight -
+    painterly black beards want ~0.3 so thousands of strands do not read grey.
     """
     mat, nb, created = new(name)
     if created:
+        model = "HUANG" if reflection is not None else "CHIANG"
         if melanin is not None:
-            h = nb.node("ShaderNodeBsdfHairPrincipled", parametrization="MELANIN")
+            h = nb.node("ShaderNodeBsdfHairPrincipled", parametrization="MELANIN", model=model)
             sock(h.inputs, "Melanin").default_value = melanin
             sock(h.inputs, "Melanin Redness").default_value = redness
         else:
-            h = nb.node("ShaderNodeBsdfHairPrincipled", parametrization="COLOR")
+            h = nb.node("ShaderNodeBsdfHairPrincipled", parametrization="COLOR", model=model)
             nb.set(sock(h.inputs, "Color"), color)
         sock(h.inputs, "Roughness").default_value = roughness
-        sock(h.inputs, "Radial Roughness").default_value = radial_roughness
         sock(h.inputs, "Random Color").default_value = random_color
+        if model == "CHIANG":
+            sock(h.inputs, "Radial Roughness").default_value = radial_roughness
+        else:
+            sock(h.inputs, "Reflection").default_value = reflection
+            sock(h.inputs, "Secondary Reflection").default_value = reflection
         nb.output(h.outputs[0])
     return mat
 

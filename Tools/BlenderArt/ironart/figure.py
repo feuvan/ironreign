@@ -467,7 +467,7 @@ def helmet(mb, lm, style="dome", plume=True, mat="Iron", trim="Gold", plume_mat=
     mb.grid(guard, 40, 6, neck_guard, lambda u, v: (u * 0.5, v * 0.09), smooth=True)
     mb.grid(guard, 40, 6, neck_guard, lambda u, v: (u * 0.5, v * 0.09), smooth=True, flip=True)
     mb.tube([guard(u, 1.0) for u in np.linspace(0, 1, 40)], 0.0025, trim, 5)
-    return {"start": s, "finial_z": tz + 0.03, "brim_z": bz}
+    return {"start": s, "finial_z": tz + 0.022, "brim_z": bz}
 
 
 def topknot(mb, lm, mat="Hair", pin="Gold"):
@@ -720,22 +720,23 @@ def brow_strands(lm, count=500, thickness=1.0, angle=0.3, rng=None, length=0.011
 
 def plume_strands(lm, count=900, length=0.07, rng=None, top=None, radius=0.034):
     """Horsehair tassel (红缨) bursting from the helmet finial and falling around it like a
-    small umbrella down onto the dome."""
+    loose mop onto the dome (uneven lengths and spread so it never reads as a cylinder)."""
     rng = rng or random.Random(9)
     tz = (top if top is not None else lm["rz_top"] + 0.06)
     start = Vector((0, 0.004, tz))
     strands = []
     for k in range(count):
         a = rng.uniform(0, TAU)
-        L = length * rng.uniform(0.7, 1.1)
-        R = radius * rng.uniform(0.75, 1.15)
+        L = length * rng.uniform(0.45, 1.15)
+        R = radius * rng.uniform(0.35, 1.25)
         out = Vector((math.cos(a), math.sin(a), 0))
-        lift = rng.uniform(0.002, 0.01)
+        lift = rng.uniform(0.0, 0.016)
+        sway = Vector((rng.uniform(-1, 1), rng.uniform(-1, 1), 0)) * 0.006
         pts = []
         for i in range(9):
             t = i / 8
-            r = R * math.sin(min(1.0, t * 1.6) * math.pi / 2) ** 0.8
-            zz = lift * math.sin(math.pi * min(1.0, t * 2.0)) - L * max(0.0, t - 0.25) ** 1.4
-            pts.append(start + out * r + Vector((0, 0, zz)))
+            r = R * math.sin(min(1.0, t * 1.4) * math.pi / 2) ** 0.7
+            zz = lift * math.sin(math.pi * min(1.0, t * 1.6)) - L * max(0.0, t - 0.2) ** 1.3
+            pts.append(start + out * r + sway * t * t + Vector((0, 0, zz)))
         strands.append(pts)
     return strands

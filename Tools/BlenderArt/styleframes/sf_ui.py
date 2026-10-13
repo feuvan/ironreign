@@ -44,7 +44,7 @@ def button(out):
     cam = ui_scene(W, H, 1)
     mats = {
         "LacquerDark": M.lacquer("LacquerDark", "LacquerDark", roughness=0.35, vary=0.05),
-        "Lacquer": M.lacquer("Lacquer", "Lacquer", roughness=0.3, coat=1.0, vary=0.04),
+        "Lacquer": M.lacquer("Lacquer", "Lacquer", roughness=0.3, coat=1.0, vary=0.04, gradient=0.4),
         "Gold": M.gold_leaf("Gold", "Gold", roughness=0.3, vary=0.08),
         "Groove": M.principled("Groove", "#2A0D09", 0.6),
     }

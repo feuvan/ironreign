@@ -148,8 +148,8 @@ def rig_map(cam=None, key=3.0, sky=0.55, azimuth_deg=135.0, elevation_deg=38.0, 
     return rig
 
 
-def rig_portrait(cam, target, key=150.0, fill=8.0, rim=90.0, sky=0.04, key_angle=152.0,
-                 key_elev=20.0, distance=1.6, key_size=0.5):
+def rig_portrait(cam, target, key=170.0, fill=5.0, rim=45.0, sky=0.03, key_angle=140.0,
+                 key_elev=8.0, distance=1.6, key_size=0.5):
     """Dramatic bust lighting: big warm soft-box from the upper left (front), weak cool fill from
     the right, strong cool rim from behind/top-right to cut the silhouette out of the dark ground.
 
@@ -188,10 +188,28 @@ def rig_ui(cam, flat_gain=1.0, ambient=0.18, key_angle=135.0, key_elev=50.0, sof
     nt = w.node_tree
     nt.nodes.clear()
     out = nt.nodes.new("ShaderNodeOutputWorld")
-    bg = nt.nodes.new("ShaderNodeBackground")
-    bg.inputs["Color"].default_value = (1.0, 1.0, 1.0, 1.0)
-    bg.inputs["Strength"].default_value = ambient
-    nt.links.new(bg.outputs[0], out.inputs["Surface"])
+    amb = nt.nodes.new("ShaderNodeBackground")          # diffuse ambient: uniform, calibrated
+    amb.inputs["Color"].default_value = (1.0, 1.0, 1.0, 1.0)
+    amb.inputs["Strength"].default_value = ambient
+    # glossy rays see a "studio ring": bright towards the horizon, dark at the zenith - so flat
+    # face-up lacquer/paper (which mirror the zenith into the top-down camera) keep their exact
+    # palette colour, while bevels and metal mouldings pick up rich reflections.
+    tc = nt.nodes.new("ShaderNodeTexCoord")
+    sep = nt.nodes.new("ShaderNodeSeparateXYZ")
+    nt.links.new(tc.outputs["Generated"], sep.inputs[0])
+    mr = nt.nodes.new("ShaderNodeMapRange")
+    mr.inputs["From Min"].default_value = 0.85
+    mr.inputs["From Max"].default_value = 0.35
+    nt.links.new(sep.outputs["Z"], mr.inputs["Value"])
+    ref = nt.nodes.new("ShaderNodeBackground")
+    ref.inputs["Color"].default_value = palette.lin4("#FFF4E0")
+    nt.links.new(mr.outputs[0], ref.inputs["Strength"])
+    lp = nt.nodes.new("ShaderNodeLightPath")
+    mix = nt.nodes.new("ShaderNodeMixShader")
+    nt.links.new(lp.outputs["Is Glossy Ray"], mix.inputs[0])
+    nt.links.new(amb.outputs[0], mix.inputs[1])
+    nt.links.new(ref.outputs[0], mix.inputs[2])
+    nt.links.new(mix.outputs[0], out.inputs["Surface"])
     rig["world"] = w
     if warm:
         # KEY_COLOR is not pure white: compensate its luminance so the gain stays calibrated
