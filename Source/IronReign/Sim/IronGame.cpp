@@ -705,6 +705,19 @@ namespace IronSim
 			{
 				return;
 			}
+			struct FEndGuard
+			{
+				FGameState& Target;
+				~FEndGuard()
+				{
+					if (Target.Phase == EPhase::GameOver)
+					{
+						// Nothing is left to fight once the game is decided.
+						Target.BattleQueue.clear();
+						Target.bDayInProgress = false;
+					}
+				}
+			} Guard{State};
 			int Alive = 0;
 			for (const FFaction& Faction : State.Factions)
 			{

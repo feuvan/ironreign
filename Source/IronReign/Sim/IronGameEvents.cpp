@@ -495,17 +495,25 @@ namespace IronSim
 			{
 				return false;
 			}
-			const int Required = At(Event.Choices, ChoiceIndex).RequireGold;
-			if (Required <= 0)
-			{
-				return true;
-			}
 			int City = Event.City;
 			if (!ValidCity(State, City) && ValidFaction(State, State.PlayerFaction))
 			{
 				City = At(State.Factions, State.PlayerFaction).Capital;
 			}
-			return ValidCity(State, City) && At(State.Cities, City).Gold >= Required;
+			const int Gold = ValidCity(State, City) ? At(State.Cities, City).Gold : 0;
+			if (At(Event.Choices, ChoiceIndex).RequireGold <= Gold)
+			{
+				return true;
+			}
+			// Never leave the player stuck: when nothing is affordable, the last choice is always available.
+			for (const FEventChoice& Choice : Event.Choices)
+			{
+				if (Choice.RequireGold <= Gold)
+				{
+					return false;
+				}
+			}
+			return ChoiceIndex == CountOf(Event.Choices) - 1;
 		}
 
 		void ChooseRules(FGameState& State, int ChoiceIndex)

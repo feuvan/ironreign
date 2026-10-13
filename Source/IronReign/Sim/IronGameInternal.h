@@ -75,7 +75,9 @@ namespace IronSim
 			constexpr int ReleaseTrustGain = 10;
 
 			// AI: attack when local strength exceeds the defender's by this ratio (percent; Easy, Normal, Hard).
-			constexpr int AIAttackRatioPercent[3] = {200, 160, 140};
+			constexpr int AIAttackRatioPercent[3] = {210, 175, 155};
+			/** Months over which the AI's appetite for attacking other factions ramps up (independents are fair game at once). */
+			constexpr int AIWarmupMonths = 24;
 		}
 
 		constexpr int Unreachable = 1 << 29;

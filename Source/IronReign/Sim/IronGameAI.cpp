@@ -98,6 +98,15 @@ namespace IronSim
 					const FCity& Data = At(State.Cities, Neighbor);
 					if (Data.Owner == Faction || !State.AreHostile(Faction, Data.Owner))
 					{
+						// Hostile factions two roads away can strike through a neighbor they conquer: half weight.
+						for (const int Second : State.Neighbors(Neighbor))
+						{
+							const FCity& Far = At(State.Cities, Second);
+							if (Second != City && Second != IgnoreCity && Far.Owner >= 0 && Far.Owner != Faction && State.AreHostile(Faction, Far.Owner))
+							{
+								Plan.Threat = std::max(Plan.Threat, Far.Troops / 2);
+							}
+						}
 						continue;
 					}
 					Plan.bFrontier = true;
@@ -116,6 +125,11 @@ namespace IronSim
 					Plan.Reserve = Plan.bFrontier ? 1500 : 1000;
 				}
 				const FCity& Data = At(State.Cities, City);
+				if (ValidFaction(State, Faction) && At(State.Factions, Faction).Capital == City)
+				{
+					// The seat of government never empties its barracks.
+					Plan.Reserve = std::max(Plan.Reserve, Data.Troops / 4);
+				}
 				Plan.TroopTarget = std::min(SizeCapacity(Data), FoodCapacity(State, City));
 				if (Plan.Incoming > 0)
 				{
@@ -319,6 +333,9 @@ namespace IronSim
 				// Leave someone at home to govern when possible.
 				const int Usable = CountOf(Officers) > 1 ? CountOf(Officers) - 1 : 1;
 				const int Ratio = Balance::AIAttackRatioPercent[ClampInt(static_cast<int>(State.Difficulty), 0, 2)];
+				// Aggression against other factions ramps up over the first two years of the campaign.
+				const int MonthsPlayed = (State.Year - State.StartYear) * 12 + State.Month - 1;
+				const int FactionRatio = Ratio + Ratio * std::max(0, Balance::AIWarmupMonths - MonthsPlayed) / (2 * Balance::AIWarmupMonths);
 
 				int BestTarget = -1;
 				long long BestScore = 0;
@@ -356,7 +373,7 @@ namespace IronSim
 					const long long Defense = std::max<long long>(1, CityDefensePower(State, Target));
 					const long long Score = Attack * 100 / Defense;
 					// Off-plan targets need overwhelming odds.
-					const int Needed = (Owner == War.Target || Owner < 0) ? Ratio : Ratio * 3 / 2;
+					const int Needed = Owner < 0 ? Ratio : (Owner == War.Target ? FactionRatio : FactionRatio * 3 / 2);
 					if (Score < Needed)
 					{
 						continue;
@@ -432,9 +449,23 @@ namespace IronSim
 				return bFormed;
 			}
 
+			/** Officers stationed in City plus those ordered to move there this month. */
+			std::vector<int> OfficersArriving(const FGameState& State, int City, int Faction)
+			{
+				std::vector<int> Result = OfficersInCity(State, City, Faction);
+				for (const FOrder& Order : State.Orders)
+				{
+					if (Order.Type == EOrderType::Move && Order.TargetCity == City && ValidOfficer(State, Order.Officer) && At(State.Officers, Order.Officer).Faction == Faction)
+					{
+						Result.push_back(Order.Officer);
+					}
+				}
+				return Result;
+			}
+
+			/** Troops a front city wants: enough to storm the weakest adjacent enemy city with margin (as far as its officers can lead), plus its reserve. */
 			int ArmyNeedAt(const FGameState& State, const FWarPlan& War, int City)
 			{
-				// Troops a front city wants: enough to storm the weakest adjacent enemy city with margin, plus its reserve.
 				long long Weakest = -1;
 				for (const int Neighbor : State.Neighbors(City))
 				{
@@ -445,14 +476,87 @@ namespace IronSim
 						Weakest = Weakest < 0 ? Defense : std::min(Weakest, Defense);
 					}
 				}
+				if (Weakest < 0)
+				{
+					return 0;
+				}
+				long long Leadable = 0;
+				int Leaders = 0;
+				for (const int Officer : OfficersArriving(State, City, War.Faction))
+				{
+					if (!State.IsRuler(Officer) && Leaders < 2 * MaxArmyUnits)
+					{
+						Leadable += MaxUnitTroopsOf(State, Officer);
+						++Leaders;
+					}
+				}
 				const FCityPlan Plan = AnalyzeCity(State, War, City, -1);
-				const int Wanted = Weakest < 0 ? 0 : static_cast<int>(std::min<long long>(Weakest * 2, 60000));
+				const int Wanted = static_cast<int>(std::min(Weakest * 2, Leadable));
 				return Wanted + Plan.Reserve - At(State.Cities, City).Troops;
+			}
+
+			/** Officers each city should keep: governors everywhere, commanders on the front. */
+			int DesiredOfficers(const FGameState& State, const FWarPlan& War, int City)
+			{
+				const FCityPlan Plan = AnalyzeCity(State, War, City, -1);
+				if (Plan.bFront)
+				{
+					return 5 + At(State.Cities, City).Size;
+				}
+				if (Plan.Incoming > 0)
+				{
+					return 3;
+				}
+				return Plan.Threat > 0 ? 2 : 1;
+			}
+
+			/** Moves spare officers (best commanders first) from quiet cities to the cities that need them. */
+			void AllocateOfficers(FGameState& State, const FWarPlan& War)
+			{
+				const int Faction = War.Faction;
+				std::vector<std::pair<int, int>> Deficits;
+				for (const int City : War.Controlled)
+				{
+					const int Missing = DesiredOfficers(State, War, City) - CountOf(OfficersArriving(State, City, Faction));
+					if (Missing > 0)
+					{
+						Deficits.push_back({City, Missing + (OfficersInCity(State, City, Faction).empty() ? 100 : 0)});
+					}
+				}
+				std::stable_sort(Deficits.begin(), Deficits.end(), [](const std::pair<int, int>& Left, const std::pair<int, int>& Right) { return Left.second > Right.second; });
+				for (std::pair<int, int>& Deficit : Deficits)
+				{
+					const int Target = Deficit.first;
+					int Missing = Deficit.second >= 100 ? Deficit.second - 100 : Deficit.second;
+					Missing = std::max(1, Missing);
+					for (const int Source : War.Controlled)
+					{
+						if (Source == Target || Missing <= 0)
+						{
+							continue;
+						}
+						const int Spare = CountOf(OfficersInCity(State, Source, Faction)) - DesiredOfficers(State, War, Source);
+						std::vector<int> Idle = IdleNonRulers(State, Source, Faction);
+						for (int Moved = 0; Moved < Spare && Missing > 0 && !Idle.empty(); ++Moved)
+						{
+							const bool bFrontTarget = Contains(War.Front, Target);
+							const int Mover = bFrontTarget ? TakeBest(Idle, State, [](const FOfficer& Officer) { return MilitaryScore(Officer); })
+														   : TakeBest(Idle, State, [](const FOfficer& Officer) { return StatOf(Officer, EStat::Politics) + StatOf(Officer, EStat::Charm); });
+							FOrder Order = MakeOrder(EOrderType::Move, Mover, Source);
+							Order.TargetCity = Target;
+							if (Issue(State, Order))
+							{
+								--Missing;
+							}
+						}
+					}
+				}
 			}
 
 			void PlanLogistics(FGameState& State, const FWarPlan& War)
 			{
 				const int Faction = War.Faction;
+				AllocateOfficers(State, War);
 				// Destinations: cities under attack first, then the front against the war target.
 				std::vector<std::pair<int, int>> Needs;
 				for (const int City : War.Controlled)
@@ -515,63 +619,6 @@ namespace IronSim
 					Issue(State, Order);
 				}
 
-				// Every city needs a governor; crowded cities lend officers to empty ones.
-				for (const int Target : War.Controlled)
-				{
-					if (!OfficersInCity(State, Target, Faction).empty())
-					{
-						continue;
-					}
-					int Donor = -1;
-					int DonorIdle = 1;
-					for (const int City : War.Controlled)
-					{
-						const int Count = CountOf(IdleNonRulers(State, City, Faction));
-						if (City != Target && Count > DonorIdle)
-						{
-							Donor = City;
-							DonorIdle = Count;
-						}
-					}
-					if (Donor < 0)
-					{
-						continue;
-					}
-					std::vector<int> Idle = IdleNonRulers(State, Donor, Faction);
-					const int Mover = TakeBest(Idle, State, [](const FOfficer& Officer) { return StatOf(Officer, EStat::Politics) + StatOf(Officer, EStat::Command); });
-					if (Mover >= 0)
-					{
-						FOrder Order = MakeOrder(EOrderType::Move, Mover, Donor);
-						Order.TargetCity = Target;
-						Issue(State, Order);
-					}
-				}
-
-				// Commanders go where the fighting is.
-				for (const int Front : War.Front)
-				{
-					if (CountOf(IdleNonRulers(State, Front, Faction)) >= 4)
-					{
-						continue;
-					}
-					for (const int Source : War.Controlled)
-					{
-						if (Contains(War.Front, Source) || AnalyzeCity(State, War, Source, -1).Incoming > 0)
-						{
-							continue;
-						}
-						std::vector<int> Idle = IdleNonRulers(State, Source, Faction);
-						if (CountOf(Idle) < 2)
-						{
-							continue;
-						}
-						const int Mover = TakeBest(Idle, State, [](const FOfficer& Officer) { return MilitaryScore(Officer); });
-						FOrder Order = MakeOrder(EOrderType::Move, Mover, Source);
-						Order.TargetCity = Front;
-						Issue(State, Order);
-						break;
-					}
-				}
 			}
 
 			void PlanDomestic(FGameState& State, int City, int Faction, const FCityPlan& Plan)
@@ -833,7 +880,7 @@ namespace IronSim
 				// Strongest garrisons consider attacking first.
 				std::vector<int> ByTroops = War.Controlled;
 				std::stable_sort(ByTroops.begin(), ByTroops.end(), [&State](int Left, int Right) { return At(State.Cities, Left).Troops > At(State.Cities, Right).Troops; });
-				int Attacks = 1 + CountOf(War.Controlled) / 3;
+				int Attacks = std::min(3, 1 + CountOf(War.Controlled) / 4);
 				for (const int City : ByTroops)
 				{
 					RewardOfficers(State, City, Faction);
