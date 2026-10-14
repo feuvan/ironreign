@@ -427,12 +427,18 @@ def put(objs, kind="ink"):
     return objs
 
 
+#: Freestyle draws a line ~1.6x the line style thickness in this build (measured on a box at
+#: 2 and 1 px x 4: P10 widths 12 / 6, medians 15 / 8): thicknesses are corrected so RECIPE
+#: numbers are true widths in 64 px icon pixels
+FREESTYLE_SCALE = 1.0 / 1.6
+
+
 def _style(name, spec, px, which, seed):
     import bpy
     st = bpy.data.linestyles.new(name)
     st.color = lin(spec["color"])
     st.alpha = spec["alpha"]
-    t = spec[which] * px
+    t = spec[which] * px * FREESTYLE_SCALE
     st.thickness = t * (1.0 - spec["noise"] * 0.5)
     st.thickness_position = "CENTER"
     st.use_chaining = True
