@@ -18,8 +18,12 @@ What it builds (every path is a build product, regenerated deterministically; no
                                 M_IronTint + MI_IronTintInstanced, M_IronHighlight + MI_IronHighlightHex, M_IronInk,
                                 M_IronModel / M_IronModelTwoSided / M_IronModelMasked (glTF PBR masters),
                                 MI_IronClouds (wraps the engine volumetric cloud material so it is cooked)
-    /Game/IronReign/Models/     SM_<Name> for ArtSource/Models/<Name>.glb (Nanite, no collision), SM_IronPlane
-                                (copy of the engine 1 m plane); <Name>/MI_<Name>_<Material>, <Name>/T_<Name>_<Image>
+    /Game/IronReign/Models/     SM_<Name> for ArtSource/Models/<Name>.glb (Nanite, no collision), SM_IronPlane and
+                                SM_IronCube (copies of the engine 1 m plane and cube); <Name>/MI_<Name>_<Material>,
+                                <Name>/T_<Name>_<Image>; SM_Terrain_<cx>_<cy> (8 x 5): the campaign terrain cut from
+                                Content/Data/Art3D/Terrain/Height.png exactly like the game's runtime mesh
+                                (ironreign_terrain.py), as Nanite static meshes with distance fields so the ground is in
+                                the Lumen scene
     /Game/IronReign/IronReignAssetVersion   UIronAssetManifest, written last (= the import is complete)
     Saved/IronReign/asset_version.txt        JSON build record (versions, errors, warnings, assets)
     Saved/IronReign/asset_build_result.txt   OK / FAILED / SKIPPED (read by the build scripts)
@@ -41,9 +45,11 @@ import zlib
 import unreal
 
 import ironreign_gltf as gltf
+import ironreign_terrain as terrain
 
 # Bump when this script changes what it produces: editors then rebuild on their next start.
-PIPELINE_VERSION = 1
+# 2: SM_Terrain_* chunks, SM_IronCube, Nanite usage on M_IronTerrain.
+PIPELINE_VERSION = 2
 
 ROOT_DIR = "/Game/IronReign"
 MODELS_DIR = ROOT_DIR + "/Models"
@@ -58,6 +64,10 @@ MARKER_CLASS_NAME = "IronAssetManifest"  # C++ UIronAssetManifest (Source/IronRe
 MPC_NAME = "MPC_IronSeason"
 PLANE_PATH = MODELS_DIR + "/SM_IronPlane"
 ENGINE_PLANE_PATH = "/Engine/BasicShapes/Plane"
+CUBE_PATH = MODELS_DIR + "/SM_IronCube"
+ENGINE_CUBE_PATH = "/Engine/BasicShapes/Cube"
+# The glTF axis probe (ironreign_terrain.write_probe_glb) is imported here and deleted again.
+AXIS_PROBE_DIR = STAGING_DIR + "/AxisProbe"
 CLOUD_PARENT_CANDIDATES = (
     "/Engine/EngineSky/VolumetricClouds/m_SimpleVolumetricCloud_Inst",
     "/Engine/EngineSky/VolumetricClouds/m_SimpleVolumetricCloud",
@@ -69,6 +79,22 @@ MAP_HEIGHT_CM = 150000.0
 
 # Model meshes are presentation only: picking is done in map space, so no collision is cooked.
 STRIP_MODEL_COLLISION = True
+
+# Terrain chunks (SM_Terrain_<cx>_<cy>): heightmap pixel stride of their vertex grid (1 = every 2 m pixel; Nanite
+# handles the level of detail). The game reads it from the version marker and samples heights on the same grid.
+TERRAIN_MESH_STRIDE = 1
+# LOD 0 build settings of a terrain chunk: keep the heightfield normals, no lightmap UVs (no baked lighting), a finer
+# mesh distance field (Lumen traces it for off-screen bounce light, sky occlusion and reflections).
+TERRAIN_BUILD_SETTINGS = (
+    ("recompute_normals", False),
+    ("recompute_tangents", True),
+    ("use_mikk_t_space", True),
+    ("remove_degenerates", True),
+    ("use_full_precision_u_vs", True),
+    ("generate_lightmap_u_vs", False),
+    ("generate_distance_field_as_if_two_sided", False),
+    ("distance_field_resolution_scale", 2.0),
+)
 # "single_layer_water" (depth-tinted water through Single Layer Water shading) or "default_lit".
 WATER_SHADING = "single_layer_water"
 
@@ -499,6 +525,12 @@ class _Context(object):
         self.materials = {}
         self.mpc = None
         self.water_shading = ""
+        # Terrain chunks: identity of the Height.png they were cut from and their grid stride (0 = not built).
+        self.terrain_hash = ""
+        self.terrain_stride = 0
+        # glTF -> Unreal axis map of this editor's glTF import (ironreign_terrain.solve_axis_map), measured once.
+        self.gltf_axes = None
+        self.gltf_axes_measured = False
 
     def texture(self, key, fallback="T_IronWhite"):
         found = self.textures.get(key) or self.textures.get(fallback)
@@ -859,7 +891,8 @@ def _build_season_collection(ctx):
 
 
 def _build_terrain_material(ctx):
-    material, g = _begin_material("M_IronTerrain", _surface_properties())
+    # Used on the Nanite terrain chunks (usage flags cannot be added in a cooked game) and on the runtime mesh.
+    material, g = _begin_material("M_IronTerrain", _surface_properties(nanite=True))
     world = g.node("MaterialExpressionWorldPosition")
     # Map UV from world position (DESIGN.md 12.2: UV = map x / 2400 m, map y / 1500 m), independent of mesh UVs.
     origin = g.mask(g.vector("MapOrigin", (0.0, 0.0, 0.0, 0.0), "Map"), "rg")
@@ -1309,21 +1342,27 @@ def _verify_scale(name, mesh, asset):
     _warn("SM_%s: imported size is %.1fx the glTF size (expected 100x: metres to centimetres)" % (name, ratio))
 
 
+def _strip_collision(name, mesh):
+    """No simple shapes, and simple-as-complex so no per-triangle collision is cooked either."""
+    subsystem = _static_mesh_subsystem()
+    try:
+        if subsystem is not None:
+            subsystem.remove_collisions(mesh)
+    except Exception as exc:
+        _log("SM_%s: remove_collisions failed (%s)" % (name, exc))
+    try:
+        body = mesh.get_editor_property("body_setup")
+        flag = _enum("CollisionTraceFlag", "CTF_USE_SIMPLE_AS_COMPLEX")
+        if body is not None and flag is not None:
+            body.set_editor_property("collision_trace_flag", flag)
+    except Exception as exc:
+        _log("SM_%s: could not disable complex collision (%s)" % (name, exc))
+
+
 def _configure_mesh(name, mesh):
     subsystem = _static_mesh_subsystem()
     if STRIP_MODEL_COLLISION:
-        try:
-            if subsystem is not None:
-                subsystem.remove_collisions(mesh)
-        except Exception as exc:
-            _log("SM_%s: remove_collisions failed (%s)" % (name, exc))
-        try:
-            body = mesh.get_editor_property("body_setup")
-            flag = _enum("CollisionTraceFlag", "CTF_USE_SIMPLE_AS_COMPLEX")
-            if body is not None and flag is not None:
-                body.set_editor_property("collision_trace_flag", flag)
-        except Exception as exc:
-            _log("SM_%s: could not disable complex collision (%s)" % (name, exc))
+        _strip_collision(name, mesh)
     try:
         settings = mesh.get_editor_property("nanite_settings")
         settings.set_editor_property("enabled", True)
@@ -1420,6 +1459,241 @@ def _import_model(name, glb_path, ctx):
     return True
 
 
+# ----- terrain chunks -------------------------------------------------------------------------------------------
+
+def _terrain_dir(folders):
+    """Content/Data/Art3D/Terrain: the runtime heightmap the game reads (not ArtSource)."""
+    return os.path.join(folders["project"], "Content", "Data", "Art3D", "Terrain")
+
+
+def _terrain_source_hash(folders):
+    """FIronHeightField::SourceHash of the current Height.png, or "" without one."""
+    return terrain.file_source_hash(os.path.join(_terrain_dir(folders), "Height.png"))
+
+
+def _terrain_chunk_paths():
+    return [MODELS_DIR + "/SM_" + name for name in terrain.chunk_names()]
+
+
+def _delete_terrain_chunks():
+    """Removes SM_Terrain_* left by an earlier build (the marker then records stride 0, so the game never loads them)."""
+    for path in _terrain_chunk_paths():
+        if not _exists(path):
+            continue
+        try:
+            unreal.EditorAssetLibrary.delete_asset(path)
+        except Exception as exc:
+            _log("could not delete the stale %s (%s)" % (path, exc))
+
+
+def _imported_static_meshes(objects, staging):
+    meshes = [o for o in objects if isinstance(o, unreal.StaticMesh)]
+    if not meshes and unreal.EditorAssetLibrary.does_directory_exist(staging):
+        for path in unreal.EditorAssetLibrary.list_assets(staging, True, False) or []:
+            loaded = _load(_package_of(path))
+            if isinstance(loaded, unreal.StaticMesh):
+                meshes.append(loaded)
+    return meshes
+
+
+def _measure_gltf_axes(ctx):
+    """How this editor's glTF import maps glTF axes to Unreal ones, measured once on a probe mesh (None if unknown).
+
+    The terrain chunks must land exactly on the game's height samples, so the importer's axis conversion is measured
+    instead of assumed: a tetrahedron with legs of 1, 2 and 3 m along glTF X, Y and Z is imported and its bounding box
+    read back.
+    """
+    if ctx.gltf_axes_measured:
+        return ctx.gltf_axes
+    ctx.gltf_axes_measured = True
+    probe_file = os.path.join(ctx.paths["staging"], "Terrain", "IronAxisProbe.glb")
+    try:
+        terrain.write_probe_glb(probe_file)
+    except OSError as exc:
+        _warn("glTF axis probe: cannot write %s (%s)" % (probe_file, exc))
+        return None
+    _cleanup_folder(AXIS_PROBE_DIR)
+    objects = _import_file(probe_file, AXIS_PROBE_DIR)
+    meshes = _imported_static_meshes(objects, AXIS_PROBE_DIR)
+    bounds = None
+    if meshes:
+        try:
+            box = meshes[0].get_bounding_box()
+            bounds = ((box.min.x, box.min.y, box.min.z), (box.max.x, box.max.y, box.max.z))
+        except Exception as exc:
+            _warn("glTF axis probe: cannot read its bounds (%s)" % exc)
+    else:
+        _warn("glTF axis probe: the import produced no static mesh (is the glTF importer / Interchange enabled?)")
+    # Drop the Python references so the probe assets can be deleted.
+    del meshes
+    del objects
+    _cleanup_folder(AXIS_PROBE_DIR)
+    if bounds is None:
+        return None
+    try:
+        ctx.gltf_axes = terrain.solve_axis_map(bounds[0], bounds[1])
+    except terrain.TerrainError as exc:
+        _warn("glTF axis probe: %s" % exc)
+        return None
+    _report.notes["gltfAxes"] = terrain.describe_axis_map(ctx.gltf_axes)
+    _log("glTF import axes: %s" % _report.notes["gltfAxes"])
+    return ctx.gltf_axes
+
+
+def _configure_terrain_mesh(name, mesh):
+    """LOD 0 build settings, no collision, and Nanite with a full-detail fallback mesh.
+
+    The fallback (platforms or views without Nanite) keeps every triangle: the visible ground must stay the surface
+    FIronHeightField samples, or cities and armies would float or sink.
+    """
+    subsystem = _static_mesh_subsystem()
+    try:
+        settings = subsystem.get_lod_build_settings(mesh, 0)
+        for prop, value in TERRAIN_BUILD_SETTINGS:
+            ok, detail = _try_set(settings, prop, value)
+            if not ok:
+                _log("SM_%s: build setting %s left at its default (%s)" % (name, prop, detail))
+        subsystem.set_lod_build_settings(mesh, 0, settings)
+    except Exception as exc:
+        _warn("SM_%s: cannot change the build settings (%s); engine defaults kept" % (name, exc))
+    _strip_collision(name, mesh)
+    try:
+        nanite = mesh.get_editor_property("nanite_settings")
+        nanite.set_editor_property("enabled", True)
+        target = _enum("NaniteFallbackTarget", "PERCENT_TRIANGLES")
+        if target is None or not _try_set(nanite, "fallback_target", target)[0]:
+            _log("SM_%s: no Nanite fallback target setting in this engine version" % name)
+        if not _try_set(nanite, "fallback_percent_triangles", 1.0)[0]:
+            _warn("SM_%s: cannot keep the full Nanite fallback mesh; without Nanite the ground may deviate from the "
+                  "game's height samples" % name)
+        # Also zero error for the relative-error and automatic targets (the enum may not be exposed to Python).
+        _try_set(nanite, "fallback_relative_error", 0.0)
+        applied = False
+        if subsystem is not None and hasattr(subsystem, "set_nanite_settings"):
+            try:
+                subsystem.set_nanite_settings(mesh, nanite, True)
+                applied = True
+            except Exception:
+                applied = False
+        if not applied:
+            mesh.set_editor_property("nanite_settings", nanite)
+        if not mesh.get_editor_property("nanite_settings").get_editor_property("enabled"):
+            _warn("SM_%s: Nanite could not be enabled; it renders as a regular static mesh" % name)
+    except Exception as exc:
+        _warn("SM_%s: cannot enable Nanite (%s); it renders as a regular static mesh" % (name, exc))
+
+
+def _import_terrain_chunk(name, glb_path, material):
+    final_path = MODELS_DIR + "/SM_" + name
+    staging = STAGING_DIR + "/" + name
+    if _exists(final_path):
+        try:
+            unreal.EditorAssetLibrary.delete_asset(final_path)
+        except Exception as exc:
+            _log("deleting %s failed: %s" % (final_path, exc))
+        if _exists(final_path):
+            _warn("cannot replace %s" % final_path)
+            return False
+    _cleanup_folder(staging)
+    objects = _import_file(glb_path, staging)
+    meshes = _imported_static_meshes(objects, staging)
+    if not meshes:
+        _warn("%s: the import produced no static mesh" % os.path.basename(glb_path))
+        _cleanup_folder(staging)
+        return False
+    source_path = _package_of(meshes[0].get_path_name())
+    del meshes
+    del objects
+    if not unreal.EditorAssetLibrary.rename_asset(source_path, final_path):
+        _warn("%s: could not move the imported mesh to %s" % (os.path.basename(glb_path), final_path))
+        _cleanup_folder(staging)
+        return False
+    mesh = _load(final_path)
+    if not isinstance(mesh, unreal.StaticMesh):
+        _warn("%s is missing after the move" % final_path)
+        return False
+    if material is not None:
+        try:
+            # The game overrides it with its season instance; this keeps the asset's own slot Nanite-safe.
+            mesh.set_material(0, material)
+        except Exception as exc:
+            _warn("SM_%s: cannot assign %s (%s)" % (name, material.get_name(), exc))
+    _configure_terrain_mesh(name, mesh)
+    _save(mesh)
+    _record(final_path)
+    _cleanup_folder(staging)
+    return True
+
+
+def _build_terrain_meshes(ctx):
+    """SM_Terrain_<cx>_<cy>: the game's runtime terrain mesh as static meshes, so the ground is in the Lumen scene.
+
+    Software Lumen only represents static meshes, instanced meshes and landscapes (distance fields and cards); the
+    runtime procedural mesh is only reached by screen traces. The chunks are optional: on any problem they are not
+    used (the marker records stride 0) and the game keeps building the terrain at runtime, so problems are warnings.
+    """
+    folder = _terrain_dir(ctx.paths)
+    height_path = os.path.join(folder, "Height.png")
+    ctx.terrain_hash = _terrain_source_hash(ctx.paths)
+    ctx.terrain_stride = 0
+    _report.notes["terrainHeightHash"] = ctx.terrain_hash
+    _report.notes["terrainMeshStride"] = 0
+    if not ctx.terrain_hash:
+        _log("no %s: terrain chunks not built" % height_path)
+        _delete_terrain_chunks()
+        return
+    try:
+        field = terrain.HeightField.load(folder)
+    except terrain.TerrainError as exc:
+        _warn("terrain chunks not built (%s): the game builds the terrain at runtime, outside the Lumen scene" % exc)
+        _delete_terrain_chunks()
+        return
+    # The identity of the bytes actually cut (the file could change between the two reads).
+    ctx.terrain_hash = field.source_hash
+    _report.notes["terrainHeightHash"] = ctx.terrain_hash
+    mapping = _measure_gltf_axes(ctx)
+    if mapping is None:
+        _warn("terrain chunks not built: the glTF import's axes could not be measured; the game builds the terrain at "
+              "runtime, outside the Lumen scene")
+        _delete_terrain_chunks()
+        return
+    field.build_mesh_grid(TERRAIN_MESH_STRIDE)
+    ranges = field.chunk_ranges()
+    if len(ranges) != terrain.CHUNKS_X * terrain.CHUNKS_Y:
+        _warn("terrain chunks not built: %s is too small for %d x %d chunks" % (height_path, terrain.CHUNKS_X,
+                                                                                terrain.CHUNKS_Y))
+        _delete_terrain_chunks()
+        return
+    material = _load(MATERIALS_DIR + "/MI_IronTerrain") or ctx.materials.get("terrain")
+    glb_dir = os.path.join(ctx.paths["staging"], "Terrain")
+    imported = 0
+    with unreal.ScopedSlowTask(len(ranges), "Building terrain chunks") as progress:
+        progress.make_dialog(True)
+        for chunk_x, chunk_y, first_x, last_x, first_y, last_y in ranges:
+            if progress.should_cancel():
+                raise _BuildError("cancelled by the user")
+            name = terrain.chunk_name(chunk_x, chunk_y)
+            progress.enter_progress_frame(1, "Terrain chunk %s" % name)
+            glb_path = os.path.join(glb_dir, name + ".glb")
+            try:
+                terrain.write_chunk_glb(glb_path, name, field.build_chunk(first_x, last_x, first_y, last_y), mapping)
+            except (OSError, terrain.TerrainError) as exc:
+                _warn("%s: cannot write %s (%s)" % (name, glb_path, exc))
+                break
+            if not _import_terrain_chunk(name, glb_path, material):
+                break
+            imported += 1
+    if imported != len(ranges):
+        _warn("only %d of %d terrain chunks were imported: none are used, the game builds the terrain at runtime"
+              % (imported, len(ranges)))
+        _delete_terrain_chunks()
+        return
+    ctx.terrain_stride = TERRAIN_MESH_STRIDE
+    _report.notes["terrainMeshStride"] = ctx.terrain_stride
+    _log("built %d terrain chunks SM_Terrain_* (stride %d, Height.png %s)" % (imported, ctx.terrain_stride,
+                                                                            ctx.terrain_hash))
+
+
 # ----- engine content wrappers ----------------------------------------------------------------------------------
 
 def _find_cloud_material():
@@ -1453,14 +1727,17 @@ def _build_engine_wrappers(ctx):
             _log("MI_IronClouds parent %s, scalar parameters: %s" % (parent.get_path_name(), ", ".join(names)))
         except Exception:
             pass
-    if not _exists(PLANE_PATH):
-        try:
-            if not unreal.EditorAssetLibrary.duplicate_asset(ENGINE_PLANE_PATH, PLANE_PATH):
-                _warn("could not copy %s to %s" % (ENGINE_PLANE_PATH, PLANE_PATH))
-        except Exception as exc:
-            _warn("could not copy %s to %s: %s" % (ENGINE_PLANE_PATH, PLANE_PATH, exc))
-    if _exists(PLANE_PATH):
-        _record(PLANE_PATH)
+    # SM_IronPlane (rings, effects) and SM_IronCube (the battle board's ground slabs): engine meshes are cooked only
+    # when referenced, these copies are cooked with /Game/IronReign.
+    for engine_path, copy_path in ((ENGINE_PLANE_PATH, PLANE_PATH), (ENGINE_CUBE_PATH, CUBE_PATH)):
+        if not _exists(copy_path):
+            try:
+                if not unreal.EditorAssetLibrary.duplicate_asset(engine_path, copy_path):
+                    _warn("could not copy %s to %s" % (engine_path, copy_path))
+            except Exception as exc:
+                _warn("could not copy %s to %s: %s" % (engine_path, copy_path, exc))
+        if _exists(copy_path):
+            _record(copy_path)
 
 
 # ----- version marker and build record --------------------------------------------------------------------------
@@ -1478,13 +1755,21 @@ def _read_marker():
     if not isinstance(marker, marker_class):
         return None
     try:
-        return {"art_version": int(marker.get_editor_property("art_version")),
-                "pipeline_version": int(marker.get_editor_property("pipeline_version"))}
+        result = {"art_version": int(marker.get_editor_property("art_version")),
+                  "pipeline_version": int(marker.get_editor_property("pipeline_version"))}
     except Exception:
         return None
+    try:
+        result["terrain_hash"] = str(marker.get_editor_property("terrain_height_hash") or "")
+        result["terrain_stride"] = int(marker.get_editor_property("terrain_mesh_stride"))
+    except Exception:
+        # A UIronAssetManifest compiled before these properties existed: _check_up_to_date uses the build record.
+        result["terrain_hash"] = None
+        result["terrain_stride"] = None
+    return result
 
 
-def _write_marker(art_version):
+def _write_marker(art_version, ctx):
     marker_class = _marker_class()
     if marker_class is None:
         _warn("C++ class UIronAssetManifest is not loaded (build the IronReign editor module): %s not written; "
@@ -1511,6 +1796,9 @@ def _write_marker(art_version):
     except Exception:
         pass
     _set(marker, "models", list(_report.models))
+    # The game uses SM_Terrain_* only when its Height.png has this hash and the stride is not 0.
+    _set(marker, "terrain_height_hash", ctx.terrain_hash)
+    _set(marker, "terrain_mesh_stride", int(ctx.terrain_stride))
     _save(marker)
     _record(MARKER_PATH)
 
@@ -1583,7 +1871,10 @@ def _check_up_to_date(folders, art_version):
     if marker is None and _marker_class() is None:
         status = _read_status(folders)
         if status and status.get("ok"):
-            marker = {"art_version": status.get("artVersion"), "pipeline_version": status.get("pipelineVersion")}
+            notes = status.get("notes") if isinstance(status.get("notes"), dict) else {}
+            marker = {"art_version": status.get("artVersion"), "pipeline_version": status.get("pipelineVersion"),
+                      "terrain_hash": notes.get("terrainHeightHash") or "",
+                      "terrain_stride": notes.get("terrainMeshStride") or 0}
     if marker is None:
         return False, "no complete build recorded (%s)" % MARKER_PATH
     if marker["art_version"] != art_version:
@@ -1591,7 +1882,18 @@ def _check_up_to_date(folders, art_version):
     if marker["pipeline_version"] != PIPELINE_VERSION:
         return False, "import pipeline version %s, assets built by version %s" % (PIPELINE_VERSION,
                                                                                   marker["pipeline_version"])
+    terrain_hash = marker.get("terrain_hash")
+    terrain_stride = marker.get("terrain_stride")
+    if terrain_hash is None:
+        status = _read_status(folders) or {}
+        notes = status.get("notes") if isinstance(status.get("notes"), dict) else {}
+        terrain_hash = notes.get("terrainHeightHash") or ""
+        terrain_stride = notes.get("terrainMeshStride") or 0
+    if terrain_hash != _terrain_source_hash(folders):
+        return False, "Content/Data/Art3D/Terrain/Height.png changed since the import (terrain chunks are stale)"
     missing = [p for p in expected_assets(folders) if not _exists(p)]
+    if terrain_stride:
+        missing += [p for p in _terrain_chunk_paths() if not _exists(p)]
     if missing:
         return False, "%d asset(s) missing, e.g. %s" % (len(missing), missing[0])
     return True, "assets are up to date (ArtSource version %s)" % art_version
@@ -1629,7 +1931,7 @@ def _run_steps(ctx, art_version):
     models = _list_files(os.path.join(ctx.paths["art"], "Models"), (".glb", ".gltf"))
     if not models:
         _warn("no models in %s" % os.path.join(ctx.paths["art"], "Models"))
-    steps = 6 + len(models)
+    steps = 7 + len(models)
     with unreal.ScopedSlowTask(steps, "Building Iron Reign 3D assets") as progress:
         progress.make_dialog(True)
 
@@ -1656,6 +1958,20 @@ def _run_steps(ctx, art_version):
                     _report.models.append(name)
             except Exception as exc:
                 _error("importing %s failed: %s\n%s" % (os.path.basename(glb_path), exc, traceback.format_exc()))
+        step("Building terrain chunks")
+        try:
+            _build_terrain_meshes(ctx)
+        except _BuildError:
+            raise
+        except Exception as exc:
+            # Optional: the game builds the terrain at runtime without them.
+            ctx.terrain_stride = 0
+            _report.notes["terrainMeshStride"] = 0
+            _warn("building the terrain chunks failed (none are used): %s\n%s" % (exc, traceback.format_exc()))
+            try:
+                _delete_terrain_chunks()
+            except Exception:
+                pass
         step("Wrapping engine content")
         _build_engine_wrappers(ctx)
         step("Saving")
@@ -1670,7 +1986,7 @@ def _run_steps(ctx, art_version):
             _warn("%d error(s): the version marker is not written, the next editor start will not retry this "
                   "version automatically" % len(_report.errors))
         else:
-            _write_marker(art_version)
+            _write_marker(art_version, ctx)
 
 
 def build_all(force=False):

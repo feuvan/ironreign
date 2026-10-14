@@ -3,6 +3,7 @@
 #include "Sim/IronState.h"
 #include "UI/IronSession.h"
 #include "World/IronAssetManifest.h"
+#include "World/IronBattleBoard3D.h"
 #include "World/IronCameraRig.h"
 #include "World/IronEnvironment.h"
 #include "World/IronTerrain.h"
@@ -113,6 +114,18 @@ namespace IronWorldMap3DDetail
 		}
 		const FBoxSphereBounds Bounds = Mesh->GetBounds();
 		return static_cast<float>((Bounds.Origin.Z + Bounds.BoxExtent.Z) * Scale * IronWorld::MetresPerCm);
+	}
+
+	/** Horizontal distance (m) from a mesh's origin to the farthest corner of its bounding box, at a uniform scale. */
+	double MeshFootprintRadiusM(const UStaticMesh* Mesh, double Scale)
+	{
+		if (Mesh == nullptr)
+		{
+			return 0.0;
+		}
+		const FBoxSphereBounds Bounds = Mesh->GetBounds();
+		const FVector2D Corner(FMath::Abs(Bounds.Origin.X) + Bounds.BoxExtent.X, FMath::Abs(Bounds.Origin.Y) + Bounds.BoxExtent.Y);
+		return Corner.Size() * Scale * IronWorld::MetresPerCm;
 	}
 
 	/** Troop type with the most soldiers (the commander's type wins ties). */
@@ -269,9 +282,14 @@ void AIronWorldMap3D::Initialize(TSharedPtr<FIronSession> InSession, int32 InQua
 	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 	SpawnParams.ObjectFlags |= RF_Transient;
 
+	const TSharedPtr<FIronSession> Pinned = Session.Pin();
 	Terrain = GameWorld->SpawnActor<AIronTerrain>(AIronTerrain::StaticClass(), FTransform::Identity, SpawnParams);
 	if (Terrain != nullptr)
 	{
+		if (Pinned.IsValid() && Pinned->HasGame())
+		{
+			Terrain->SetTreeExclusions(CollectTreeExclusions(Pinned->State()));
+		}
 		Terrain->BeginBuild(QualityLevel >= 3 ? 1 : 2);
 		if (Environment != nullptr)
 		{
@@ -287,7 +305,6 @@ void AIronWorldMap3D::Initialize(TSharedPtr<FIronSession> InSession, int32 InQua
 		AddTickPrerequisiteActor(CameraRig.Get());
 	}
 
-	const TSharedPtr<FIronSession> Pinned = Session.Pin();
 	if (Pinned.IsValid() && Pinned->HasGame())
 	{
 		const IronSim::FGameState& State = Pinned->State();
@@ -338,6 +355,27 @@ void AIronWorldMap3D::LoadAssets()
 	}
 }
 
+TArray<FVector> AIronWorldMap3D::CollectTreeExclusions(const IronSim::FGameState& State) const
+{
+	using namespace IronWorldMap3DDetail;
+	const IronWorld::FModelParams& ModelParams = IronWorld::GetModelParams();
+	TArray<FVector> Discs;
+	Discs.Reserve(static_cast<int32>(State.Cities.size()) * 2);
+	for (const IronSim::FCity& City : State.Cities)
+	{
+		const int32 Size = FMath::Clamp(City.Size, 1, 3);
+		const FVector2D CityPoint = IronWorld::FromSim(City.Position);
+		// The footprint of the model BuildCities will place (bounding-box corners, so any rotation fits), at least the
+		// nominal radius. Trees.json only keeps 25 m off the city point; walled cities reach 40-100 m.
+		const double FootprintM = FMath::Max(static_cast<double>(CityRadius(Size)), MeshFootprintRadiusM(CityMeshFor(Size), ModelParams.ScaleOf(CityModels[Size - 1])));
+		Discs.Add(FVector(CityPoint.X, CityPoint.Y, FootprintM + TreeClearanceM));
+		// The camp of armies waiting in the city (see SyncArmies).
+		const FVector2D CampPoint = CityPoint + CampOffset(Size);
+		Discs.Add(FVector(CampPoint.X, CampPoint.Y, CampClearingM));
+	}
+	return Discs;
+}
+
 AIronCameraRig* AIronWorldMap3D::GetCameraRig() const
 {
 	return CameraRig.Get();
@@ -370,6 +408,11 @@ float AIronWorldMap3D::SurfaceAt(const FVector2D& MapPointM) const
 
 void AIronWorldMap3D::SetActive(bool bInActive, float BlendSeconds)
 {
+	if (!bInActive && !bMapActive)
+	{
+		// Redundant or late deactivation: leave world rendering to whichever scene is showing.
+		return;
+	}
 	bMapActive = bInActive;
 	ApplyVisibility();
 	if (CameraRig != nullptr)
@@ -382,8 +425,13 @@ void AIronWorldMap3D::SetActive(bool bInActive, float BlendSeconds)
 	{
 		if (UGameViewportClient* GameViewport = GameWorld->GetGameViewport())
 		{
-			// AIronReignPlayerController disables world rendering for the pure-Slate screens.
-			GameViewport->bDisableWorldRendering = !bMapActive;
+			// AIronReignPlayerController disables world rendering for the pure-Slate screens. Hiding the map only turns
+			// it off when the battle board is not the scene on screen.
+			const AIronBattleBoard3D* ActiveBoard = bMapActive ? nullptr : AIronBattleBoard3D::FindBoard(GameWorld);
+			if (bMapActive || ActiveBoard == nullptr || !ActiveBoard->IsBoardActive())
+			{
+				GameViewport->bDisableWorldRendering = !bMapActive;
+			}
 		}
 	}
 
@@ -392,8 +440,12 @@ void AIronWorldMap3D::SetActive(bool bInActive, float BlendSeconds)
 		APlayerController* Controller = GetLocalController();
 		if (Controller != nullptr && CameraRig != nullptr)
 		{
-			// The first time there is nothing sensible to blend from (the controller sits at the world origin).
-			const float Blend = bEverActivated ? FMath::Max(0.0f, BlendSeconds) : 0.0f;
+			// Blend only from a nearby view: the first time the controller sits at the world origin, and the battle
+			// camera is 100 km away (a blend would sweep over open sea and thrash Lumen, VSM and streaming).
+			const APlayerCameraManager* CameraManager = Controller->PlayerCameraManager;
+			const bool bNearby = CameraManager != nullptr
+				&& FVector::DistSquared(CameraManager->GetCameraLocation(), CameraRig->GetActorLocation()) < FMath::Square(IronWorldMap3DDetail::BlendMaxDistanceCm);
+			const float Blend = (bEverActivated && bNearby) ? FMath::Max(0.0f, BlendSeconds) : 0.0f;
 			Controller->SetViewTargetWithBlend(CameraRig.Get(), Blend, EViewTargetBlendFunction::VTBlend_EaseInOut, 2.0f, false);
 			bEverActivated = true;
 		}
@@ -454,6 +506,9 @@ void AIronWorldMap3D::Tick(float DeltaSeconds)
 		if (!bBoundsSet && CameraRig != nullptr)
 		{
 			CameraRig->SetMapBounds(Terrain->GetMapSizeM());
+			// Initialize snapped the camera while only sea level was known: aim it at the real ground now, before the
+			// first activation, instead of letting the ground spring drift it up after the cut.
+			CameraRig->ResnapGround();
 			bBoundsSet = true;
 		}
 		if (!bCitiesBuilt || NeedsCityRebuild(State))
@@ -704,6 +759,9 @@ void AIronWorldMap3D::PlaceSects(const IronSim::FGameState& State)
 	const double Scale = ModelParams.ScaleOf(TEXT("Sect"));
 	const FRotator Facing(0.0, IronWorld::ModelYawDegrees(ModelParams.FrontYawDegrees, IronWorld::SouthYawDegrees), 0.0);
 	const float SeaLevel = Terrain != nullptr ? Terrain->GetSeaLevelM() : 0.0f;
+	// Trees.json only keeps trees off the city points: clear the ground under each temple.
+	const double ClearingM = FMath::Max(IronWorldMap3DDetail::SectClearingM, IronWorldMap3DDetail::MeshFootprintRadiusM(SectMesh.Get(), Scale) + IronWorldMap3DDetail::TreeClearanceM);
+	TArray<FVector> Clearings;
 
 	for (const IronSim::FSect& Sect : State.Sects)
 	{
@@ -744,6 +802,11 @@ void AIronWorldMap3D::PlaceSects(const IronSim::FGameState& State)
 		Marker->SetWorldLocationAndRotation(IronWorld::MapToWorld(Best, SurfaceAt(Best)), Facing);
 		Marker->SetWorldScale3D(FVector(Scale));
 		SectMarkers.Add(Marker);
+		Clearings.Add(FVector(Best.X, Best.Y, ClearingM));
+	}
+	if (Terrain != nullptr)
+	{
+		Terrain->ClearTrees(Clearings);
 	}
 }
 
@@ -794,12 +857,21 @@ void AIronWorldMap3D::SyncArmies(const IronSim::FGameState& State, float DeltaSe
 		FVector2D Heading = FVector2D::ZeroVector;
 		if (Army.Next >= 0 && Army.Road >= 0)
 		{
-			// On the road: interpolated position, facing along the road.
-			Point = IronWorld::FromSim(State.ArmyPosition(Army, FractionalDay));
+			// On the road, facing along it. The rules' road parameter runs from city centre to city centre (a new army
+			// starts at Progress 0, one waiting on a siege prompt sits at the far end): remap it so the column marches
+			// from the gate of Node to the gate of Next instead of standing inside either city model. The remap is
+			// symmetric, so two armies meeting on a road (Along_A + Along_B = 1) are still drawn at the same point.
 			const float Length = static_cast<float>(FMath::Max(1, State.RoadLength(Army.Road)));
 			const float Along = FMath::Clamp((static_cast<float>(Army.Progress) + FractionalDay * static_cast<float>(State.ArmySpeed(Army))) / Length, 0.0f, 1.0f);
-			const FVector2D Behind = IronWorld::FromSim(State.RoadPoint(Army.Road, Army.Node, FMath::Max(0.0f, Along - 0.02f)));
-			const FVector2D Ahead = IronWorld::FromSim(State.RoadPoint(Army.Road, Army.Node, FMath::Min(1.0f, Along + 0.02f)));
+			const int32 FromSize = CityVisuals.IsValidIndex(Army.Node) ? CityVisuals[Army.Node].CitySize : 2;
+			const int32 ToSize = CityVisuals.IsValidIndex(Army.Next) ? CityVisuals[Army.Next].CitySize : 2;
+			const double RoadM = RoadPolylineM(State, Army.Road);
+			const double StartT = (static_cast<double>(CityRadius(FromSize)) + GateClearanceM) / RoadM;
+			const double EndT = 1.0 - (static_cast<double>(CityRadius(ToSize)) + GateClearanceM) / RoadM;
+			const float Shown = StartT < EndT ? static_cast<float>(FMath::Lerp(StartT, EndT, static_cast<double>(Along))) : 0.5f;
+			Point = IronWorld::FromSim(State.RoadPoint(Army.Road, Army.Node, Shown));
+			const FVector2D Behind = IronWorld::FromSim(State.RoadPoint(Army.Road, Army.Node, FMath::Max(0.0f, Shown - 0.02f)));
+			const FVector2D Ahead = IronWorld::FromSim(State.RoadPoint(Army.Road, Army.Node, FMath::Min(1.0f, Shown + 0.02f)));
 			Heading = Ahead - Behind;
 		}
 		else
@@ -807,7 +879,7 @@ void AIronWorldMap3D::SyncArmies(const IronSim::FGameState& State, float DeltaSe
 			// Waiting in a city: camp beside the walls, toward the camera.
 			Point = IronWorld::FromSim(State.ArmyPosition(Army, 0.0f));
 			const int32 CitySize = CityVisuals.IsValidIndex(Army.Node) ? CityVisuals[Army.Node].CitySize : 2;
-			Point += FVector2D(static_cast<double>(CityRadius(CitySize)) + 18.0, 14.0);
+			Point += CampOffset(CitySize);
 		}
 		for (int32 Guard = 0; Guard < 8; ++Guard)
 		{
@@ -989,8 +1061,47 @@ void AIronWorldMap3D::PlaceRing(UStaticMeshComponent* Ring, const FVector2D& Map
 	{
 		return;
 	}
+	// M_IronHighlight is depth-tested: a flat ring at the centre's height would sink into any slope and show as a broken
+	// arc. Fit a plane to the ground under the ring (centre plus two circles of samples), tilt the ring onto it and lift
+	// it above the highest sample. The samples lie on full circles, so the least-squares plane separates into the mean
+	// height and one slope per axis. Map and UE axes share orientation, so map slopes are UE slopes.
+	const double HalfM = 0.5 * static_cast<double>(DiameterM);
+	TArray<FVector, TInlineAllocator<2 * IronWorldMap3DDetail::RingSampleCount + 1>> GroundSamples;
+	GroundSamples.Add(FVector(0.0, 0.0, static_cast<double>(GroundM)));
+	for (const double RadiusFactor : IronWorldMap3DDetail::RingSampleRadii)
+	{
+		for (int32 SampleIndex = 0; SampleIndex < IronWorldMap3DDetail::RingSampleCount; ++SampleIndex)
+		{
+			const double Angle = (2.0 * UE_DOUBLE_PI * static_cast<double>(SampleIndex)) / static_cast<double>(IronWorldMap3DDetail::RingSampleCount);
+			const FVector2D Offset(FMath::Cos(Angle) * HalfM * RadiusFactor, FMath::Sin(Angle) * HalfM * RadiusFactor);
+			GroundSamples.Add(FVector(Offset.X, Offset.Y, static_cast<double>(SurfaceAt(MapPointM + Offset))));
+		}
+	}
+	double SumH = 0.0;
+	double SumHX = 0.0;
+	double SumHY = 0.0;
+	double SumXX = 0.0;
+	double SumYY = 0.0;
+	for (const FVector& GroundSample : GroundSamples)
+	{
+		SumH += GroundSample.Z;
+		SumHX += GroundSample.Z * GroundSample.X;
+		SumHY += GroundSample.Z * GroundSample.Y;
+		SumXX += GroundSample.X * GroundSample.X;
+		SumYY += GroundSample.Y * GroundSample.Y;
+	}
+	const double BaseH = SumH / static_cast<double>(GroundSamples.Num());
+	const double SlopeX = SumXX > 0.0 ? FMath::Clamp(SumHX / SumXX, -IronWorldMap3DDetail::RingMaxSlope, IronWorldMap3DDetail::RingMaxSlope) : 0.0;
+	const double SlopeY = SumYY > 0.0 ? FMath::Clamp(SumHY / SumYY, -IronWorldMap3DDetail::RingMaxSlope, IronWorldMap3DDetail::RingMaxSlope) : 0.0;
+	double Clearance = 0.0;
+	for (const FVector& GroundSample : GroundSamples)
+	{
+		Clearance = FMath::Max(Clearance, GroundSample.Z - (BaseH + SlopeX * GroundSample.X + SlopeY * GroundSample.Y));
+	}
+	const FVector PlaneNormal = FVector(-SlopeX, -SlopeY, 1.0).GetSafeNormal();
+	const FQuat Tilt = FQuat::FindBetweenNormals(FVector::UpVector, PlaneNormal);
 	// The plane is 100 x 100 cm, so the scale is the diameter in metres.
-	Ring->SetWorldLocation(IronWorld::MapToWorld(MapPointM, static_cast<double>(GroundM + IronWorldMap3DDetail::RingLiftM)));
+	Ring->SetWorldLocationAndRotation(IronWorld::MapToWorld(MapPointM, BaseH + Clearance + static_cast<double>(IronWorldMap3DDetail::RingLiftM)), Tilt);
 	Ring->SetWorldScale3D(FVector(DiameterM, DiameterM, 1.0f));
 	Ring->SetVisibility(true);
 }

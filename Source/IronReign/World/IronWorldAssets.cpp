@@ -2,6 +2,7 @@
 
 #include "Sim/IronJson.h"
 #include "Sim/IronState.h"
+#include "World/IronAssetManifest.h"
 #include "World/IronWorldMath.h"
 
 #include "Components/StaticMeshComponent.h"
@@ -113,6 +114,17 @@ namespace IronWorld
 	{
 		UStaticMesh* Plane = LoadModel(TEXT("IronPlane"));
 		return Plane != nullptr ? Plane : LoadEngineMesh(EnginePlanePath);
+	}
+
+	UStaticMesh* LoadCubeMesh()
+	{
+		UStaticMesh* Cube = LoadModel(TEXT("IronCube"));
+		return Cube != nullptr ? Cube : LoadEngineMesh(EngineCubePath);
+	}
+
+	UIronAssetManifest* LoadAssetManifest()
+	{
+		return IronWorldAssetsDetail::LoadQuiet<UIronAssetManifest>(FString(TEXT("/Game/IronReign/IronReignAssetVersion.IronReignAssetVersion")));
 	}
 
 	bool ReadJsonFile(const FString& Path, IronSim::FJson& OutJson, FString& OutError)

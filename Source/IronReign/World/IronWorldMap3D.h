@@ -92,6 +92,8 @@ public:
  * Typical use from the strategy screen:
  *   if (AIronWorldMap3D::AreAssetsAvailable()) { Map = AIronWorldMap3D::SpawnMap(World, Session); }
  *   ...when Map->IsSceneReady(): Map->SetActive(true, 0.5f) and stop drawing the 2D map; HasFailed() -> stay 2D.
+ *   Battle: Map->SetActive(false) and Board->SetActive(true) in either order; back: Board->SetActive(false),
+ *   Map->SetActive(true) (cuts, the board is far away).
  *   Per frame: SetFractionalDay(Fraction); labels via ProjectCityLabel / ProjectArmyLabel.
  *   Input: Pan / Zoom / Rotate / FocusCity; clicks via PickCity / PickArmy.
  *   After rules changes the map follows by itself each tick; RefreshFromState() forces an immediate full sync.
@@ -125,9 +127,10 @@ public:
 
 	/**
 	 * Shows or hides the map (terrain, sea, trees, cities, armies, rings). Showing makes the camera rig the view target
-	 * (blending over BlendSeconds; the first activation always cuts) and turns world rendering on; hiding turns world
-	 * rendering off again (the 2D screens draw everything), so activate the next 3D scene after deactivating this one.
-	 * The shared environment stays.
+	 * and turns world rendering on. It blends over BlendSeconds only from a nearby view: the first activation and a
+	 * switch back from the battle board (100 km away) always cut. Hiding turns world rendering off again (the 2D
+	 * screens draw everything) unless the battle board is the active scene. Deactivating is idempotent and order-safe:
+	 * a redundant or late SetActive(false) never blanks the board or a re-activated map. The shared environment stays.
 	 */
 	void SetActive(bool bInActive, float BlendSeconds = 0.0f);
 	bool IsMapActive() const { return bMapActive; }
@@ -196,6 +199,8 @@ protected:
 
 private:
 	void LoadAssets();
+	/** Tree-free discs (X, Y = map metres, Z = radius metres) around every city model and its army camp. */
+	TArray<FVector> CollectTreeExclusions(const IronSim::FGameState& State) const;
 	void ApplyVisibility();
 	bool NeedsCityRebuild(const IronSim::FGameState& State) const;
 	void BuildCities(const IronSim::FGameState& State);

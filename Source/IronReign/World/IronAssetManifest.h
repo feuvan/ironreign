@@ -39,6 +39,21 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Iron Reign")
 	TArray<FString> Models;
 
+	/**
+	 * FIronHeightField::SourceHash ("<crc32 hex>-<byte count>") of the Content/Data/Art3D/Terrain/Height.png the import
+	 * saw (empty without one). The editor re-imports when the file changes; the game uses the terrain chunks only when
+	 * the Height.png it loads has this hash.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Iron Reign")
+	FString TerrainHeightHash;
+
+	/**
+	 * Heightmap pixel stride of the static terrain chunks /Game/IronReign/Models/SM_Terrain_<cx>_<cy> (8 x 5, cut from
+	 * that Height.png like AIronTerrain's runtime mesh); 0 = they were not built.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Iron Reign")
+	int32 TerrainMeshStride = 0;
+
 	bool HasModel(const FString& ModelName) const
 	{
 		return Models.Contains(ModelName);

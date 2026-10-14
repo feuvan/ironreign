@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Logging/LogMacros.h"
 
+class UIronAssetManifest;
 class UMaterialInstanceDynamic;
 class UMaterialInterface;
 class UMaterialParameterCollection;
@@ -54,6 +55,7 @@ namespace IronWorld
 	/** Engine content used as fallbacks (present in editor builds; cooked only when referenced). */
 	inline const TCHAR* const EngineBasicShapeMaterialPath = TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial");
 	inline const TCHAR* const EnginePlanePath = TEXT("/Engine/BasicShapes/Plane.Plane");
+	inline const TCHAR* const EngineCubePath = TEXT("/Engine/BasicShapes/Cube.Cube");
 	inline const TCHAR* const EngineCloudMaterialPath = TEXT("/Engine/EngineSky/VolumetricClouds/m_SimpleVolumetricCloud_Inst.m_SimpleVolumetricCloud_Inst");
 
 	/** Content/Data/Art3D (relative like FIronSession::DataDir so it also resolves inside .pak files). */
@@ -72,6 +74,13 @@ namespace IronWorld
 	UMaterialParameterCollection* LoadSeasonCollection();
 	/** 1 m plane with 0..1 UVs: SM_IronPlane (cooked with the game), else the engine's basic plane. */
 	UStaticMesh* LoadPlaneMesh();
+	/**
+	 * 1 m cube: SM_IronCube (cooked with the game), else the engine's basic cube. A closed static mesh with a distance
+	 * field and Lumen cards, for large flat surfaces that must be part of the Lumen scene (scaled into thick slabs).
+	 */
+	UStaticMesh* LoadCubeMesh();
+	/** /Game/IronReign/IronReignAssetVersion (UIronAssetManifest), written last by the import; nullptr without it. */
+	UIronAssetManifest* LoadAssetManifest();
 
 	/** Reads a UTF-8 JSON file (BOM tolerated) with the rules engine's parser. Thread-safe. */
 	bool ReadJsonFile(const FString& Path, IronSim::FJson& OutJson, FString& OutError);

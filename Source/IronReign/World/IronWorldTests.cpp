@@ -146,6 +146,12 @@ bool FIronWorldHeightFieldTest::RunTest(const FString& /*Parameters*/)
 		TestTrue(TEXT("The slanted hit lies on the rendered surface"), Near(Hit.Z, Fine.SampleSurface(HitMap.X, HitMap.Y) * IronWorld::CmPerMetre, 2.0));
 	}
 	TestFalse(TEXT("An upward ray from above the terrain misses"), Fine.Trace(Origin, FVector(0.0, 0.0, 1.0), Hit));
+
+	// The import records this identity for SM_Terrain_* with Python's zlib.crc32: the CRC-32 check value of "123456789".
+	const char* const CheckText = "123456789";
+	TArray<uint8> CheckBytes;
+	CheckBytes.Append(reinterpret_cast<const uint8*>(CheckText), 9);
+	TestEqual(TEXT("Heightmap identity = zlib CRC-32 and byte count"), FIronHeightField::HashSourceBytes(CheckBytes), FString(TEXT("cbf43926-9")));
 	return true;
 }
 

@@ -20,10 +20,12 @@ Content/Python/ironreign_import.py   (Unreal editor Python)
 |---|---|
 | `Content/Python/ironreign_import.py` | The importer. Its entry point is `build_all(force=False)`. |
 | `Content/Python/ironreign_gltf.py` | Pure-Python glTF reader, shared with the CI checker. It reads materials, embedded images and bounds. |
+| `Content/Python/ironreign_terrain.py` | Pure-Python heightmap decoder and terrain chunk writer (the game's runtime terrain mesh, cut into `.glb` chunks), shared with the CI checker. `python3 Content/Python/ironreign_terrain.py` lists the chunks. |
 | `Content/Python/init_unreal.py` | Editor startup hook. It imports automatically when the assets are missing or stale. |
 | `Tools/Unreal/build_assets.sh`, `build_assets.bat` | Explicit (re)build through `UnrealEditor-Cmd -run=pythonscript`. |
 | `Tools/Unreal/run_import.py` | The script the commandlet runs. |
 | `Tools/Unreal/check_art_source.py` | Engine-free validation of `ArtSource/` and `Content/Data/Art3D/`. CI runs it. |
+| `Tools/Unreal/test_terrain_chunks.py` | Engine-free self-test of `ironreign_terrain.py` against a port of `FIronHeightField::Sample` (standard library only, under a second). |
 | `Source/IronReign/World/IronAssetManifest.h` | `UIronAssetManifest`, the class of the version marker asset. |
 
 ## Running it
@@ -33,7 +35,9 @@ finished scanning, `init_unreal.py` checks the following:
 
 - `ArtSource/manifest.json` exists.
 - The marker `/Game/IronReign/IronReignAssetVersion` has the same `ArtVersion` and `PipelineVersion`.
-- Every expected asset exists.
+- The marker's `TerrainHeightHash` matches `Content/Data/Art3D/Terrain/Height.png` (a new heightmap re-cuts the
+  terrain chunks).
+- Every expected asset exists (with the terrain chunks when the marker says they were built).
 
 If any check fails, it imports and shows a progress dialog. If a build already failed for the same versions,
 it does not retry on every start. It logs where to look instead.
@@ -100,7 +104,7 @@ Run `python3 Tools/Unreal/check_art_source.py` before importing. It reports thes
 - Double-sided closed meshes.
 - Multi-object files.
 - Terrain texture sizes.
-- A heightmap that does not match `Terrain.json`.
+- A heightmap that does not match `Terrain.json`, or that the terrain chunk step cannot decode (warning).
 
 ## Outputs: asset paths for runtime code
 
@@ -113,6 +117,8 @@ run, nothing here exists and the game falls back to 2D. Object paths are `<packa
 | Models | `/Game/IronReign/Models/SM_<Name>` for each `ArtSource/Models/<Name>.glb`: `SM_City_1..3`, `SM_Sect`, `SM_Banner`, `SM_Flag`, `SM_Tree_Pine/Broad/Bamboo`, `SM_Unit_Infantry/Cavalry/Archer`, `SM_Unit_Base`, `SM_Hex_<Terrain>` |
 | Model materials/textures | `/Game/IronReign/Models/<Name>/MI_<Name>_<glTF material>` and `T_<Name>_<image>` (already assigned to the mesh slots) |
 | Plane | `/Game/IronReign/Models/SM_IronPlane` (copy of `/Engine/BasicShapes/Plane`: 1 m × 1 m, UV 0..1, +Z normal) |
+| Cube | `/Game/IronReign/Models/SM_IronCube` (copy of `/Engine/BasicShapes/Cube`, 1 m): the battle board's ground slabs, a static mesh so the ground is in the Lumen scene |
+| Terrain chunks | `/Game/IronReign/Models/SM_Terrain_<cx>_<cy>`, cx 0..7, cy 0..4: the campaign terrain as Nanite static meshes with distance fields (see "Terrain chunks" below). Optional: without them the game builds the terrain at runtime. |
 | Terrain | `/Game/IronReign/Materials/M_IronTerrain`, `MI_IronTerrain` |
 | Water | `/Game/IronReign/Materials/M_IronWater`, `MI_IronWater` |
 | Faction tint | `/Game/IronReign/Materials/M_IronTint`, `MI_IronTintInstanced` |
@@ -122,7 +128,7 @@ run, nothing here exists and the game falls back to 2D. Object paths are `<packa
 | Seasons | `/Game/IronReign/Materials/MPC_IronSeason` |
 | Clouds | `/Game/IronReign/Materials/MI_IronClouds` (parented to `/Engine/EngineSky/VolumetricClouds/m_SimpleVolumetricCloud_Inst`, or the plain material if the instance is missing) |
 | Textures | `/Game/IronReign/Textures/T_Terrain_Albedo`, `T_Terrain_Masks`, `T_<Name>` (e.g. `T_Water_Normal`), plus the generated defaults `T_IronWhite`, `T_IronWhiteLinear`, `T_IronFlatNormal` |
-| Version marker | `/Game/IronReign/IronReignAssetVersion` (`UIronAssetManifest`: `ArtVersion`, `PipelineVersion`, `BuiltAtUtc`, `EngineVersion`, `Models`). It is written last, so its presence means the import completed. |
+| Version marker | `/Game/IronReign/IronReignAssetVersion` (`UIronAssetManifest`: `ArtVersion`, `PipelineVersion`, `BuiltAtUtc`, `EngineVersion`, `Models`, `TerrainHeightHash`, `TerrainMeshStride`). It is written last, so its presence means the import completed. |
 
 ### Material parameters
 
@@ -158,10 +164,35 @@ run, nothing here exists and the game falls back to 2D. Object paths are `<packa
 5. It enables Nanite (preserve area for `Tree_*`) and removes collision. Picking happens in map space;
    set `STRIP_MODEL_COLLISION = False` if you need traces against models.
 
+## Terrain chunks
+
+The game draws the campaign ground from `Content/Data/Art3D/Terrain/Height.png` + `Terrain.json`. Software
+Lumen (this project traces mesh distance fields; hardware ray tracing is off) only represents static meshes,
+instanced meshes and landscapes, so a runtime procedural mesh gets no off-screen bounce light, no sky occlusion
+in valleys and no place in the sea's reflections. The import therefore cuts the very same mesh into static meshes:
+
+1. `ironreign_terrain.py` decodes `Height.png` (8- or 16-bit greyscale, not interlaced) and builds the game's
+   vertex grid (stride `TERRAIN_MESH_STRIDE` = 1: every 2 m pixel), the same 8 × 5 split with shared edges, the
+   same two triangles per cell, central-difference normals and UVs as `IronTerrainDetail::BuildChunk`.
+2. The engine's glTF import axis convention is measured, not assumed: a probe tetrahedron (1, 2 and 3 m along
+   glTF X, Y and Z) is imported to `/Game/IronReign/Import/AxisProbe` and its bounding box read back
+   (`gltfAxes` in the build record). Each chunk is written as a `.glb` in that convention, so it imports with
+   its vertices at Unreal world positions (cm), and moved to `SM_Terrain_<cx>_<cy>`.
+3. Each chunk gets `MI_IronTerrain` (`M_IronTerrain` carries the Nanite usage flag), the imported normals, no
+   lightmap UVs, a distance field at resolution scale 2, no collision, and Nanite with a 100 % fallback mesh
+   (without Nanite the ground must still be the surface `FIronHeightField` samples).
+4. The marker records `TerrainHeightHash` (CRC-32 and size of `Height.png`, `FIronHeightField::SourceHash`) and
+   `TerrainMeshStride`. `AIronTerrain` uses the chunks only when all 40 load and the `Height.png` it reads has
+   that hash; it then samples heights on the same grid. Otherwise it builds the procedural mesh as before.
+
+Any problem in this step is a warning: the chunks are deleted, the marker records stride 0, and the game keeps
+building the terrain at runtime.
+
 ## Continuous integration
 
 The Unreal Engine job was removed from `.github/workflows/ci.yml`, so the engine is only built locally. The
-`data` job compiles these scripts and runs `check_art_source.py`. If an engine job comes back, run the import
+`data` job compiles these scripts and runs `check_art_source.py`; `python3 Tools/Unreal/test_terrain_chunks.py`
+belongs next to it (it keeps the terrain chunks in step with the C++ sampler). If an engine job comes back, run the import
 after building the editor and before the automation tests and the cook:
 
 ```yaml

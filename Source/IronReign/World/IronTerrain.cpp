@@ -1,12 +1,14 @@
 #include "World/IronTerrain.h"
 
 #include "Sim/IronJson.h"
+#include "World/IronAssetManifest.h"
 #include "World/IronWorldAssets.h"
 #include "World/IronWorldMath.h"
 
 #include "Async/Async.h"
 #include "Components/HierarchicalInstancedStaticMeshComponent.h"
 #include "Components/SceneComponent.h"
+#include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
 #include "IImageWrapper.h"
 #include "IImageWrapperModule.h"
@@ -25,7 +27,9 @@ struct FIronTerrainBuildResult
 	bool bSucceeded = false;
 	FString Error;
 	FIronHeightField Field;
-	/** One mesh section per chunk, row-major (8 x 5). */
+	/** The imported SM_Terrain_* chunks match Field (same Height.png and grid): no sections were built. */
+	bool bStaticChunks = false;
+	/** One mesh section per chunk, row-major (8 x 5); empty when bStaticChunks. */
 	TArray<FProcMeshSection> Sections;
 	/** Instance transforms per tree type: pine, broad, bamboo. */
 	TArray<FTransform> Trees[3];
@@ -38,6 +42,7 @@ namespace IronTerrainDetail
 	constexpr int32 ChunksY = 5;
 	/** Chunk components registered per frame (each creates its render proxy on the game thread). */
 	constexpr int32 SectionsPerTick = 4;
+	constexpr int32 StaticChunksPerTick = 8;
 	/** The sea reaches this far beyond the map so the horizon never shows its edge. */
 	constexpr double SeaMarginM = 8000.0;
 	constexpr int32 SeaCells = 24;
@@ -53,13 +58,38 @@ namespace IronTerrainDetail
 	{
 		TSharedPtr<IImageWrapper> PngWrapper;
 		FString TreesJsonPath;
+		/** Vertex stride of the runtime (procedural) mesh. */
 		int32 Stride = 2;
 		double TreeScales[TreeTypeCount] = {1.0, 1.0, 1.0};
+		/** Imported SM_Terrain_* chunks are loaded: their grid stride and the Height.png identity they were cut from. */
+		int32 StaticChunkStride = 0;
+		FString StaticChunkHash;
+		/** Tree-free discs: X, Y = map metres, Z = radius metres. */
+		TArray<FVector> TreeExclusions;
 	};
 
 	FString TerrainDir()
 	{
 		return IronWorld::Art3DDir() / TEXT("Terrain");
+	}
+
+	/** "Terrain_3_1": the model name of an imported chunk (/Game/IronReign/Models/SM_Terrain_3_1). */
+	FString StaticChunkName(int32 ChunkX, int32 ChunkY)
+	{
+		return FString::Printf(TEXT("Terrain_%d_%d"), ChunkX, ChunkY);
+	}
+
+	/** True when the map point (metres) lies inside one of the discs (X, Y = centre in map metres, Z = radius). */
+	bool InsideAnyDisc(const TArray<FVector>& DiscsM, double XM, double YM)
+	{
+		for (const FVector& Disc : DiscsM)
+		{
+			if (FMath::Square(XM - Disc.X) + FMath::Square(YM - Disc.Y) < FMath::Square(Disc.Z))
+			{
+				return true;
+			}
+		}
+		return false;
 	}
 
 	bool ParseInfo(const IronSim::FJson& Json, FIronTerrainInfo& Out)
@@ -213,6 +243,12 @@ namespace IronTerrainDetail
 				++Result.TreesSkipped;
 				continue;
 			}
+			// Trees.json keeps 25 m off a city point; the city models reach much farther.
+			if (InsideAnyDisc(Request.TreeExclusions, XM, YM))
+			{
+				++Result.TreesSkipped;
+				continue;
+			}
 			const double Ground = static_cast<double>(Field.Sample(XM, YM));
 			if (Ground < Info.SeaLevelM + 0.3)
 			{
@@ -235,19 +271,37 @@ namespace IronTerrainDetail
 			return Result;
 		}
 		FIronHeightField& Field = Result->Field;
-		Field.BuildMeshGrid(Request.Stride);
-		const int32 CellsX = Field.MeshColumns.Num() - 1;
-		const int32 CellsY = Field.MeshRows.Num() - 1;
-		const int32 CountX = FMath::Clamp(ChunksX, 1, CellsX);
-		const int32 CountY = FMath::Clamp(ChunksY, 1, CellsY);
-		Result->Sections.Reserve(CountX * CountY);
-		for (int32 ChunkY = 0; ChunkY < CountY; ++ChunkY)
+		if (Request.StaticChunkStride > 0)
 		{
-			for (int32 ChunkX = 0; ChunkX < CountX; ++ChunkX)
+			// The imported chunks stand in for the runtime mesh only when they were cut from this very heightmap on a
+			// grid of at least 8 x 5 cells: then the samples below follow their triangles exactly.
+			Field.BuildMeshGrid(Request.StaticChunkStride);
+			const bool bSameSource = Request.StaticChunkHash == Field.SourceHash;
+			const bool bFullGrid = Field.MeshColumns.Num() - 1 >= ChunksX && Field.MeshRows.Num() - 1 >= ChunksY;
+			Result->bStaticChunks = bSameSource && bFullGrid;
+			if (!Result->bStaticChunks)
 			{
-				BuildChunk(Field, CellsX * ChunkX / CountX, CellsX * (ChunkX + 1) / CountX, CellsY * ChunkY / CountY, CellsY * (ChunkY + 1) / CountY, Result->Sections.AddDefaulted_GetRef());
+				UE_LOG(LogIronWorld, Warning, TEXT("SM_Terrain_* were imported from another Height.png (%s, now %s); the terrain uses the runtime mesh, which Lumen only sees on screen. Re-run the asset import."),
+					*Request.StaticChunkHash, *Field.SourceHash);
 			}
 		}
+		if (!Result->bStaticChunks)
+		{
+			Field.BuildMeshGrid(Request.Stride);
+			const int32 CellsX = Field.MeshColumns.Num() - 1;
+			const int32 CellsY = Field.MeshRows.Num() - 1;
+			const int32 CountX = FMath::Clamp(ChunksX, 1, CellsX);
+			const int32 CountY = FMath::Clamp(ChunksY, 1, CellsY);
+			Result->Sections.Reserve(CountX * CountY);
+			for (int32 ChunkY = 0; ChunkY < CountY; ++ChunkY)
+			{
+				for (int32 ChunkX = 0; ChunkX < CountX; ++ChunkX)
+				{
+					BuildChunk(Field, CellsX * ChunkX / CountX, CellsX * (ChunkX + 1) / CountX, CellsY * ChunkY / CountY, CellsY * (ChunkY + 1) / CountY, Result->Sections.AddDefaulted_GetRef());
+				}
+			}
+		}
+		// After the final mesh grid: trees stand on the triangles that are drawn.
 		BuildTrees(Request, *Result);
 		Result->bSucceeded = true;
 		return Result;
@@ -394,6 +448,22 @@ bool FIronHeightField::Trace(const FVector& OriginCm, const FVector& Direction, 
 	return false;
 }
 
+FString FIronHeightField::HashSourceBytes(const TArray<uint8>& Bytes)
+{
+	// Bitwise reflected CRC-32 (polynomial 0xEDB88320, initial and final XOR 0xFFFFFFFF), as zlib.crc32. A 1-2 MB
+	// heightmap takes a few milliseconds on the build worker.
+	uint32 Crc = 0xFFFFFFFFu;
+	for (const uint8 Byte : Bytes)
+	{
+		Crc ^= static_cast<uint32>(Byte);
+		for (int32 Bit = 0; Bit < 8; ++Bit)
+		{
+			Crc = (Crc >> 1) ^ (0xEDB88320u & (0u - (Crc & 1u)));
+		}
+	}
+	return FString::Printf(TEXT("%08x-%d"), Crc ^ 0xFFFFFFFFu, Bytes.Num());
+}
+
 TSharedPtr<IImageWrapper> FIronHeightField::CreatePngWrapper()
 {
 	IImageWrapperModule& ImageWrapperModule = FModuleManager::LoadModuleChecked<IImageWrapperModule>(FName(TEXT("ImageWrapper")));
@@ -424,6 +494,7 @@ bool FIronHeightField::Load(const TSharedPtr<IImageWrapper>& PngWrapper, FIronHe
 		OutError = FString::Printf(TEXT("could not read %s"), *HeightPath);
 		return false;
 	}
+	const FString PngHash = HashSourceBytes(PngBytes);
 	if (!PngWrapper.IsValid() || !PngWrapper->SetCompressed(PngBytes.GetData(), PngBytes.Num()))
 	{
 		OutError = FString::Printf(TEXT("%s is not a readable PNG"), *HeightPath);
@@ -476,6 +547,7 @@ bool FIronHeightField::Load(const TSharedPtr<IImageWrapper>& PngWrapper, FIronHe
 	OutField.Info = TerrainInfo;
 	OutField.SamplesX = Width;
 	OutField.SamplesY = Height;
+	OutField.SourceHash = PngHash;
 	OutField.Heights.SetNumUninitialized(static_cast<int32>(PixelCount));
 	const double Range = TerrainInfo.MaxElevationM - TerrainInfo.MinElevationM;
 	for (int64 Index = 0; Index < PixelCount; ++Index)
@@ -536,10 +608,19 @@ void AIronTerrain::BeginBuild(int32 MeshStride)
 	Request.PngWrapper = FIronHeightField::CreatePngWrapper();
 	Request.TreesJsonPath = IronTerrainDetail::TerrainDir() / TEXT("Trees.json");
 	Request.Stride = FMath::Clamp(MeshStride, 1, 8);
+	Request.TreeExclusions = TreeExclusionDiscs;
 	const IronWorld::FModelParams& ModelParams = IronWorld::GetModelParams();
 	for (int32 Type = 0; Type < IronTerrainDetail::TreeTypeCount; ++Type)
 	{
 		Request.TreeScales[Type] = ModelParams.ScaleOf(IronTerrainDetail::TreeModels[Type]);
+	}
+	// The imported static chunks (kept alive by StaticChunkMeshes); the worker confirms they match the heightmap.
+	FString StaticHash;
+	int32 StaticStride = 0;
+	if (LoadStaticChunks(StaticHash, StaticStride))
+	{
+		Request.StaticChunkHash = StaticHash;
+		Request.StaticChunkStride = StaticStride;
 	}
 
 	// Only plain data crosses to the worker; the result comes back through the future (polled in Tick), so the
@@ -549,6 +630,82 @@ void AIronTerrain::BeginBuild(int32 MeshStride)
 		return IronTerrainDetail::RunBuild(Request);
 	});
 	SetActorTickEnabled(true);
+}
+
+void AIronTerrain::SetTreeExclusions(const TArray<FVector>& InDiscsM)
+{
+	if (bBuildStarted)
+	{
+		// The worker already has its request: clear these on the game thread instead.
+		ClearTrees(InDiscsM);
+		return;
+	}
+	TreeExclusionDiscs = InDiscsM;
+}
+
+void AIronTerrain::ClearTrees(const TArray<FVector>& DiscsM)
+{
+	if (DiscsM.Num() == 0)
+	{
+		return;
+	}
+	// Trees not planted yet are filtered by CreateTrees; remove the planted ones now.
+	TreeClearings.Append(DiscsM);
+	for (const TObjectPtr<UHierarchicalInstancedStaticMeshComponent>& Forest : TreeComponents)
+	{
+		if (Forest == nullptr)
+		{
+			continue;
+		}
+		TArray<int32> Cleared;
+		const int32 InstanceCount = Forest->GetInstanceCount();
+		for (int32 InstanceIndex = 0; InstanceIndex < InstanceCount; ++InstanceIndex)
+		{
+			FTransform InstanceTransform;
+			if (Forest->GetInstanceTransform(InstanceIndex, InstanceTransform, true))
+			{
+				const FVector2D TreePoint = IronWorld::WorldToMap(InstanceTransform.GetLocation());
+				if (IronTerrainDetail::InsideAnyDisc(DiscsM, TreePoint.X, TreePoint.Y))
+				{
+					Cleared.Add(InstanceIndex);
+				}
+			}
+		}
+		if (Cleared.Num() > 0)
+		{
+			Forest->RemoveInstances(Cleared);
+		}
+	}
+}
+
+bool AIronTerrain::LoadStaticChunks(FString& OutSourceHash, int32& OutStride)
+{
+	StaticChunkMeshes.Reset();
+	const UIronAssetManifest* Manifest = IronWorld::LoadAssetManifest();
+	if (Manifest == nullptr || Manifest->TerrainMeshStride <= 0 || Manifest->TerrainHeightHash.IsEmpty())
+	{
+		UE_LOG(LogIronWorld, Log, TEXT("No imported SM_Terrain_* chunks; the terrain is built as a runtime mesh (Lumen sees it on screen only)."));
+		return false;
+	}
+	for (int32 ChunkY = 0; ChunkY < IronTerrainDetail::ChunksY; ++ChunkY)
+	{
+		for (int32 ChunkX = 0; ChunkX < IronTerrainDetail::ChunksX; ++ChunkX)
+		{
+			const FString ChunkName = IronTerrainDetail::StaticChunkName(ChunkX, ChunkY);
+			UStaticMesh* ChunkMesh = IronWorld::LoadModel(ChunkName);
+			if (ChunkMesh == nullptr)
+			{
+				// Never mix imported and runtime chunks: their seams would not line up.
+				UE_LOG(LogIronWorld, Warning, TEXT("%s is missing; the terrain is built as a runtime mesh. Re-run the asset import."), *IronWorld::ModelObjectPath(ChunkName));
+				StaticChunkMeshes.Reset();
+				return false;
+			}
+			StaticChunkMeshes.Add(ChunkMesh);
+		}
+	}
+	OutSourceHash = Manifest->TerrainHeightHash;
+	OutStride = FMath::Clamp(Manifest->TerrainMeshStride, 1, 8);
+	return true;
 }
 
 void AIronTerrain::CreateTerrainMaterial()
@@ -597,6 +754,11 @@ void AIronTerrain::HandleBuildResult(const TSharedPtr<FIronTerrainBuildResult>& 
 	}
 	HeightField = MoveTemp(Result->Field);
 	bHeightReady = true;
+	bStaticChunks = Result->bStaticChunks;
+	if (!bStaticChunks)
+	{
+		StaticChunkMeshes.Reset();
+	}
 	if (TerrainMaterial != nullptr)
 	{
 		// M_IronTerrain maps its textures from world position over this rectangle (cm).
@@ -604,8 +766,9 @@ void AIronTerrain::HandleBuildResult(const TSharedPtr<FIronTerrainBuildResult>& 
 		TerrainMaterial->SetVectorParameterValue(FName(TEXT("MapOrigin")), FLinearColor(0.0f, 0.0f, 0.0f, 0.0f));
 		TerrainMaterial->SetVectorParameterValue(FName(TEXT("MapSize")), FLinearColor(static_cast<float>(TerrainInfo.MapWidthM * IronWorld::CmPerMetre), static_cast<float>(TerrainInfo.MapHeightM * IronWorld::CmPerMetre), 0.0f, 0.0f));
 	}
-	UE_LOG(LogIronWorld, Log, TEXT("Terrain %dx%d px (%.2f m grid, mesh stride %d): %d chunks, trees %d/%d/%d (%d skipped)."),
-		HeightField.SamplesX, HeightField.SamplesY, HeightField.Info.GridStepM, HeightField.Stride, Result->Sections.Num(),
+	UE_LOG(LogIronWorld, Log, TEXT("Terrain %dx%d px (%.2f m grid, mesh stride %d): %d %s chunks, trees %d/%d/%d (%d skipped)."),
+		HeightField.SamplesX, HeightField.SamplesY, HeightField.Info.GridStepM, HeightField.Stride,
+		bStaticChunks ? StaticChunkMeshes.Num() : Result->Sections.Num(), bStaticChunks ? TEXT("imported static") : TEXT("runtime"),
 		Result->Trees[0].Num(), Result->Trees[1].Num(), Result->Trees[2].Num(), Result->TreesSkipped);
 
 	CreateSea();
@@ -625,28 +788,62 @@ UProceduralMeshComponent* AIronTerrain::NewMeshComponent()
 	return MeshComponent;
 }
 
+UStaticMeshComponent* AIronTerrain::NewStaticChunk(UStaticMesh* ChunkMesh)
+{
+	UStaticMeshComponent* ChunkComponent = NewObject<UStaticMeshComponent>(this);
+	ChunkComponent->SetupAttachment(SceneRoot);
+	ChunkComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	ChunkComponent->SetGenerateOverlapEvents(false);
+	ChunkComponent->SetCanEverAffectNavigation(false);
+	ChunkComponent->SetStaticMesh(ChunkMesh);
+	if (TerrainMaterial != nullptr)
+	{
+		ChunkComponent->SetMaterial(0, TerrainMaterial.Get());
+	}
+	ChunkComponent->RegisterComponent();
+	return ChunkComponent;
+}
+
 void AIronTerrain::CreatePendingComponents()
 {
 	FIronTerrainBuildResult& Result = *PendingResult;
-	int32 Budget = IronTerrainDetail::SectionsPerTick;
-	while (Budget > 0 && NextSection < Result.Sections.Num())
+	if (Result.bStaticChunks)
 	{
-		UProceduralMeshComponent* Chunk = NewMeshComponent();
-		Chunk->SetProcMeshSection(0, Result.Sections[NextSection]);
-		if (TerrainMaterial != nullptr)
+		// The vertices are in world space (cm): the components sit at the actor origin like the runtime chunks.
+		int32 Budget = IronTerrainDetail::StaticChunksPerTick;
+		while (Budget > 0 && NextSection < StaticChunkMeshes.Num())
 		{
-			Chunk->SetMaterial(0, TerrainMaterial.Get());
+			StaticChunks.Add(NewStaticChunk(StaticChunkMeshes[NextSection].Get()));
+			++NextSection;
+			--Budget;
 		}
-		Chunk->RegisterComponent();
-		Chunks.Add(Chunk);
-		// The component keeps its own copy; free the worker's.
-		Result.Sections[NextSection] = FProcMeshSection();
-		++NextSection;
-		--Budget;
+		if (NextSection < StaticChunkMeshes.Num())
+		{
+			return;
+		}
 	}
-	if (NextSection < Result.Sections.Num())
+	else
 	{
-		return;
+		int32 Budget = IronTerrainDetail::SectionsPerTick;
+		while (Budget > 0 && NextSection < Result.Sections.Num())
+		{
+			UProceduralMeshComponent* Chunk = NewMeshComponent();
+			Chunk->SetProcMeshSection(0, Result.Sections[NextSection]);
+			if (TerrainMaterial != nullptr)
+			{
+				Chunk->SetMaterial(0, TerrainMaterial.Get());
+			}
+			Chunk->RegisterComponent();
+			Chunks.Add(Chunk);
+			// The component keeps its own copy; free the worker's.
+			Result.Sections[NextSection] = FProcMeshSection();
+			++NextSection;
+			--Budget;
+		}
+		if (NextSection < Result.Sections.Num())
+		{
+			return;
+		}
 	}
 	if (NextTreeType < IronTerrainDetail::TreeTypeCount)
 	{
@@ -663,6 +860,14 @@ void AIronTerrain::CreatePendingComponents()
 void AIronTerrain::CreateTrees(int32 TreeType)
 {
 	TArray<FTransform>& Transforms = PendingResult->Trees[TreeType];
+	if (TreeClearings.Num() > 0)
+	{
+		Transforms.RemoveAllSwap([this](const FTransform& Tree)
+		{
+			const FVector2D TreePoint = IronWorld::WorldToMap(Tree.GetLocation());
+			return IronTerrainDetail::InsideAnyDisc(TreeClearings, TreePoint.X, TreePoint.Y);
+		});
+	}
 	if (Transforms.Num() == 0)
 	{
 		return;

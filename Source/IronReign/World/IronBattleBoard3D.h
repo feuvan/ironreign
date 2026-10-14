@@ -190,7 +190,7 @@ struct FIronBoardLight
  * Scene: the hex board at the fixed board origin (IronWorld::BoardOrigin(), X 0 m / Y -100000 m), one instanced mesh
  * component per hex model SM_Hex_<IronSim::AssetName(terrain)> (natural terrains get a random yaw in 60 degree steps),
  * gate hexes as separate tiles that shake and turn into SM_Hex_Rubble, a ring of decorative hexes around the board that
- * continues its rivers, roads, sea, city wall and town, and a large season-tinted ground plane below. Lighting is the
+ * continues its rivers, roads, sea, city wall and town, and a large season-tinted ground of slabs below. Lighting is the
  * world's shared AIronEnvironment (sun, sky atmosphere, sky light, clouds, height + volumetric fog, post-process); the
  * board only turns its sun from dawn (day 1) to dusk (the last day) and restores it when deactivated. The battle camera
  * is an ACameraActor framing the whole board at about 50 degrees pitch, with its own tilt-shift depth of field.
@@ -203,7 +203,7 @@ struct FIronBoardLight
  *   {
  *       Board = AIronBattleBoard3D::SpawnBoard(World);
  *       Board->Build(*Battle); Board->SetSeason(Month); Board->SetFramingInsets(...);
- *       StrategyMap3D->SetActive(false); Board->SetActive(true);   // deactivate the other 3D scene first
+ *       StrategyMap3D->SetActive(false); Board->SetActive(true);   // either order works
  *   }
  *   ConsumeEvents:  Board->PlayEvents(Battle->Events()); Board->SyncFromBattle(*Battle); Battle->ClearEvents();
  *   Driver tick:    bAnimating = Board->IsAnimating();  (instead of SIronHexView::GetBusyUntil)
@@ -211,7 +211,7 @@ struct FIronBoardLight
  *   Selection:      Board->SetHighlights(...) whenever the highlights change; SetHoveredHex on mouse move.
  *   Input:          PickHex (click / hover), Pan (drag), Zoom (wheel), ResetView (key), FocusHex (AI acting off screen).
  *   Overlay:        ProjectUnitToViewport (troop bars, names follow the animation), ProjectToViewport (hex numbers).
- *   Leaving:        Board->SetActive(false); then activate the strategy map again.
+ *   Leaving:        Board->SetActive(false); StrategyMap3D->SetActive(true) (either order; the map cuts back).
  *
  * Viewport pixels are those of APlayerController::DeprojectScreenPositionToWorld / ProjectWorldLocationToScreen: game
  * viewport render pixels, origin top-left (Slate local coordinates x Geometry.Scale for a full-viewport widget).
@@ -248,9 +248,10 @@ public:
 
 	/**
 	 * Shows or hides the board. Showing turns world rendering on and makes the battle camera the view target (blending
-	 * over BlendSeconds: keep 0 when coming from another 3D scene, the two are 100 km apart). Hiding finishes running
-	 * animations, restores the shared sun and turns world rendering off again (the 2D screens draw everything), so
-	 * activate the next 3D scene after deactivating this one.
+	 * over BlendSeconds; coming from the strategy map, 100 km away, it always cuts). Hiding finishes running
+	 * animations, restores the shared sun and turns world rendering off again (the 2D screens draw everything) unless
+	 * the strategy map is the active scene. Deactivating is idempotent and order-safe: a redundant or late
+	 * SetActive(false) never blanks the map or a re-activated board.
 	 */
 	void SetActive(bool bInActive, float BlendSeconds = 0.0f);
 	bool IsBoardActive() const { return bBoardActive; }
@@ -456,8 +457,12 @@ private:
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UStaticMeshComponent>> GateTiles;
 
+	/**
+	 * The ground around the board: a grid of thick slabs (SM_IronCube instances). A static mesh with a distance field
+	 * and Lumen cards, so the 4 km surface is part of the Lumen scene (a procedural quad would only be screen traced).
+	 */
 	UPROPERTY(Transient)
-	TObjectPtr<UProceduralMeshComponent> Ground;
+	TObjectPtr<UInstancedStaticMeshComponent> Ground;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> GroundMaterial;

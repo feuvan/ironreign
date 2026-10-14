@@ -3,11 +3,13 @@
 #include "World/IronAssetManifest.h"
 #include "World/IronEnvironment.h"
 #include "World/IronWorldAssets.h"
+#include "World/IronWorldMap3D.h"
 #include "World/IronWorldMath.h"
 
 #include "Algo/Reverse.h"
 #include "Camera/CameraActor.h"
 #include "Camera/CameraComponent.h"
+#include "Camera/PlayerCameraManager.h"
 #include "Components/DirectionalLightComponent.h"
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Components/PointLightComponent.h"
@@ -43,6 +45,12 @@ namespace IronBattleBoard3DDetail
 	constexpr double SurroundDropM = 0.25;
 	constexpr double GroundDropM = 1.35;
 	constexpr double GroundSizeM = 4000.0;
+	/**
+	 * The ground is GroundTiles x GroundTiles slabs of GroundSizeM / GroundTiles metres, GroundThicknessM thick: closed
+	 * boxes at a moderate non-uniform scale (10:1) keep their distance fields usable for Lumen.
+	 */
+	constexpr int32 GroundTiles = 20;
+	constexpr double GroundThicknessM = 20.0;
 
 	// Units (squad models are <= 6 m; the hex's inscribed circle is 6.9 m across).
 	constexpr double FlagScale = 0.38;
@@ -69,6 +77,8 @@ namespace IronBattleBoard3DDetail
 	constexpr double TiltShiftCoc = 0.010;
 	constexpr double SensorWidthMm = 24.576;
 	constexpr double FocusMarginFraction = 0.12;
+	/** A view target farther than this (cm) from the board camera is another scene (the strategy map, 100 km away). */
+	constexpr double BlendMaxDistanceCm = 2.0e6;
 
 	// Animation (seconds, centimetres).
 	constexpr double MoveSecondsPerHex = 0.25;
@@ -976,7 +986,20 @@ void AIronBattleBoard3D::BuildGround()
 	using namespace IronBattleBoard3DDetail;
 	if (Ground == nullptr)
 	{
-		Ground = CreateQuadComponent(SceneRoot.Get());
+		UStaticMesh* SlabMesh = IronWorld::LoadCubeMesh();
+		if (SlabMesh == nullptr)
+		{
+			UE_LOG(LogIronWorld, Warning, TEXT("Neither SM_IronCube nor the engine cube loads; the 3D board has no ground around it."));
+			return;
+		}
+		Ground = NewObject<UInstancedStaticMeshComponent>(this);
+		Ground->SetupAttachment(SceneRoot.Get());
+		Ground->SetMobility(EComponentMobility::Movable);
+		Ground->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		Ground->SetGenerateOverlapEvents(false);
+		Ground->SetCanEverAffectNavigation(false);
+		Ground->SetStaticMesh(SlabMesh);
+		// M_IronTint carries the instanced-static-mesh usage flag (a cooked game cannot add it later).
 		UMaterialInterface* GroundParent = TintMaterial.Get();
 		if (GroundParent == nullptr)
 		{
@@ -991,9 +1014,27 @@ void AIronBattleBoard3D::BuildGround()
 				Ground->SetMaterial(0, GroundMaterial.Get());
 			}
 		}
+		Ground->RegisterComponent();
+
+		// Fit the mesh's bounding box (whatever its pivot) to a slab whose top face lies at the component origin.
+		const FBoxSphereBounds SlabBounds = SlabMesh->GetBounds();
+		const FVector SlabSizeCm = SlabBounds.BoxExtent * 2.0;
+		const double TileCm = GroundSizeM / static_cast<double>(GroundTiles) * IronWorld::CmPerMetre;
+		const FVector TileScale(TileCm / FMath::Max(1.0, SlabSizeCm.X), TileCm / FMath::Max(1.0, SlabSizeCm.Y), GroundThicknessM * IronWorld::CmPerMetre / FMath::Max(1.0, SlabSizeCm.Z));
+		const double HalfGroundCm = GroundSizeM * 0.5 * IronWorld::CmPerMetre;
+		TArray<FTransform> Tiles;
+		Tiles.Reserve(GroundTiles * GroundTiles);
+		for (int32 TileY = 0; TileY < GroundTiles; ++TileY)
+		{
+			for (int32 TileX = 0; TileX < GroundTiles; ++TileX)
+			{
+				const FVector TileCentre((static_cast<double>(TileX) + 0.5) * TileCm - HalfGroundCm, (static_cast<double>(TileY) + 0.5) * TileCm - HalfGroundCm, 0.0);
+				const FVector Pivot(TileCentre.X - SlabBounds.Origin.X * TileScale.X, TileCentre.Y - SlabBounds.Origin.Y * TileScale.Y, -(SlabBounds.Origin.Z + SlabBounds.BoxExtent.Z) * TileScale.Z);
+				Tiles.Add(FTransform(FRotator::ZeroRotator, Pivot, TileScale));
+			}
+		}
+		Ground->AddInstances(Tiles, false);
 	}
-	const double HalfCm = GroundSizeM * 0.5 * IronWorld::CmPerMetre;
-	SetSingleQuad(Ground.Get(), HalfCm, HalfCm);
 	const FVector2D CentreM = HexToLocalM({BoardCols / 2, BoardRows / 2});
 	Ground->SetRelativeLocation(FVector(CentreM.X * IronWorld::CmPerMetre, CentreM.Y * IronWorld::CmPerMetre, -GroundDropM * IronWorld::CmPerMetre));
 	Ground->SetVisibility(true);
@@ -1190,6 +1231,12 @@ void AIronBattleBoard3D::RefreshHighlightLayers()
 
 void AIronBattleBoard3D::SetActive(bool bInActive, float BlendSeconds)
 {
+	if (!bInActive && !bBoardActive)
+	{
+		// Redundant or late deactivation (EnsureInitialized already hid the board): leave world rendering to whichever
+		// scene is showing.
+		return;
+	}
 	if (bInActive)
 	{
 		EnsureInitialized();
@@ -1209,8 +1256,13 @@ void AIronBattleBoard3D::SetActive(bool bInActive, float BlendSeconds)
 	{
 		if (UGameViewportClient* GameViewport = GameWorld->GetGameViewport())
 		{
-			// AIronReignPlayerController disables world rendering for the pure-Slate screens.
-			GameViewport->bDisableWorldRendering = !bBoardActive;
+			// AIronReignPlayerController disables world rendering for the pure-Slate screens. Hiding the board only turns
+			// it off when the strategy map is not the scene on screen.
+			const AIronWorldMap3D* ActiveMap = bBoardActive ? nullptr : AIronWorldMap3D::FindMap(GameWorld);
+			if (bBoardActive || ActiveMap == nullptr || !ActiveMap->IsMapActive())
+			{
+				GameViewport->bDisableWorldRendering = !bBoardActive;
+			}
 		}
 	}
 	if (!bBoardActive)
@@ -1221,7 +1273,11 @@ void AIronBattleBoard3D::SetActive(bool bInActive, float BlendSeconds)
 	APlayerController* Controller = GetLocalController();
 	if (Controller != nullptr && BoardCamera != nullptr)
 	{
-		Controller->SetViewTargetWithBlend(BoardCamera.Get(), FMath::Max(0.0f, BlendSeconds), EViewTargetBlendFunction::VTBlend_EaseInOut, 2.0f, false);
+		// Blend only from a nearby view: the strategy map is 100 km away, a blend would sweep over open sea.
+		const APlayerCameraManager* CameraManager = Controller->PlayerCameraManager;
+		const bool bNearby = CameraManager != nullptr
+			&& FVector::DistSquared(CameraManager->GetCameraLocation(), BoardCamera->GetActorLocation()) < FMath::Square(IronBattleBoard3DDetail::BlendMaxDistanceCm);
+		Controller->SetViewTargetWithBlend(BoardCamera.Get(), bNearby ? FMath::Max(0.0f, BlendSeconds) : 0.0f, EViewTargetBlendFunction::VTBlend_EaseInOut, 2.0f, false);
 	}
 	// The sun starts at the current day instead of sweeping in from wherever the map left it.
 	DayAlpha = GoalDayAlpha;

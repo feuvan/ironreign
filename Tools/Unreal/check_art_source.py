@@ -20,6 +20,7 @@ REPO = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, os.path.join(REPO, "Content", "Python"))
 
 import ironreign_gltf as gltf  # noqa: E402  (shared with the Unreal import script)
+import ironreign_terrain as terrain  # noqa: E402  (the import's terrain chunks)
 
 TERRAINS = ("Plain", "Forest", "Hill", "Mountain", "Water", "Ford", "Bridge", "Road", "Wall", "Gate", "Town",
             "Castle", "Rubble")
@@ -282,6 +283,13 @@ def check_art3d(art3d, report):
                     report.error(rel(height_path), "%d-bit %s; a 16-bit greyscale PNG is required" % (info[2], info[3]))
                 if expected and (info[0], info[1]) == expected and info[2] == 16 and info[3] == "grey":
                     report.info(rel(height_path), "%dx%d 16-bit" % (info[0], info[1]))
+                # The import cuts the static terrain chunks (Lumen scene) from it with a pure-Python decoder.
+                try:
+                    with open(height_path, "rb") as handle:
+                        terrain.decode_grey_png(handle.read())
+                except (OSError, terrain.TerrainError) as exc:
+                    report.warn(rel(height_path), "the import cannot cut SM_Terrain_* chunks from it (%s); the game then "
+                                "builds the terrain at runtime, outside the Lumen scene" % exc)
     models_path = os.path.join(art3d, "Models.json")
     if os.path.isfile(models_path):
         models = _load_json(models_path, report)
