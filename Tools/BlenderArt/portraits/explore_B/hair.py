@@ -256,7 +256,7 @@ def _outward(pos, center):
 
 def beard(surf, lm, rng, density=1.0, chin_len=0.12, cheek_len=0.05, neck_len=0.06, curl=0.08,
           clumping=0.55, P=14, droop=0.85, width_scale=1.0, forward=0.25, style="full",
-          r_root=0.00016, r_tip=0.00006, count=7000):
+          r_root=0.00016, r_tip=0.00006, count=7000, noise=0.015, wave=0.0):
     """Full beard: length grows towards the chin; strands fall forward and down over the chest."""
     w = surf.A["z_beard"].copy()
     if style == "goatee":
@@ -283,7 +283,12 @@ def beard(surf, lm, rng, density=1.0, chin_len=0.12, cheek_len=0.05, neck_len=0.
     fwd = np.array([0, -1, 0], np.float32)
     d = nor * 0.55 + down * 0.6 + out * 0.15 + fwd * forward * chin_f[:, None]
     pts = grow(pos, d, L, P, gravity=droop, stiff=0.8, curl=curl, curl_freq=2.0, rng=rng,
-               noise=0.015)
+               noise=noise)
+    if wave > 0:
+        t = np.linspace(0, 1, P, dtype=np.float32)[None, :]
+        ph = (pos[:, 0] * 90.0)[:, None]
+        pts[:, :, 0] += wave * np.sin(t * 9.0 + ph) * t
+    pts = smooth_strands(pts, 2)
     pts = clump(pts, max(8, n // 60), clumping, rng, power=1.1, spread=0.1)
     pts = collide(surf, pts, 0.002)
     # grey streaks at the corners of the chin and in the sideburns (not uniform salt & pepper)
@@ -359,20 +364,35 @@ def lashes(surf, lm, rng, length=0.0075, count=70, P=6, r_root=0.00009, r_tip=0.
     return np.concatenate(out), dict(r_root=r_root, r_tip=r_tip, attrs={"greyness": np.zeros(len(pts))})
 
 
-def scalp_to_knot(surf, lm, rng, knot, count=14000, P=14, layer=(0.0008, 0.005), part=None,
-                  r_root=0.00012, r_tip=0.00008, comb_noise=0.15, stop=0.02):
+def scalp_to_knot(surf, lm, rng, knot, count=14000, P=14, layer=(0.0008, 0.004), part=None,
+                  r_root=0.00017, r_tip=0.0001, comb_noise=0.02, stop=0.02, recede=0.0,
+                  mask="z_scalp", puff=0.0):
     """Hair combed from the hairline towards ``knot`` (top-knot / bun base), following the scalp.
 
     ``part``: None (all combed back) or 'center' (parted on the midline, combed sideways first).
     """
-    w = surf.A["z_scalp"]
+    w = surf.A[mask]
     smp = surf.sample(w, count, rng)
     if smp is None:
         return None
     pos, nor, at = smp
     knot = np.asarray(knot, np.float32)
+    if recede > 0:
+        # receding hairline (old men): drop frontal roots below a rising line
+        e = np.asarray(lm["eye_c"], np.float32)
+        rel = pos - e
+        elev = np.degrees(np.arctan2(rel[:, 2], -rel[:, 1]))
+        frontal = np.clip(1 - np.abs(rel[:, 0]) / 0.06, 0, 1) * (rel[:, 1] < 0.01)
+        keep = elev > (40 + 45 * recede * frontal) - 90 * (1 - frontal)
+        pos, nor = pos[keep], nor[keep]
+        at = {k: v[keep] for k, v in at.items()}
     S = len(pos)
     off = (layer[0] + (layer[1] - layer[0]) * rng.random(S) ** 1.5).astype(np.float32)
+    if puff > 0:
+        # fuller sides (temples / over the ears)
+        e = np.asarray(lm["eye_c"], np.float32)
+        side = np.clip((np.abs(pos[:, 0] - e[0]) - 0.04) / 0.03, 0, 1) * np.clip((pos[:, 2] - e[2] + 0.02) / 0.05, 0, 1)
+        off = off + puff * side * (0.5 + 0.5 * rng.random(S)).astype(np.float32)
     dist = np.linalg.norm(pos - knot, axis=1)
     step = (dist * 1.25 / (P - 1))[:, None]
     pts = np.zeros((S, P, 3), np.float32)
@@ -401,7 +421,15 @@ def scalp_to_knot(surf, lm, rng, knot, count=14000, P=14, layer=(0.0008, 0.005),
         nxt[near] = (nxt[near] + knot) * 0.5
         pts[:, i] = nxt
         cur = nxt
-    return pts, dict(r_root=r_root, r_tip=r_tip, attrs={"greyness": np.clip(1 - at["z_scalp"], 0, 1)})
+    pts = smooth_strands(pts, 3)
+    return pts, dict(r_root=r_root, r_tip=r_tip, attrs={"greyness": np.clip(1 - at[mask], 0, 1)})
+
+
+def smooth_strands(pts, iters=2):
+    p = pts.copy()
+    for _ in range(iters):
+        p[:, 1:-1] = 0.5 * p[:, 1:-1] + 0.25 * (p[:, :-2] + p[:, 2:])
+    return p
 
 
 def bun(center, rng, radius=0.035, height=0.03, count=3000, P=18, turns=1.2, axis=(0, 0, 1),
@@ -426,7 +454,7 @@ def bun(center, rng, radius=0.035, height=0.03, count=3000, P=18, turns=1.2, axi
     return pts, dict(r_root=r_root, r_tip=r_tip, attrs={"greyness": rng.random(S) * 0.3})
 
 
-def side_locks(surf, lm, rng, count=120, length=0.16, P=16, r_root=0.0001, r_tip=0.00005):
+def side_locks(surf, lm, rng, count=120, length=0.16, P=20, r_root=0.00012, r_tip=0.00005):
     """Two thin locks falling from the temples in front of the ears (court-lady styling)."""
     outp = []
     for side in (1, -1):
@@ -435,8 +463,9 @@ def side_locks(surf, lm, rng, count=120, length=0.16, P=16, r_root=0.0001, r_tip
         roots = root + rng.normal(size=(count, 3)).astype(np.float32) * 0.003
         d = np.tile(np.array([0.05 * side, -0.25, -1.0], np.float32), (count, 1))
         L = length * (0.85 + 0.3 * rng.random(count))
-        pts = grow(roots, d, L, P, gravity=0.9, stiff=1.0, curl=0.06, curl_freq=1.0, rng=rng, noise=0.02)
-        pts = clump(pts, 4, 0.7, rng)
+        pts = grow(roots, d, L, P, gravity=0.9, stiff=1.0, curl=0.03, curl_freq=0.8, rng=rng, noise=0.0)
+        pts = clump(pts, 3, 0.85, rng)
+        pts = smooth_strands(pts, 2)
         outp.append(pts)
     pts = np.concatenate(outp)
     pts = collide(surf, pts, 0.004)

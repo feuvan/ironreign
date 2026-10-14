@@ -84,7 +84,7 @@ def masks():
     global _MASKS
     if _MASKS is not None:
         return _MASKS
-    cp = mh._cache_path("zones_v9")
+    cp = mh._cache_path("zones_v11")
     if os.path.exists(cp):
         d = np.load(cp)
         _MASKS = {k: d[k] for k in d.files}
@@ -127,6 +127,12 @@ def masks():
     scalp *= 1.0 - M["ears"]
     M["scalp"] = scalp
     M["hairline"] = _ss(hl - 0.06, hl + 0.02, y) * (1 - _ss(hl + 0.02, hl + 0.22, y)) * (y > 6.4)
+    # lower, rounder hairline (women, youths): covers the temples and the top of the ears
+    hl2 = np.interp(aphi, [0, 25, 45, 62, 80, 100, 130, 180],
+                    [7.86, 7.80, 7.64, 7.46, 7.28, 7.08, 6.84, 6.58])
+    sc2 = _ss(hl2 - 0.03, hl2 + 0.08, y) * (y > 6.4)
+    sc2 *= 1.0 - M["ears"] * _ss(7.35, 7.2, y)
+    M["scalp_low"] = sc2
     M["forehead"] = _ss(brow_y + 0.05, brow_y + 0.25, y) * (1 - scalp) * _ss(70, 40, aphi)
     # beard: below the cheek line, above the under-jaw line, on the face/jaw
     cheek_line = np.interp(aphi, [0, 15, 26, 36, 50, 65, 80, 92],
@@ -155,7 +161,7 @@ def masks():
     M["jaw_under"] = _ss(6.25, 6.0, y) * _ss(5.8, 6.0, y) * _ss(110, 60, aphi)
     M["temple"] = np.exp(-(((ax - 0.66) / 0.10) ** 2 + ((y - 7.62) / 0.18) ** 2)) * (z > 0.3)
     rows, cols = adjacency()
-    for k, it in (("beard", 3), ("moustache", 2), ("scalp", 3), ("hairline", 2), ("goatee", 3),
+    for k, it in (("beard", 3), ("moustache", 2), ("scalp", 3), ("scalp_low", 3), ("hairline", 2), ("goatee", 3),
                   ("brow", 1), ("forehead", 3), ("ears", 1), ("nose", 2), ("cheek", 2)):
         M[k] = smooth(M[k].astype(np.float64), it, rows, cols)
     for k in list(M):

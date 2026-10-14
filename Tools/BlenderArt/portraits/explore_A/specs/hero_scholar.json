@@ -1,0 +1,99 @@
+{
+ "id": "hero_scholar",
+ "seed": 23,
+ "gender": "f",
+ "age": 26,
+ "archetype": "scholar",
+ "expression": "serene",
+ "expr": {
+  "mouth-corner-puller": 0.1,
+  "eyebrows-right-extern-up": 0.15
+ },
+ "face": {
+  "eyes/{s}-eye-scale-decr|incr": 0.2,
+  "nose/nose-scale-horiz-decr|incr": -0.2,
+  "chin/chin-width-decr|incr": -0.25,
+  "head/head-fat-decr|incr": -0.15
+ },
+ "identity": {
+  "skin_tone": 0.2,
+  "skin_red": 0.35,
+  "makeup": 0.85
+ },
+ "skin": {
+  "huadian": true,
+  "stubble": 0.0
+ },
+ "hair": {
+  "style": "lady",
+  "grey": 0.0,
+  "recede": 0.0,
+  "count": 9000,
+  "bun": 0.03,
+  "puff": 0.016
+ },
+ "brows": {
+  "thick": 0.7,
+  "arch": 1.2,
+  "angle": 0.1,
+  "count": 700,
+  "hair_len": 0.008
+ },
+ "outfit": {
+  "kind": "lady",
+  "outer": [
+   0.02,
+   0.08,
+   0.09
+  ],
+  "mid": [
+   0.32,
+   0.03,
+   0.04
+  ],
+  "inner": [
+   0.78,
+   0.74,
+   0.66
+  ],
+  "motif": "roundels",
+  "motif_rgb": [
+   0.62,
+   0.48,
+   0.2
+  ],
+  "band": [
+   0.3,
+   0.03,
+   0.035
+  ],
+  "band_thread": [
+   0.7,
+   0.55,
+   0.25
+  ],
+  "depth": 0.17,
+  "shawl": true,
+  "shawl_rgb": [
+   0.78,
+   0.62,
+   0.5
+  ],
+  "earrings": true
+ },
+ "headgear": {
+  "kind": "pins",
+  "petal": [
+   0.75,
+   0.3,
+   0.35
+  ]
+ },
+ "camera": {
+  "yaw": -18.0,
+  "pitch": -2.0,
+  "head_frac": 0.4,
+  "eye_line": 0.4
+ },
+ "bg": "jade"
+}

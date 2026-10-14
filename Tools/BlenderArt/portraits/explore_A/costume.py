@@ -228,7 +228,7 @@ def lamellar(shell, plate_mat, lace_mat, cut, offset=0.016, row_h=0.03, plate_w=
     ob.pass_index = 4
     out = [ob]
     if cords:
-        out.append(HR.curves_object(name + "Lace", cords, 0.0009, 0.0009, lace_mat, coll, pass_index=5))
+        out.append(HR.curves_object(name + "Lace", cords, 0.00065, 0.00065, lace_mat, coll, pass_index=5))
     if edge_mat is not None:
         aa = np.linspace(AG.az[0] + 0.5, AG.az[-1] - 0.5, 200)
         tp, tn = AG.at(np.full(aa.shape, 0.004), aa)
@@ -345,7 +345,7 @@ def _skull_shell(surf, C, az, el):
 
 
 def helmet(surf, b, C, mats, coll=None, seed=0, brim_el=None, style="bowl", flaps=True,
-           tassel=True, ridge=True, height=1.0):
+           tassel=True, ridge=True, height=1.0, brim_raise=0.0):
     """Chinese helmet fitted to the skull: smoothed bowl (ray-cast skull + clearance), brim band
     with rivets, front brow plate, ridge, finial with a red horsehair tassel, lamellar/quilted
     neck-and-ear flaps (dunxiang).  mats: bowl, trim, rivet, flap, flap_trim, tassel"""
@@ -358,7 +358,7 @@ def helmet(surf, b, C, mats, coll=None, seed=0, brim_el=None, style="bowl", flap
     rs = SH._blur2(r, 3.0, 3.0)
     # hairline-ish brim: front just above the brows, sides above the ears, back at the nape
     eye_c = np.array(lm["eye_c"])
-    brow_z = eye_c[2] + 0.30 * lm["ipd"] + 0.012
+    brow_z = eye_c[2] + 0.70 * lm["ipd"] + brim_raise
 
     def brim_z(a):
         aa = np.abs(a)
@@ -448,7 +448,7 @@ def helmet(surf, b, C, mats, coll=None, seed=0, brim_el=None, style="bowl", flap
     pts = []
     for k, a in enumerate(np.linspace(-38, 38, 15)):
         j = int(np.argmin(np.abs(AZ - a)))
-        dip = 0.016 * max(0, 1 - abs(a) / 38) ** 1.5
+        dip = 0.008 * max(0, 1 - abs(a) / 38) ** 1.5
         pts.append(ring[j] + nrm_out[j] * 0.0075 + np.array([0, 0, -dip + 0.002]))
     vis = np.array(pts)
     top = vis + np.array([0, 0, 0.012])

@@ -560,6 +560,24 @@ def disc(center, normal, radius, name, mats, col, dome=0.006, rings=6, seg=48, r
 # ---------------------------------------------------------------------------------------------
 # robes
 # ---------------------------------------------------------------------------------------------
+def push_outside(shell, inner, gap=0.004):
+    """Move ``shell`` vertices so they stay at least ``gap`` outside ``inner`` (in place)."""
+    V = shell.V.copy()
+    for i in range(len(V)):
+        loc, nor, idx, d = inner.bvh.find_nearest(Vector(V[i]), 0.1)
+        if loc is None:
+            continue
+        rel = Vector(V[i]) - loc
+        # orient the inner normal outwards (away from the body axis)
+        if nor.dot(Vector((loc.x, loc.y - float(inner.V[:, 1].mean()), 0.0))) < 0:
+            nor = -nor
+        h = rel.dot(nor)
+        if h < gap:
+            V[i] = np.array(loc + nor * gap, np.float32)
+    shell.__init__(V, shell.Q, shell.name)
+    return shell
+
+
 def robe_folds(shell, lm, amount=0.004, count=9, seed=0):
     """Displace a robe shell with soft vertical drape folds that start under the collar and
     deepen towards the chest / arms (in place)."""
@@ -631,7 +649,7 @@ def crown(top, name, mats, col, scale=1.0, pin_mat=None, pin_len=0.11, tilt=0.0)
         d = np.array([1.0, 0.0, tilt], np.float32)
         d /= np.linalg.norm(d)
         p0, p1 = a - d * pin_len / 2, a + d * pin_len / 2
-        objs.append(rod(p0, p1, 0.0018, name + "_pin", [pin_mat], col, head=0.0045))
+        objs += rod(p0, p1, 0.0018, name + "_pin", [pin_mat], col, head=0.0045)
     return objs
 
 
@@ -661,7 +679,7 @@ def rod(p0, p1, r, name, mats, col, seg=10, head=0.0, head_end=1):
     if head > 0:
         sph = sphere(p0 - d * head * 0.6, head, name + "_head", mats, col)
         return [objs, sph]
-    return objs
+    return [objs]
 
 
 def sphere(c, r, name, mats, col, seg=14, rings=9, squash=1.0):

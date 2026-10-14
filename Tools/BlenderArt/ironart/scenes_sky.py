@@ -530,3 +530,62 @@ def apply_fog(materials=None, skip=("IR_NoFog",)):
         m["ir_fog"] = 1
         n_done += 1
     return n_done
+
+
+# ---------------------------------------------------------------------------------------------
+# lights
+# ---------------------------------------------------------------------------------------------
+def sun(az, el, energy=4.0, color="#FFE6C8", angle_deg=1.0, name="Sun", shadow=True):
+    """Sun lamp shining from azimuth/elevation (degrees, same convention as the sky glows)."""
+    ld = bpy.data.lights.new(name, "SUN")
+    ld.energy = energy
+    ld.color = lin(color)
+    ld.angle = math.radians(angle_deg)
+    ld.cycles.cast_shadow = shadow
+    ob = bpy.data.objects.new(name, ld)
+    bpy.context.scene.collection.objects.link(ob)
+    d = dir_from(az, el)
+    ob.rotation_euler = (-d).to_track_quat("-Z", "Y").to_euler()
+    return ob
+
+
+def point(loc, power=100.0, color="#FFB060", radius=0.1, name="Point", shadow=True):
+    ld = bpy.data.lights.new(name, "POINT")
+    ld.energy = power
+    ld.color = lin(color)
+    ld.shadow_soft_size = radius
+    ld.cycles.cast_shadow = shadow
+    ob = bpy.data.objects.new(name, ld)
+    bpy.context.scene.collection.objects.link(ob)
+    ob.location = loc
+    return ob
+
+
+def spot(loc, target, power=1000.0, color="#FFE0B0", angle_deg=30.0, blend=0.3, radius=0.2,
+         name="Spot"):
+    ld = bpy.data.lights.new(name, "SPOT")
+    ld.energy = power
+    ld.color = lin(color)
+    ld.spot_size = math.radians(angle_deg)
+    ld.spot_blend = blend
+    ld.shadow_soft_size = radius
+    ob = bpy.data.objects.new(name, ld)
+    bpy.context.scene.collection.objects.link(ob)
+    ob.location = loc
+    d = Vector(target) - Vector(loc)
+    ob.rotation_euler = d.to_track_quat("-Z", "Y").to_euler()
+    return ob
+
+
+def area(loc, target, power=500.0, size=2.0, color="#FFFFFF", name="Area", shadow=True):
+    ld = bpy.data.lights.new(name, "AREA")
+    ld.energy = power
+    ld.color = lin(color)
+    ld.size = size
+    ld.cycles.cast_shadow = shadow
+    ob = bpy.data.objects.new(name, ld)
+    bpy.context.scene.collection.objects.link(ob)
+    ob.location = loc
+    d = Vector(target) - Vector(loc)
+    ob.rotation_euler = d.to_track_quat("-Z", "Y").to_euler()
+    return ob

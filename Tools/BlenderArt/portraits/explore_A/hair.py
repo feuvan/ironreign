@@ -106,20 +106,24 @@ class Surface:
         surface normal.  pts (N,K,3) modified in place; first ``roots_fixed`` points untouched."""
         N, K, _ = pts.shape
         off = np.broadcast_to(np.asarray(offset, np.float64), (K,)) if np.ndim(offset) <= 1 else offset
+        trees = [self.bvh] + self.extra
         for _ in range(iters):
             for i in range(N):
                 for k in range(roots_fixed, K):
                     p = Vector(pts[i, k])
                     o = off[k] if np.ndim(off) == 1 else off[i, k]
-                    for tree in [self.bvh] + self.extra:
-                        loc, nrm, _, dist = tree.find_nearest(p)
+                    moved = False
+                    for tree in trees:
+                        loc, nrm, _, dist = tree.find_nearest(p, o + 0.004)
                         if loc is None:
                             continue
                         d = p - loc
                         side = d.dot(nrm)
                         if side < o:
                             p = loc + nrm * o
-                    pts[i, k] = p
+                            moved = True
+                    if moved:
+                        pts[i, k] = p
         return pts
 
 

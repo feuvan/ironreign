@@ -69,9 +69,37 @@ hair.lashes(surf, b, b["eyes"], hair.hair_material("LashM", melanin=1.0, roughne
 bstyle["radius"] = 0.00012
 hair.beard(surf, b, bstyle, hair.hair_material("BeardM", melanin=1.0, redness=0.1, grey=0.3), rng, count=8000)
 print("build", time.time() - t0)
-rig.setup_render(samples=samples)
+rig.setup_render(samples=samples, ss=int(os.environ.get("SS", "2")))
+prof = os.environ.get("PROF", "")
+if "ribbon" in prof:
+    bpy.context.scene.cycles_curves.shape = "RIBBONS"
+if "sub0" in prof:
+    bpy.context.scene.cycles_curves.subdivisions = 0
+if "nohair" in prof:
+    for o in list(bpy.data.objects):
+        if o.type == "CURVES":
+            o.hide_render = True
+if "nosss" in prof:
+    for m in bpy.data.materials:
+        for n in (m.node_tree.nodes if m.node_tree else []):
+            if n.type == "BSDF_PRINCIPLED":
+                n.inputs["Subsurface Weight"].default_value = 0.0
+if "nometal" in prof:
+    for m in bpy.data.materials:
+        for n in (m.node_tree.nodes if m.node_tree else []):
+            if n.type == "BSDF_PRINCIPLED" and not n.inputs["Metallic"].is_linked:
+                n.inputs["Metallic"].default_value = 0.0
+if "simplehair" in prof:
+    import nodes as NN
+    for m in bpy.data.materials:
+        if m.node_tree and any(n.type == "BSDF_HAIR_PRINCIPLED" for n in m.node_tree.nodes):
+            nb = NN.NB(m)
+            p = nb.principled(Base_Color=(0.02, 0.018, 0.016, 1), Roughness=0.4)
+            nb.output(p.outputs[0])
+
 cam = rig.camera(lm, head_frac=0.47)
 H.aim_eyes(b["eyes"], cam.location, 0.15)
 rig.lights(cam, lm["eye_c"])
+rig.compositor(os.path.dirname(out), os.path.basename(out)[:-4])
 dt = rig.render(out)
 print("render", dt)

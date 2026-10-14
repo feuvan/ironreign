@@ -10,7 +10,7 @@ from mathutils import Vector
 PASS = {"skin": 1, "eyes": 2, "hair": 3, "metal": 4, "cloth": 5, "fur": 6, "orn": 7, "brow": 8}
 
 
-def setup_render(w=384, h=480, ss=2, samples=96, threshold=0.02, view="AgX", look="None",
+def setup_render(w=384, h=480, ss=2, samples=96, threshold=0.02, view="Filmic", look="Medium High Contrast",
                  exposure=0.0, threads=None):
     sc = bpy.context.scene
     sc.render.engine = "CYCLES"
@@ -38,7 +38,7 @@ def setup_render(w=384, h=480, ss=2, samples=96, threshold=0.02, view="AgX", loo
     cy.tile_size = 2048
     cy.seed = 7
     try:
-        sc.cycles_curves.shape = "THICK"
+        sc.cycles_curves.shape = "RIBBONS"
         sc.cycles_curves.subdivisions = 2
     except AttributeError:
         pass
@@ -62,6 +62,7 @@ def setup_render(w=384, h=480, ss=2, samples=96, threshold=0.02, view="AgX", loo
     vl.use_pass_object_index = True
     vl.use_pass_z = True
     vl.use_pass_normal = True
+    vl.use_pass_diffuse_color = True
     return sc
 
 
@@ -139,8 +140,8 @@ RIM_COOL = (0.70, 0.82, 1.0)
 BOUNCE_WARM = (1.0, 0.66, 0.42)
 
 
-def lights(cam, target, key=55.0, fill=5.0, rim=55.0, kicker=14.0, bounce=3.5, key_angle=138.0,
-           key_elev=28.0, key_size=0.45, dist=1.5, world=0.015):
+def lights(cam, target, key=80.0, fill=1.6, rim=70.0, kicker=10.0, bounce=2.5, key_angle=140.0,
+           key_elev=20.0, key_size=0.32, dist=1.5, world=0.008):
     t = Vector(target)
     rig = {}
     rig["key"] = _area("Key", t + screen_dir(cam, key_angle, key_elev) * dist, t, key, key_size,
@@ -234,6 +235,8 @@ def compositor(outdir, tag, masks=("skin", "eyes", "hair", "metal", "cloth", "fu
     nt.links.new(mx.outputs[0], add.inputs[1])
     fo2.file_slots.new("%s_normal" % tag)
     nt.links.new(add.outputs[0], fo2.inputs["%s_normal" % tag])
+    fo2.file_slots.new("%s_albedo" % tag)
+    nt.links.new(rl.outputs["DiffCol"], fo2.inputs["%s_albedo" % tag])
     return nt
 
 

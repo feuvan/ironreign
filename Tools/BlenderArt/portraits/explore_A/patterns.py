@@ -145,5 +145,4 @@ def to_image(name, arr, colorspace="Non-Color"):
     img.colorspace_settings.name = colorspace
     img.pixels.foreach_set(np.ascontiguousarray(rgba[::-1]).ravel().astype(np.float32))
     img.update()
-    img.pack()
     return img

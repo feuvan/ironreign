@@ -396,7 +396,8 @@ def manifest_add(rel_paths):
     import json
     os.makedirs(ART_SOURCE, exist_ok=True)
     path = os.path.join(ART_SOURCE, "manifest.json")
-    lock = open(path + ".lock", "w")
+    import tempfile
+    lock = open(os.path.join(tempfile.gettempdir(), "ironreign_artsource_manifest.lock"), "w")
     try:
         fcntl.flock(lock, fcntl.LOCK_EX)
         data = {"version": 0, "files": []}

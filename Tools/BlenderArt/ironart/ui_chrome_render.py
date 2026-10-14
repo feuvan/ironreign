@@ -52,8 +52,10 @@ def pack_images(name, m):
 # =============================================================================================
 # material
 # =============================================================================================
-def relief_material(name, imgs, coat_roughness=0.045, interpolation="Linear", emission=1.0):
-    """Generic material driven by the packed maps (see module doc)."""
+def relief_material(name, imgs, coat_roughness=0.045, interpolation="Linear", emission=1.0,
+                    detail=None):
+    """Generic material driven by the packed maps (see module doc).  ``detail``: optional
+    float image of residual relief (mm) below the mesh resolution, applied as a bump."""
     mat = bpy.data.materials.new(name)
     mat.use_nodes = True
     nt = mat.node_tree
@@ -116,6 +118,18 @@ def relief_material(name, imgs, coat_roughness=0.045, interpolation="Linear", em
     bsdf.inputs["Coat Roughness"].default_value = coat_roughness
     Lk.new(tE.outputs["Color"], bsdf.inputs["Emission Color"])
     bsdf.inputs["Emission Strength"].default_value = emission
+    if detail is not None:
+        td = N.new("ShaderNodeTexImage")
+        td.image = detail
+        td.interpolation = "Cubic"
+        td.extension = "EXTEND"
+        Lk.new(tc.outputs["UV"], td.inputs["Vector"])
+        bump = N.new("ShaderNodeBump")
+        bump.inputs["Strength"].default_value = 1.0
+        bump.inputs["Distance"].default_value = MM
+        Lk.new(td.outputs["Color"], bump.inputs["Height"])
+        for k in ("Normal", "Coat Normal"):
+            Lk.new(bump.outputs[0], bsdf.inputs[k])
     Lk.new(bsdf.outputs[0], out.inputs["Surface"])
     mat.blend_method = "HASHED"
     return mat
@@ -179,11 +193,23 @@ def grid_mesh(name, height, w, h, alpha=None, step=1, x0=0.0, y0=0.0, cut=True):
 
 
 def plate(name, m, w, h, step=1, x0=0.0, y0=0.0, cut=True, **matkw):
-    """Maps -> displaced, textured mesh object (see module doc)."""
+    """Maps -> displaced, textured mesh object (see module doc).  With ``step`` > 1 the mesh
+    carries the relief box-averaged over step x step texels and the residual goes to a bump."""
     imgs = pack_images(name, m)
     ob = grid_mesh(name, m.height, w, h, alpha=m.alpha if cut else None, step=step, x0=x0, y0=y0,
                    cut=cut)
-    ob.data.materials.append(relief_material(name + "_Mat", imgs, **matkw))
+    detail = None
+    if step > 1:
+        from PIL import Image
+        H = m.height
+        ny, nx = H.shape
+        ny2, nx2 = ny // step, nx // step
+        coarse = H[:ny2 * step, :nx2 * step].reshape(ny2, step, nx2, step).mean((1, 3))
+        up = np.asarray(Image.fromarray(coarse.astype(np.float32), "F").resize((nx, ny),
+                        Image.BILINEAR), np.float32)
+        res = (H - up).astype(np.float32)
+        detail = image(name + "_D", np.dstack([res, res, res, np.ones_like(res)]))
+    ob.data.materials.append(relief_material(name + "_Mat", imgs, detail=detail, **matkw))
     return ob
 
 
@@ -218,10 +244,11 @@ def _dir(angle_deg, elev_deg):
 
 #: the family look numbers (one place; STYLE.md "UI chrome" table is written from this)
 RIG = dict(key_angle=135.0, key_elev=50.0, key_soft=2.5, ambient=0.2, flat_gain=1.0,
-           box_angle=135.0, box_elev=40.0, box_radius=15.0, box=3.2,
-           glow=0.45, glow_radius=24.0, box2_angle=60.0, box2_elev=35.0, box2_radius=10.0, box2=1.1,
-           fill_angle=-45.0, fill_elev=28.0, fill_radius=24.0, fill=0.5,
-           ring=0.6, ceiling=0.09, floor=0.02)
+           arc=1.6, arc_half=62.0, arc_z0=24.0, arc_z1=56.0,
+           box_angle=135.0, box_elev=40.0, box_radius=13.0, box=2.4,
+           fill_angle=-45.0, fill_half=55.0, fill=0.38,
+           top=1.3, top_angle=90.0, top_half=38.0, top_z0=64.0, top_z1=79.0,
+           ring=0.3, ceiling=0.08, floor=0.02)
 
 
 def rig_chrome(**over):
@@ -310,13 +337,53 @@ def rig_chrome(**over):
     Lk.new(ring.outputs[0], ringm.inputs[0])
     Lk.new(above.outputs[0], ringm.inputs[1])
     c = scaled(ringm.outputs[0], r["ring"], "#FFE9C8")
-    c = add(c, scaled(lobe(r["box_angle"], r["box_elev"], r["box_radius"], 4.0), r["box"], "#FFF3E0"))
-    c = add(c, scaled(lobe(r["box_angle"], r["box_elev"], r["glow_radius"], 14.0), r["glow"],
-                      "#FFE6C4"))
-    c = add(c, scaled(lobe(r["box2_angle"], r["box2_elev"], r["box2_radius"], 5.0), r["box2"],
-                      "#FFF8F0"))
-    c = add(c, scaled(lobe(r["fill_angle"], r["fill_elev"], r["fill_radius"], 10.0), r["fill"],
-                      "#C9D8F0"))
+
+    def arc(angle, half_deg, soft_deg, z0, z1, zsoft):
+        """Azimuthal arc softbox: azimuth within +-half of ``angle``, elevation z0..z1 (deg)."""
+        hv = N.new("ShaderNodeVectorMath")
+        hv.operation = "MULTIPLY"
+        Lk.new(dirv.outputs[0], hv.inputs[0])
+        hv.inputs[1].default_value = (1.0, 1.0, 0.0)
+        hn = N.new("ShaderNodeVectorMath")
+        hn.operation = "NORMALIZE"
+        Lk.new(hv.outputs[0], hn.inputs[0])
+        dt = N.new("ShaderNodeVectorMath")
+        dt.operation = "DOT_PRODUCT"
+        Lk.new(hn.outputs[0], dt.inputs[0])
+        a = math.radians(angle)
+        dt.inputs[1].default_value = (math.cos(a), math.sin(a), 0.0)
+        az = N.new("ShaderNodeMapRange")
+        az.interpolation_type = "SMOOTHSTEP"
+        az.inputs["From Min"].default_value = math.cos(math.radians(half_deg + soft_deg))
+        az.inputs["From Max"].default_value = math.cos(math.radians(max(0.5, half_deg - soft_deg)))
+        Lk.new(dt.outputs["Value"], az.inputs["Value"])
+        lo = N.new("ShaderNodeMapRange")
+        lo.interpolation_type = "SMOOTHSTEP"
+        lo.inputs["From Min"].default_value = math.sin(math.radians(z0 - zsoft))
+        lo.inputs["From Max"].default_value = math.sin(math.radians(z0 + zsoft))
+        Lk.new(sep.outputs["Z"], lo.inputs["Value"])
+        hi = N.new("ShaderNodeMapRange")
+        hi.interpolation_type = "SMOOTHSTEP"
+        hi.inputs["From Min"].default_value = math.sin(math.radians(z1 + zsoft))
+        hi.inputs["From Max"].default_value = math.sin(math.radians(z1 - zsoft))
+        Lk.new(sep.outputs["Z"], hi.inputs["Value"])
+        m1 = N.new("ShaderNodeMath")
+        m1.operation = "MULTIPLY"
+        Lk.new(az.outputs[0], m1.inputs[0])
+        Lk.new(lo.outputs[0], m1.inputs[1])
+        m2 = N.new("ShaderNodeMath")
+        m2.operation = "MULTIPLY"
+        Lk.new(m1.outputs[0], m2.inputs[0])
+        Lk.new(hi.outputs[0], m2.inputs[1])
+        return m2.outputs[0]
+
+    c = add(c, scaled(arc(r["box_angle"], r["arc_half"], 18.0, r["arc_z0"], r["arc_z1"], 5.0),
+                      r["arc"], "#FFF0DC"))
+    c = add(c, scaled(lobe(r["box_angle"], r["box_elev"], r["box_radius"], 4.0), r["box"], "#FFF6EA"))
+    c = add(c, scaled(arc(r["fill_angle"], r["fill_half"], 20.0, 12.0, 40.0, 6.0), r["fill"],
+                      "#CCD8EC"))
+    c = add(c, scaled(arc(r["top_angle"], r["top_half"], 15.0, r["top_z0"], r["top_z1"], 3.0),
+                      r["top"], "#FFF4E6"))
     c = add(c, scaled(above.outputs[0], r["ceiling"], "#FFF6EA"))
     flo = N.new("ShaderNodeMath")
     flo.operation = "SUBTRACT"

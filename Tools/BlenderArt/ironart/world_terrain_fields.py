@@ -45,14 +45,14 @@ TREE_CITY_CLEAR = {1: 50.0, 2: 64.0, 3: 80.0}
 PARAMS = {
     "seed": 1212,
     # coast
-    "coast_warp": 30.0, "coast_warp_scale": 230.0, "coast_detail": 10.0,
+    "coast_warp": 30.0, "coast_warp_scale": 230.0, "coast_detail": 14.0,
     "shelf_depth": 2.6, "shelf_width": 24.0, "sea_floor": -40.0, "sea_slope_width": 300.0,
     # plains
     "plain_coast": 1.4, "plain_inland": 12.5, "plain_rise": 520.0, "plain_roll": 2.4,
     # hills
     "hill_height": 66.0,
     # mountains
-    "mtn_base": 112.0, "mtn_per_width": 0.62, "mtn_ridge_scale": 150.0, "mtn_peak": 179.0,
+    "mtn_base": 142.0, "mtn_per_width": 0.55, "mtn_ridge_scale": 150.0, "mtn_peak": 179.0,
     # rivers
     "river_bank": 3.0, "river_meander": 1.0,
 }
@@ -297,11 +297,139 @@ def polygon_inside(poly, shape=None, ss=1):
     return a
 
 
+def _chaikin_coast(poly, iters=3):
+    """Round the corners of a land polygon (Chaikin) but keep map-border edges straight, so the
+    coastline has no polygon kinks while the land still meets the map edges."""
+    pts = np.asarray(poly, np.float64)
+    for _ in range(iters):
+        out = []
+        n = len(pts)
+        for i in range(n):
+            a, b = pts[i], pts[(i + 1) % n]
+            if _on_border(a, b):
+                out.append(a)
+                continue
+            out.append(0.75 * a + 0.25 * b if not _on_border(pts[i - 1], a) else a)
+            out.append(0.25 * a + 0.75 * b if not _on_border(b, pts[(i + 2) % n]) else b)
+        pts = np.array(out)
+    return resample(np.vstack([pts, pts[:1]]), 6.0)[:-1]
+
+
 def _on_border(a, b, eps=1.0):
     for k, lim in ((0, 0.0), (0, float(MAP_W)), (1, 0.0), (1, float(MAP_H))):
         if abs(a[k] - lim) < eps and abs(b[k] - lim) < eps:
             return True
     return False
+
+
+# ---------------------------------------------------------------------------------------------
+# erosion
+# ---------------------------------------------------------------------------------------------
+def erode_droplets(h, spawn, n_droplets, seed, unit=100.0, batch=8000, steps=56, inertia=0.06,
+                   capacity=5.0, min_capacity=0.002, erode_speed=0.32, deposit_speed=0.28,
+                   evaporate=0.022, gravity=4.0, max_step=0.004, log=None):
+    """Vectorised droplet hydraulic erosion (after H. T. Beyer 2015 / S. Lague) on a height grid.
+
+    ``h`` metres (any grid), ``spawn`` >= 0 weights where droplets start, ``unit`` metres per
+    normalised height unit (sets the slope scale the parameters see).  Erosion uses a 3x3 brush,
+    deposition goes to the 4 bilinear corners.  Deterministic for ``seed``."""
+    H, W = h.shape
+    g = (np.asarray(h, np.float64) / unit).ravel().copy()
+    rng = np.random.default_rng(seed)
+    cdf = np.cumsum(np.asarray(spawn, np.float64).ravel())
+    if cdf[-1] <= 0:
+        return np.asarray(h, np.float32)
+    bx = np.array([-1, 0, 1, -1, 0, 1, -1, 0, 1])
+    by = np.array([-1, -1, -1, 0, 0, 0, 1, 1, 1])
+    bw = np.array([1, 2, 1, 2, 4, 2, 1, 2, 1], np.float64)
+    bw /= bw.sum()
+    done = 0
+    while done < n_droplets:
+        n = min(batch, n_droplets - done)
+        done += n
+        idx = np.searchsorted(cdf, rng.random(n) * cdf[-1])
+        py = (idx // W).astype(np.float64) + rng.random(n)
+        px = (idx % W).astype(np.float64) + rng.random(n)
+        np.clip(px, 1.0, W - 2.001, out=px)
+        np.clip(py, 1.0, H - 2.001, out=py)
+        dx = np.zeros(n)
+        dy = np.zeros(n)
+        vel = np.ones(n)
+        water = np.ones(n)
+        sed = np.zeros(n)
+        alive = np.ones(n, bool)
+        for _ in range(steps):
+            ix = px.astype(np.int64)
+            iy = py.astype(np.int64)
+            fx = px - ix
+            fy = py - iy
+            i00 = iy * W + ix
+            h00, h10, h01, h11 = g[i00], g[i00 + 1], g[i00 + W], g[i00 + W + 1]
+            gx = (h10 - h00) * (1 - fy) + (h11 - h01) * fy
+            gy = (h01 - h00) * (1 - fx) + (h11 - h10) * fx
+            hc = (h00 * (1 - fx) + h10 * fx) * (1 - fy) + (h01 * (1 - fx) + h11 * fx) * fy
+            dx = dx * inertia - gx * (1 - inertia)
+            dy = dy * inertia - gy * (1 - inertia)
+            nrm = np.sqrt(dx * dx + dy * dy)
+            still = nrm < 1e-12
+            alive &= ~still
+            nrm = np.where(still, 1.0, nrm)
+            dx /= nrm
+            dy /= nrm
+            npx = px + dx
+            npy = py + dy
+            alive &= (npx >= 1.0) & (npx < W - 2.0) & (npy >= 1.0) & (npy < H - 2.0)
+            npx = np.clip(npx, 1.0, W - 2.001)
+            npy = np.clip(npy, 1.0, H - 2.001)
+            jx = npx.astype(np.int64)
+            jy = npy.astype(np.int64)
+            gx2 = npx - jx
+            gy2 = npy - jy
+            j00 = jy * W + jx
+            hn = ((g[j00] * (1 - gx2) + g[j00 + 1] * gx2) * (1 - gy2)
+                  + (g[j00 + W] * (1 - gx2) + g[j00 + W + 1] * gx2) * gy2)
+            dh = hn - hc
+            cap = np.maximum(-dh * vel * water * capacity, min_capacity)
+            depo_m = (sed > cap) | (dh > 0)
+            dep = np.where(dh > 0, np.minimum(dh, sed), (sed - cap) * deposit_speed)
+            dep = np.where(depo_m & alive, np.maximum(dep, 0.0), 0.0)
+            ero = np.minimum((cap - sed) * erode_speed, -dh)
+            ero = np.where(~depo_m & alive, np.maximum(ero, 0.0), 0.0)
+            sed = sed + ero - dep
+            # deposition: bilinear corners of the old position; erosion: 3x3 brush around it
+            ii = np.concatenate([i00, i00 + 1, i00 + W, i00 + W + 1]
+                                + [i00 + oy * W + ox for ox, oy in zip(bx, by)])
+            ww = np.concatenate([dep * (1 - fx) * (1 - fy), dep * fx * (1 - fy), dep * (1 - fx) * fy,
+                                 dep * fx * fy] + [-ero * wk for wk in bw])
+            delta = np.bincount(ii, weights=ww, minlength=H * W)
+            # droplets of one batch move in parallel and do not see each other's changes:
+            # bound the change per cell and step so crowded channels cannot run away
+            np.clip(delta, -max_step, max_step, out=delta)
+            g += delta
+            vel = np.sqrt(np.maximum(vel * vel + dh * gravity, 0.0))
+            water *= (1.0 - evaporate)
+            px, py = npx, npy
+            if not alive.any():
+                break
+        if log:
+            log("[world] erosion %d / %d droplets" % (done, n_droplets))
+    return (g.reshape(H, W) * unit).astype(np.float32)
+
+
+def thermal(h, talus=0.9, rate=0.25, iters=8, cell=1.0):
+    """Talus relaxation: material above the repose slope slides to the lower neighbours."""
+    a = np.asarray(h, np.float32).copy()
+    lim = talus * cell
+    for _ in range(iters):
+        delta = np.zeros_like(a)
+        for sy, sx in ((0, 1), (1, 0), (0, -1), (-1, 0)):
+            nb = np.roll(np.roll(a, sy, 0), sx, 1)
+            diff = a - nb - lim
+            move = np.where(diff > 0, diff * rate * 0.25, 0.0)
+            delta -= move
+            delta += np.roll(np.roll(move, -sy, 0), -sx, 1)
+        a += delta
+    return a
 
 
 # ---------------------------------------------------------------------------------------------
@@ -380,6 +508,124 @@ def extend(pts, start=0.0, end=0.0):
 
 
 # ---------------------------------------------------------------------------------------------
+# dendritic ridge networks (mountain skeletons)
+# ---------------------------------------------------------------------------------------------
+def _rot(v, deg):
+    a = math.radians(deg)
+    c, s_ = math.cos(a), math.sin(a)
+    return np.array([c * v[0] - s_ * v[1], s_ * v[0] + c * v[1]])
+
+
+def ridge_network(stroke, width, peak, seed):
+    """Skeleton of a mountain range: a meandering main crest with summits, spurs branching to
+    alternating sides and sub-spurs off the spurs.  Returns a list of ridges
+    ``(pts (n, 2), heights (n,), lam)`` - ``lam`` is the flank fall-off length (m)."""
+    rng = np.random.default_rng(seed)
+    w = float(width)
+    crest = smooth_line(resample(stroke, 4.0), 9.0)
+    crest = meander(crest, 0.16 * w, seed + 1, step=4.0, fade=20.0)
+    crest = smooth_line(crest, 2.0)
+    u = arclen(crest)
+    L = u[-1]
+    summit = T.perlin_at((u / 105.0).astype(np.float32), np.full(len(u), 0.4, np.float32), seed + 2)
+    summit2 = T.perlin_at((u / 37.0).astype(np.float32), np.full(len(u), 0.8, np.float32), seed + 3)
+    taper = 0.55 + 0.45 * T.smoothstep(0.0, 1.1 * w, u) * T.smoothstep(L, L - 1.1 * w, u)
+    hc = peak * (0.80 + 0.17 * summit + 0.06 * summit2) * taper
+    ridges = [(crest, hc, 0.42 * w)]
+    nrm, tg = normals(crest)
+    pos = rng.uniform(0.15, 0.4) * w
+    side = 1.0 if rng.random() < 0.5 else -1.0
+    while pos < L - 0.1 * w:
+        i = int(np.searchsorted(u, pos))
+        i = min(i, len(crest) - 1)
+        if rng.random() < 0.72:
+            side = -side
+        length = w * rng.uniform(1.15, 2.0) * (0.75 + 0.25 * taper[i])
+        d0 = _rot(nrm[i] * side, rng.uniform(-38, 38))
+        # a gently curving spur (5 points, lateral wander)
+        sp = [crest[i]]
+        dcur = d0.copy()
+        for k in range(1, 6):
+            dcur = _rot(dcur, rng.uniform(-14, 14))
+            sp.append(sp[-1] + dcur * length / 5.0)
+        sp = resample(np.array(sp), 8.0)
+        ss = arclen(sp) / max(1e-6, arclen(sp)[-1])
+        h0 = hc[i] * rng.uniform(0.84, 0.96)
+        hs = h0 * (1.0 - 0.9 * ss ** 0.9)
+        ridges.append((sp, hs, 0.36 * w))
+        # sub-spurs
+        for _ in range(int(rng.integers(0, 3))):
+            s0 = rng.uniform(0.22, 0.62)
+            j = int(s0 * (len(sp) - 1))
+            q0 = sp[j]
+            dd = sp[min(j + 1, len(sp) - 1)] - sp[max(j - 1, 0)]
+            dd = dd / (np.linalg.norm(dd) + 1e-9)
+            d2 = _rot(dd, (1 if rng.random() < 0.5 else -1) * rng.uniform(38, 68))
+            l2 = length * rng.uniform(0.32, 0.55)
+            sub = [q0]
+            for k in range(1, 4):
+                d2 = _rot(d2, rng.uniform(-12, 12))
+                sub.append(sub[-1] + d2 * l2 / 3.0)
+            sub = resample(np.array(sub), 8.0)
+            s2 = arclen(sub) / max(1e-6, arclen(sub)[-1])
+            hsub = hs[j] * rng.uniform(0.88, 0.97) * (1.0 - 0.88 * s2)
+            ridges.append((sub, hsub, 0.22 * w))
+        pos += w * rng.uniform(0.34, 0.6)
+    # the crest at 8 m steps (the tents interpolate heights linearly along each segment)
+    ci = np.arange(0, len(crest), 2)
+    if ci[-1] != len(crest) - 1:
+        ci = np.append(ci, len(crest) - 1)
+    ridges[0] = (crest[ci], hc[ci], ridges[0][2])
+    return ridges
+
+
+def ridge_raster(out, pts, heights, lam, origin_xy, pert=None, power=1.35, reach=2.8, k=0.35):
+    """Union (smooth max, in place) of one ridge into ``out`` (a window of the master grid whose
+    point (0, 0) is map ``origin_xy``).  Each segment is a tent whose height varies linearly along
+    it, so the union is continuous (no nearest-segment seams); the profile across is
+    ``exp(-(d / lam) ** power)`` tapered to exactly 0 at ``reach * lam``."""
+    H, W = out.shape
+    R = reach * lam
+    pts = np.asarray(pts, np.float64) - np.asarray(origin_xy, np.float64)
+    hmin, hmax = float(np.min(heights)), float(np.max(heights))
+    for i in range(len(pts) - 1):
+        a, b = pts[i], pts[i + 1]
+        ha, hb = float(heights[i]), float(heights[i + 1])
+        x0 = int(max(0, math.floor(min(a[0], b[0]) - R)))
+        x1 = int(min(W - 1, math.ceil(max(a[0], b[0]) + R)))
+        y0 = int(max(0, math.floor(min(a[1], b[1]) - R)))
+        y1 = int(min(H - 1, math.ceil(max(a[1], b[1]) + R)))
+        if x1 < x0 or y1 < y0:
+            continue
+        xs = np.arange(x0, x1 + 1, dtype=np.float32)[None, :]
+        ys = np.arange(y0, y1 + 1, dtype=np.float32)[:, None]
+        d = b - a
+        L2 = float(d @ d) + 1e-9
+        tu = ((xs - a[0]) * d[0] + (ys - a[1]) * d[1]) / L2
+        t = np.clip(tu, 0.0, 1.0)
+        px = a[0] + t * d[0] - xs
+        py = a[1] + t * d[1] - ys
+        dist = np.sqrt(px * px + py * py + 9.0) - 3.0        # crest rounded over ~3 m
+        if pert is not None:
+            dist = np.maximum(dist + 0.16 * lam * pert[y0:y1 + 1, x0:x1 + 1], 0.0)
+        g = np.exp(-(dist / lam) ** power) * T.smoothstep(R, 0.55 * R, dist)
+        # height continues along the ridge past the segment ends (no scalloped caps)
+        hh = np.clip(ha + (hb - ha) * tu, hmin, hmax)
+        prof = (hh * g).astype(np.float32)
+        sub = out[y0:y1 + 1, x0:x1 + 1]
+        out[y0:y1 + 1, x0:x1 + 1] = smax(sub, prof, k)
+    return out
+
+
+def smax(a, b, k):
+    """Smooth maximum (rounded valley floors where two ridge flanks meet), width ~1/k metres.
+    The rounding fades out where either side is ~0, so empty ground stays exactly 0."""
+    m = np.maximum(a, b)
+    lo = np.clip(np.minimum(a, b) * 0.5, 0.0, 1.0)
+    return m + lo * np.log1p(np.exp(-k * np.abs(a - b))) / k
+
+
+# ---------------------------------------------------------------------------------------------
 # the world
 # ---------------------------------------------------------------------------------------------
 class World:
@@ -425,16 +671,17 @@ class World:
         inside = np.zeros(self.shape, np.float32)
         segs = []
         for poly in land_polys:
-            inside = np.maximum(inside, polygon_inside(poly, self.shape, ss=1))
-            for a, b in zip(poly, poly[1:] + poly[:1]):
+            ring = _chaikin_coast(poly, 3)
+            inside = np.maximum(inside, polygon_inside([tuple(q) for q in ring], self.shape, ss=1))
+            for a, b in zip(ring, np.roll(ring, -1, axis=0)):
                 if not _on_border(a, b):
-                    segs.append((a, b))
+                    segs.append((tuple(a), tuple(b)))
         d = segment_distance_full(segs, self.shape)
         sd = np.where(inside > 0.5, d, -d)
         # organic coastline: big bays/headlands + small coves (warp only near the coast)
         n = (self.p["coast_warp"] * self.noise(p["coast_warp_scale"], 3, 11)
-             + p["coast_detail"] * self.noise(64.0, 3, 12)
-             + 2.2 * self.noise(14.0, 2, 13))
+             + p["coast_detail"] * self.noise(70.0, 3, 12)
+             + 5.0 * self.noise(24.0, 2, 13) + 1.6 * self.noise(7.0, 2, 14))
         sdw = sd + n * T.smoothstep(260.0, 60.0, np.abs(sd))
         land = sdw > 0
         # sea pockets cut off from the open sea become land, tiny islets stay (natural rocks)
@@ -504,12 +751,14 @@ class World:
         self.f["desert"] = des.astype(np.float32)
         # sea floor: 2.5 m surf shelf, then down to -40 m
         dsea = np.maximum(-sd, 0.0)
-        floor = -(p["shelf_depth"] * T.smoothstep(0.0, p["shelf_width"], dsea)
+        floor = -(p["shelf_depth"] * (1.0 - np.exp(-dsea / p["shelf_width"]))
                   + (abs(p["sea_floor"]) - p["shelf_depth"])
                   * T.smoothstep(p["shelf_width"] * 0.4, p["sea_slope_width"], dsea) ** 1.25)
         floor = floor + 1.2 * self.noise(60.0, 3, 24) * T.smoothstep(10, 60, dsea)
-        # beach: land within ~2 m of sea level near the shore
-        h = np.where(self.f["land0"], np.maximum(base, 0.35), np.minimum(floor, -0.3))
+        # shore: from the waterline the land rises ~9 % (beaches) before joining the plains
+        shore = 0.09 * din + 0.6 * T.smoothstep(0.0, 30.0, din) * (0.5 + 0.5 * self.noise(40.0, 2, 25))
+        land_h = shore + (base - shore) * T.smoothstep(6.0, 48.0, din)
+        h = np.where(self.f["land0"], np.maximum(land_h, 0.02), np.minimum(floor, -0.02))
         self.f["base"] = h.astype(np.float32)
         self.log("[world] base: plains %.1f..%.1f m" % (float(base[self.f["land0"]].min()),
                                                        float(base[self.f["land0"]].max())))
@@ -540,7 +789,7 @@ class World:
         city_r = np.zeros(self.shape, np.float32)
         for (_k, cx, cy, s) in self.cities:
             dd = np.hypot(self.xs - cx, self.ys - cy)
-            city_r = np.maximum(city_r, T.smoothstep(PAD_RADIUS[s] + 150.0, PAD_RADIUS[s], dd))
+            city_r = np.maximum(city_r, T.smoothstep(PAD_RADIUS[s] + 105.0, PAD_RADIUS[s] + 5.0, dd))
         keep_city = 1.0 - city_r          # 0 at city sites, 1 away from them
         road_d = self._road_corridor_distance()
         self.f["road_d0"] = road_d
@@ -571,33 +820,36 @@ class World:
         mtn = np.zeros(self.shape, np.float32)
         core_env = np.zeros(self.shape, np.float32)
         foot_env = np.zeros(self.shape, np.float32)
-        for k, s in enumerate(self.m["mountains"]):
-            pts, wn, d, u, sv, L = self._stroke(s, 3.4, smooth=9.0)
-            xs, ys = self.xs[wn], self.ys[wn]
-            w = float(s["width"])
-            jit = 1.0 + 0.14 * T.fbm_at(xs, ys, 110.0, 2, seed=self.seed + 60 + k)
-            v = sv * d                                  # signed across-range coordinate
-            wu = u + 14.0 * T.fbm_at(xs, ys, 45.0, 2, seed=self.seed + 61 + k)
-            n_sp = T.perlin_at(wu / 46.0, v / 130.0 + 7.0 * k, self.seed + 62 + k)
-            spur = (1.0 - np.abs(n_sp)) ** 1.6           # ridges running across the range
-            summit = 0.80 + 0.20 * T.perlin_at(u / 160.0, np.full_like(u, 0.3 + k), self.seed + 63 + k)
-            taper = 0.62 + 0.38 * T.smoothstep(0.0, 0.9 * w, u) * T.smoothstep(L, L - 0.9 * w, u)
-            dw = d / jit
-            crest = 0.5 * np.exp(-(dw / (0.85 * w)) ** 2) + 0.5 * np.exp(-dw / (0.40 * w))
-            core = np.exp(-(dw / (0.80 * w)) ** 2)
-            foot = np.exp(-(dw / (1.8 * w)) ** 2)
+        pert = T.fbm_at(self.xs, self.ys, 26.0, 3, seed=self.seed + 64)
+        rough = T.fbm_at(self.xs, self.ys, 14.0, 2, seed=self.seed + 65)
+        for k, st in enumerate(self.m["mountains"]):
+            w = float(st["width"])
             peak = p["mtn_base"] + p["mtn_per_width"] * w
-            body = crest ** 0.9 * (0.52 + 0.30 * spur + 0.26 * ridged[wn])
-            mk = peak * summit * taper * body + 30.0 * foot * (0.35 + 0.65 * lumps[wn])
-            mtn[wn] = np.maximum(mtn[wn], mk)
-            core_env[wn] = np.maximum(core_env[wn], core)
-            foot_env[wn] = np.maximum(foot_env[wn], foot)
+            ridges = ridge_network(st["points"], w, peak, self.seed + 500 + 37 * k)
+            # envelopes for masks / valley widths (from the original stroke)
+            spts = smooth_line(resample(st["points"], 4.0), 9.0)
+            R = 4.4 * w
+            sy, sx, org = window(spts, R, self.shape)
+            shp = (sy.stop - sy.start, sx.stop - sx.start)
+            d = polyline_field(spts, R, want_t=False, shape=shp, origin=org)
+            d = np.where(np.isfinite(d), d, 1e5)
+            fade = T.smoothstep(R, 0.6 * R, d)
+            core_env[sy, sx] = np.maximum(core_env[sy, sx], np.exp(-(d / (0.95 * w)) ** 2) * fade)
+            foot_env[sy, sx] = np.maximum(foot_env[sy, sx], np.exp(-(d / (2.0 * w)) ** 2) * fade)
+            for (rp, rh, lam) in ridges:
+                R = 2.8 * lam
+                sy, sx, org = window(rp, R, self.shape)
+                sub = mtn[sy, sx]
+                ridge_raster(sub, rp, rh, lam, org, pert=pert[sy, sx])
+                mtn[sy, sx] = sub
+        # foothills around every range
+        mtn = smax(mtn, 26.0 * foot_env * (0.35 + 0.65 * lumps), 0.3)
+        mtn = mtn + 9.0 * (ridged - 0.4) * core_env * T.smoothstep(20.0, 80.0, mtn)
         saddle_m = 1.0 - 0.72 * np.exp(-(road_d / 46.0) ** 2)
         mtn = mtn * saddle_m * keep_city
-        mtn = self._erode_detail(mtn, core_env)
         land = self.f["land0"]
         lift = (np.maximum(hills, 0) + np.maximum(mtn, 0)) * T.smoothstep(-6.0, 30.0, self.f["sd"])
-        h = self.f["base"] + lift
+        h = self._erode(self.f["base"] + lift, lift)
         # islands: a wooded central hill on each small island
         for poly in self.m["land"][1:]:
             cx = float(np.mean([q[0] for q in poly]))
@@ -620,22 +872,24 @@ class World:
                  % (float(self.f["h_pre"].max()), float(hills.max()),
                     float(np.percentile(self.f["h_pre"][core_env > 0.5], 99.9))))
 
-    def _erode_detail(self, mtn, env):
-        """Add 4 octaves of detail whose amplitude is damped where the accumulated surface is
-        already steep (IQ-style 'eroded fbm'): crisp ridges, smooth gullies, no noise pimples."""
-        h = mtn.copy()
-        amp = 15.0
-        scale = 44.0
-        for o in range(4):
-            n = T.perlin_at(self.xs / scale + 3.1 * o, self.ys / scale - 1.7 * o, self.seed + 70 + o)
-            gy, gx = np.gradient(gaussian(h, 1.5))
-            g2 = gx * gx + gy * gy
-            damp = 1.0 / (1.0 + 2.0 * g2)
-            ridge = 1.0 - np.abs(n)               # ridged detail
-            h = h + amp * (ridge - 0.55) * damp * env ** 0.7
-            amp *= 0.48
-            scale *= 0.5
-        return np.maximum(h, 0.0)
+    def _erode(self, h, lift):
+        """Light droplet erosion on the 2 m grid (gullies, rounded valley floors, small alluvial
+        fans) of the whole relief; droplets start on the hills and ranges and run out onto the
+        plains.  Then talus relaxation.  Returns the eroded master-grid height."""
+        k = 2
+        hk = box_down(h, k)
+        lk = box_down(lift, k)
+        spawn = np.where(lk > 12.0, lk, 0.0) ** 0.5
+        n = int((lk > 12.0).sum() * 0.9)
+        e = erode_droplets(hk, spawn, n, self.seed + 77, unit=100.0, inertia=0.2,
+                           erode_speed=0.22, deposit_speed=0.25, steps=48, max_step=0.003,
+                           log=self.log)
+        e = thermal(e, talus=1.7, rate=0.3, iters=4, cell=float(k))
+        delta = gaussian(e - hk, 0.6) * (box_down(self.f["sd"], k) > 4.0)
+        up = smooth_up(delta, (hk.shape[0] * k, hk.shape[1] * k))
+        out = h.copy()
+        out[:up.shape[0], :up.shape[1]] += up
+        return out
 
     def _road_corridor_distance(self):
         """Distance to the straight city-to-city road/pass lines (river routes excluded)."""
@@ -819,6 +1073,7 @@ class World:
             band = (dd > hw_g) & (dd < hw_g + bankw + 3.0)
             hn = np.where(band, np.maximum(hn, bed_g + np.minimum(dep, 1.2)
                                            * T.smoothstep(hw_g, hw_g + bankw, dd)), hn)
+            hn = np.where(self.f["lake_sd"][m] > 1.0, hv, hn)     # no channels on lake floors
             h[m] = hn
             # bookkeeping for painting
             closer = dd < river_d[m]
@@ -847,8 +1102,8 @@ class World:
         for (key, cx, cy, s) in self.cities:
             R = PAD_RADIUS[s]
             dd = np.hypot(self.xs - cx, self.ys - cy)
-            disc = dd < R
-            level = float(np.median(h[disc]))
+            ring = (dd >= R) & (dd < R + PAD_BLEND)
+            level = 0.5 * float(np.median(h[dd < R])) + 0.5 * float(np.median(h[ring]))
             near_r = (dd < R + 70) & (self.f["river_d"] < self.f["river_hw"] + 2.0)
             if near_r.any():
                 level = max(level, float(self.f["river_bed"][near_r].max()) + 3.2)
@@ -956,6 +1211,24 @@ class World:
             self.times[name] = time.time() - t0
             self.log("[world] %-8s %.1fs" % (name, self.times[name]))
         return self
+
+    # -- cache ---------------------------------------------------------------------------------
+    def save(self, path):
+        import pickle
+        with open(path, "wb") as f:
+            pickle.dump({"p": self.p, "f": self.f, "rivers": self.rivers, "lakes": self.lakes,
+                         "roads": self.roads, "pads": self.pads, "copses": self.copses,
+                         "times": getattr(self, "times", {})}, f, protocol=4)
+
+    @classmethod
+    def load(cls, path, sc=None, log=print):
+        import pickle
+        with open(path, "rb") as f:
+            d = pickle.load(f)
+        w = cls(sc or load_scenario(), d["p"], log)
+        for k in ("f", "rivers", "lakes", "roads", "pads", "copses", "times"):
+            setattr(w, k, d[k])
+        return w
 
     # -- export --------------------------------------------------------------------------------
     def height_png16(self):

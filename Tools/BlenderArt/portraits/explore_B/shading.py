@@ -87,7 +87,7 @@ def skin(ident, key_dir, name="Skin"):
     if ident.brow_paint > 0:
         col = nb.mix(col, hcol, nb.math("MULTIPLY", z("brow"), ident.brow_paint))
     if ident.scalp_paint > 0:
-        col = nb.mix(col, hcol, nb.math("MULTIPLY", z("scalp"), ident.scalp_paint))
+        col = nb.mix(col, hcol, nb.math("MULTIPLY", z(ident.scalp_mask), ident.scalp_paint))
     if ident.beard_paint > 0:
         col = nb.mix(col, hcol, nb.math("MULTIPLY", nb.math("MAXIMUM", z("beard"), z("moustache")),
                                         ident.beard_paint))
@@ -229,7 +229,7 @@ def iron_plate(name="IronPlate", color=(0.045, 0.05, 0.058), lacing=(0.30, 0.025
         d2 = nb.math("ADD", nb.math("POWER", nb.math("SUBTRACT", u, 0.7), 2.0),
                      nb.math("POWER", nb.math("MULTIPLY", nb.math("SUBTRACT", v, 0.82), 0.6), 2.0))
         dd = nb.math("MINIMUM", d1, d2)
-        cord = nb.maprange(dd, 0.012, 0.006, 0.0, 1.0)
+        cord = nb.maprange(dd, 0.006, 0.003, 0.0, 1.0)
         # horizontal stitch between the holes
         st = nb.math("MULTIPLY", nb.maprange(nb.math("ABSOLUTE", nb.math("SUBTRACT", v, 0.82)), 0.035, 0.02, 0.0, 1.0),
                      nb.maprange(nb.math("ABSOLUTE", nb.math("SUBTRACT", u, 0.5)), 0.22, 0.18, 0.0, 1.0))
@@ -328,8 +328,9 @@ def cloth(name, color, sheen=0.4, rough=0.7, pattern=None, pattern_color=None, p
         col, _ = painter_tint(nb, col, key_dir, warm=(1.18, 0.95, 0.82), cool=(0.85, 0.92, 1.12),
                               warm_amt=0.6, cool_amt=0.5)
     bump = nb.bump(bump_h, strength=0.25, distance=0.0006)
-    p = principled(nb, Base_Color=col, Roughness=rough, Sheen_Weight=sheen, Sheen_Roughness=0.35,
-                   Sheen_Tint=(1, 1, 1), Normal=bump, Anisotropic=aniso, Specular_IOR_Level=0.35)
+    p = principled(nb, Base_Color=col, Roughness=rough, Sheen_Weight=sheen * 0.6, Sheen_Roughness=0.4,
+                   Sheen_Tint=nb.mix(col, (1, 1, 1, 1), 0.35), Normal=bump, Anisotropic=aniso,
+                   Specular_IOR_Level=0.35)
     output(nb, p)
     nb.aov("costume", 1.0)
     return m
@@ -348,8 +349,8 @@ def leather(name="Leather", color=(0.09, 0.045, 0.022), rough=0.55):
 
 
 def costume_materials(key_dir, palette=None):
-    pal = dict(iron=(0.045, 0.05, 0.058), bronze=(0.42, 0.24, 0.08), gold=(0.70, 0.47, 0.17),
-               lacing=(0.32, 0.022, 0.016), leather=(0.08, 0.04, 0.02))
+    pal = dict(iron=(0.040, 0.044, 0.052), bronze=(0.42, 0.24, 0.08), gold=(0.70, 0.47, 0.17),
+               lacing=(0.16, 0.018, 0.012), leather=(0.08, 0.04, 0.02))
     pal.update(palette or {})
     return dict(
         iron=iron_plate("IronPlate", pal["iron"], pal["lacing"], key_dir=key_dir),
@@ -357,5 +358,5 @@ def costume_materials(key_dir, palette=None):
         bronze=metal("Bronze", pal["bronze"], rough=0.32),
         gold=metal("Gold", pal["gold"], rough=0.25, engrave=0.3),
         leather=leather("Leather", pal["leather"]),
-        lacing=cloth("LacingCord", "#8A2418", sheen=0.3, rough=0.6, painter=False),
+        lacing=cloth("LacingCord", "#6A1E14", sheen=0.3, rough=0.6, painter=False),
     )

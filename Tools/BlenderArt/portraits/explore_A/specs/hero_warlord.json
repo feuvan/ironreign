@@ -1,0 +1,99 @@
+{
+ "id": "hero_warlord",
+ "seed": 11,
+ "gender": "m",
+ "age": 54,
+ "archetype": "warrior",
+ "expression": "fierce",
+ "expr": {
+  "eyebrows-left-down": 0.1,
+  "eyebrows-right-down": 0.1
+ },
+ "face": {
+  "chin/chin-width-decr|incr": 0.35,
+  "chin/chin-bones-decr|incr": 0.4,
+  "nose/nose-hump-decr|incr": 0.5,
+  "nose/nose-scale-vert-decr|incr": 0.3,
+  "nose/nose-point-width-decr|incr": -0.2,
+  "cheek/{s}-cheek-bones-decr|incr": 0.5,
+  "cheek/{s}-cheek-volume-decr|incr": -0.5,
+  "eyebrows/eyebrows-trans-backward|forward": 0.5,
+  "eyebrows/eyebrows-angle-down|up": 0.3,
+  "eyes/{s}-eye-push1-in|out": -0.3,
+  "head/head-fat-decr|incr": -0.4,
+  "forehead/forehead-trans-backward|forward": 0.2,
+  "mouth/mouth-scale-horiz-decr|incr": 0.15,
+  "mouth/mouth-laugh-lines-in|out": 0.4
+ },
+ "identity": {
+  "skin_tone": 0.62,
+  "skin_red": 0.6,
+  "muscle": 0.85,
+  "weight": 0.5
+ },
+ "skin": {
+  "weather": 0.9,
+  "scars": [
+   [
+    [
+     0.62,
+     0.62
+    ],
+    [
+     0.98,
+     -0.05
+    ]
+   ]
+  ],
+  "stubble": 0.3
+ },
+ "hair": {
+  "style": "helmet",
+  "grey": 0.3,
+  "recede": 0.2
+ },
+ "brows": {
+  "thick": 1.35,
+  "arch": 0.7,
+  "angle": 0.35,
+  "count": 1300,
+  "hair_len": 0.011
+ },
+ "beard": {
+  "mustache": 1.0,
+  "chin": 1.0,
+  "cheeks": 0.0,
+  "jaw": 1.0,
+  "neck": 0.6,
+  "sideburns": 1.0,
+  "soul": 1.0,
+  "tails": 1.0,
+  "length": 0.1,
+  "must_len": 0.045,
+  "cheek_len": 0.03,
+  "taper": 0.3,
+  "gravity": 0.7,
+  "radius": 9e-05,
+  "count": 11000,
+  "frizz": 0.0015
+ },
+ "beard_grey": 0.35,
+ "outfit": {
+  "kind": "armour",
+  "silk": [
+   0.2,
+   0.016,
+   0.012
+  ]
+ },
+ "headgear": {
+  "kind": "helmet"
+ },
+ "camera": {
+  "yaw": 20.0,
+  "pitch": -3.0,
+  "head_frac": 0.42,
+  "eye_line": 0.4
+ },
+ "bg": "smoke"
+}

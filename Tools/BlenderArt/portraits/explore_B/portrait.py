@@ -48,7 +48,7 @@ def groom(spec, b, surf, mats, rng, col, helmet_info=None, csurf=None):
         objs.append(HR.make("Moustache", HR.moustache(csurf, lm, rng, **g["moustache"]), mats["beard"], col))
     sc = g.get("scalp")
     if sc:
-        knot = np.asarray(lm["eye_c"], np.float32) + np.asarray(sc.get("knot", (0, 0.035, 0.125)), np.float32)
+        knot = knot_point(lm, sc.get("knot", (0, 0.02, -0.01)))
         kw = {k: v for k, v in sc.items() if k not in ("knot", "bun", "buns")}
         objs.append(HR.make("Scalp", HR.scalp_to_knot(surf, lm, rng, knot, **kw), hm, col))
         for i, bn in enumerate(sc.get("buns", [sc["bun"]] if sc.get("bun") else [])):
@@ -58,6 +58,11 @@ def groom(spec, b, surf, mats, rng, col, helmet_info=None, csurf=None):
     if g.get("side_locks"):
         objs.append(HR.make("Locks", HR.side_locks(csurf, lm, rng, **g["side_locks"]), hm, col))
     return [o for o in objs if o is not None]
+
+
+def knot_point(lm, off):
+    """Top-knot / bun base: offset from the top of the skull (x, y back, z up)."""
+    return np.asarray(lm["head_top"], np.float32) + np.asarray(off, np.float32)
 
 
 def hair_mats(spec, key_dir):
@@ -110,14 +115,14 @@ def build(spec, preview=False, out=None):
     times["head"] = time.time() - t0
     # body surface for fitting + collisions
     t1 = time.time()
-    surf = HR.Surface([b["body"]], attrs=["z_beard", "z_moustache", "z_brow", "z_lash", "z_scalp", "z_goatee"])
+    ATTRS = ["z_beard", "z_moustache", "z_brow", "z_lash", "z_scalp", "z_scalp_low", "z_goatee"]
+    surf = HR.Surface([b["body"]], attrs=ATTRS)
     outfit = getattr(outfits, spec["outfit"]["builder"])
     cost = outfit(spec, b, surf, kd, rng, col)
     times["costume"] = time.time() - t1
     t2 = time.time()
     # hair collides with skin + costume
-    csurf = HR.Surface([b["body"]] + cost.get("collide", []),
-                       attrs=["z_beard", "z_moustache", "z_brow", "z_lash", "z_scalp", "z_goatee"])
+    csurf = HR.Surface([b["body"]] + cost.get("collide", []), attrs=ATTRS)
     hm = hair_mats(spec, kd)
     hobjs = groom(spec, b, surf, hm, rng, col, cost.get("helmet"), csurf=csurf)
     for o in hobjs:

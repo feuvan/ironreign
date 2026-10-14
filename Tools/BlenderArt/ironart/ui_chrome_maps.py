@@ -28,10 +28,11 @@ def L(hexcol, k=1.0):
 #: PBR layer presets (linear albedo).  'tex' keys are handled by the piece scripts.
 MATS = {
     # lacquers: pigment under a glassy clear coat
-    "cinnabar": dict(base=L("#7E1F17"), metal=0.0, rough=0.42, coat=1.0, spec=0.35),
-    "cinnabar_dark": dict(base=L("#4A120D"), metal=0.0, rough=0.45, coat=1.0, spec=0.35),
-    "lacquer_black": dict(base=L("#1B1712"), metal=0.0, rough=0.40, coat=1.0, spec=0.40),
-    "rosewood": dict(base=L("#3B1D14"), metal=0.0, rough=0.38, coat=0.85, spec=0.40),
+    # (the gloss of lacquer is its coat; a broad base specular would grey the pigment)
+    "cinnabar": dict(base=L("#7E1F17"), metal=0.0, rough=0.42, coat=1.0, spec=0.06),
+    "cinnabar_dark": dict(base=L("#4A120D"), metal=0.0, rough=0.45, coat=1.0, spec=0.06),
+    "lacquer_black": dict(base=L("#1B1712"), metal=0.0, rough=0.40, coat=1.0, spec=0.05),
+    "rosewood": dict(base=L("#3B1D14"), metal=0.0, rough=0.38, coat=0.85, spec=0.15),
     # metals (base = F0 colour of the metal)
     "gold": dict(base=L("#F0C873"), metal=1.0, rough=0.24, coat=0.0, spec=0.5),
     "gold_satin": dict(base=L("#E7BE6A"), metal=1.0, rough=0.38, coat=0.0, spec=0.5),
@@ -41,7 +42,7 @@ MATS = {
     "paper": dict(base=L("#E9DCC0"), metal=0.0, rough=0.88, coat=0.0, spec=0.18),
     "silk": dict(base=L("#E6D8B8"), metal=0.0, rough=0.55, coat=0.0, spec=0.35),
     # mother of pearl (base is the body tint; the shader adds the iridescence)
-    "pearl": dict(base=L("#E8E4DA"), metal=0.0, rough=0.18, coat=0.6, spec=0.6, mop=1.0),
+    "pearl": dict(base=L("#B9B4AA"), metal=0.0, rough=0.22, coat=0.8, spec=0.5, mop=1.0),
     # ink / seal paste
     "ink": dict(base=L("#141110"), metal=0.0, rough=0.45, coat=0.0, spec=0.35),
     "seal_paste": dict(base=L("#B0281C"), metal=0.0, rough=0.62, coat=0.0, spec=0.3),

@@ -42,6 +42,7 @@ class Identity:
     # painted hair-root masses in the skin (painters block the mass in before the strands)
     brow_paint: float = 0.75
     scalp_paint: float = 0.0
+    scalp_mask: str = "scalp"         # 'scalp' (men) or 'scalp_low' (women / youths)
     beard_paint: float = 0.0
 
 

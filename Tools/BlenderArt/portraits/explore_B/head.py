@@ -79,6 +79,11 @@ def landmarks(base, v):
     L["eye_c"] = (L["eye_l"] + L["eye_r"]) / 2
     for k, i in zones.landmark_index().items():
         L[k] = mh.to_blender(v[i])
+    body = base.group_verts("body")
+    hv = v[body]
+    sel = np.abs(hv[:, 0]) < 0.25
+    top = hv[sel][np.argmax(hv[sel][:, 1])]
+    L["head_top"] = mh.to_blender(top)
     for j in ("joint-neck", "joint-head", "joint-jaw", "joint-l-shoulder", "joint-r-shoulder",
               "joint-l-clavicle", "joint-r-clavicle", "joint-head-2"):
         L[j.replace("joint-", "j_")] = mh.to_blender(v[base.group_verts(j)].mean(0))

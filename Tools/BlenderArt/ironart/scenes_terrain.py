@@ -376,8 +376,7 @@ def mist_material(name, color="#E8E0D4", strength=1.0, density=0.8, scale=1.0, s
     mat.blend_method = "BLEND"
     b = G(nb.tree)
     tc = nb.node("ShaderNodeTexCoord")
-    gen = tc.outputs["Generated"]
-    gx, gy, _ = b.sep(gen)
+    gx, gy, _ = b.sep(tc.outputs["UV"])
     v = b.comb(b.math("MULTIPLY", gx, 3.0 * scale * stretch), b.math("MULTIPLY", gy, 3.0 * scale), seed)
     n = noise(nb, v, 1.0, 7, 0.6, 0.4)
     # rim falloff
@@ -479,3 +478,121 @@ def mountain_range(w_px, h_px, seed, peak=1.0, cell=None, warp=None, erosion=20,
         hm = thermal_erosion(hm, erosion, talus=0.6 / max(w_px, h_px) * 8, k=0.35)
     hm = (hm - hm.min()) / max(1e-6, hm.max() - hm.min())
     return base + hm * peak
+
+
+# =============================================================================================
+# coordinate noise (evaluate at arbitrary world x, y: separate meshes share one height function)
+# =============================================================================================
+def _hash2(ix, iy, seed):
+    h = (ix.astype(np.int64) * 374761393 + iy.astype(np.int64) * 668265263 + seed * 1442695041) & 0xFFFFFFFF
+    h = ((h ^ (h >> 13)) * 1274126177) & 0xFFFFFFFF
+    h = h ^ (h >> 16)
+    return (h & 0xFFFFFF).astype(np.float32) / float(0xFFFFFF)
+
+
+def vnoise(x, y, seed=0):
+    """Value noise at arbitrary coordinates (lattice spacing 1), quintic fade, 0..1."""
+    x = np.asarray(x, np.float64)
+    y = np.asarray(y, np.float64)
+    xi = np.floor(x)
+    yi = np.floor(y)
+    fx = (x - xi).astype(np.float32)
+    fy = (y - yi).astype(np.float32)
+    u = fx * fx * fx * (fx * (fx * 6 - 15) + 10)
+    v = fy * fy * fy * (fy * (fy * 6 - 15) + 10)
+    xi = xi.astype(np.int64)
+    yi = yi.astype(np.int64)
+    a = _hash2(xi, yi, seed)
+    b = _hash2(xi + 1, yi, seed)
+    c = _hash2(xi, yi + 1, seed)
+    d = _hash2(xi + 1, yi + 1, seed)
+    return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v
+
+
+def fbm2(x, y, scale=100.0, octaves=5, gain=0.5, lac=2.0, seed=0):
+    acc = 0.0
+    amp, tot, f = 1.0, 0.0, 1.0 / scale
+    for o in range(octaves):
+        acc = acc + amp * vnoise(x * f + o * 17.3, y * f - o * 9.1, seed + o * 101)
+        tot += amp
+        amp *= gain
+        f *= lac
+    return acc / tot
+
+
+def ridged2(x, y, scale=300.0, octaves=6, gain=0.5, lac=2.05, sharp=1.8, seed=0, warp=0.0):
+    if warp:
+        wx = (fbm2(x, y, scale * 1.3, 3, seed=seed + 7) - 0.5) * warp
+        wy = (fbm2(x, y, scale * 1.3, 3, seed=seed + 13) - 0.5) * warp
+        x = x + wx
+        y = y + wy
+    acc = 0.0
+    amp, tot, f = 1.0, 0.0, 1.0 / scale
+    prev = 1.0
+    for o in range(octaves):
+        n = vnoise(x * f + o * 31.7, y * f + o * 7.7, seed + o * 57)
+        r = (1.0 - np.abs(2.0 * n - 1.0)) ** sharp
+        if o > 0:
+            r = r * np.clip(prev * 1.5, 0.3, 1.0)
+        prev = r
+        acc = acc + amp * r
+        tot += amp
+        amp *= gain
+        f *= lac
+    return acc / tot
+
+
+def grid_xy(x0, x1, y0, y1, step):
+    nx = int(round((x1 - x0) / step)) + 1
+    ny = int(round((y1 - y0) / step)) + 1
+    xs = np.linspace(x0, x1, nx)
+    ys = np.linspace(y0, y1, ny)
+    X, Y = np.meshgrid(xs, ys)
+    return X, Y
+
+
+def field_from(fn, x0, x1, y0, y1, step):
+    """Field sampled from a height function ``fn(X, Y)`` on a regular grid."""
+    X, Y = grid_xy(x0, x1, y0, y1, step)
+    return Field(np.asarray(fn(X, Y), np.float32), x0, x1, y0, y1)
+
+
+def polyline_dist(X, Y, pts):
+    """Distance from (X, Y) grids to a 2D polyline, and the segment parameter along it (0..1)."""
+    best = np.full(X.shape, 1e18)
+    along = np.zeros(X.shape)
+    total = sum(math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]) for i in range(len(pts) - 1))
+    acc = 0.0
+    for i in range(len(pts) - 1):
+        ax, ay = pts[i]
+        bx, by = pts[i + 1]
+        dx, dy = bx - ax, by - ay
+        L2 = dx * dx + dy * dy
+        t = np.clip(((X - ax) * dx + (Y - ay) * dy) / L2, 0, 1)
+        px = ax + t * dx
+        py = ay + t * dy
+        d2 = (X - px) ** 2 + (Y - py) ** 2
+        m = d2 < best
+        best = np.where(m, d2, best)
+        seg = math.sqrt(L2)
+        along = np.where(m, (acc + t * seg) / total, along)
+        acc += seg
+    return np.sqrt(best), along
+
+
+def smooth_path(pts, n=8):
+    """Catmull-Rom subdivision of a 2D polyline."""
+    out = []
+    P = [pts[0]] + list(pts) + [pts[-1]]
+    for i in range(1, len(P) - 2):
+        p0, p1, p2, p3 = P[i - 1], P[i], P[i + 1], P[i + 2]
+        for k in range(n):
+            t = k / n
+            t2, t3 = t * t, t * t * t
+            x = 0.5 * ((2 * p1[0]) + (-p0[0] + p2[0]) * t + (2 * p0[0] - 5 * p1[0] + 4 * p2[0] - p3[0]) * t2
+                       + (-p0[0] + 3 * p1[0] - 3 * p2[0] + p3[0]) * t3)
+            y = 0.5 * ((2 * p1[1]) + (-p0[1] + p2[1]) * t + (2 * p0[1] - 5 * p1[1] + 4 * p2[1] - p3[1]) * t2
+                       + (-p0[1] + 3 * p1[1] - 3 * p2[1] + p3[1]) * t3)
+            out.append((x, y))
+    out.append(pts[-1])
+    return out

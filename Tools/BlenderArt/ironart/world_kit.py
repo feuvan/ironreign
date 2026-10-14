@@ -100,14 +100,13 @@ def sweep(mb, path, section, mat, closed_section=False, caps=True, smooth=True, 
 
 
 def box_uv(mb, c, size, mat, rz=0.0, top=None, skip=(), taper=(0.0, 0.0), origin_uv=True):
-    """Box with bottom at c[2]; UVs from its own local frame (so patterns start at the box
-    corner, independent of where it is placed)."""
+    """Box whose **min corner** is ``c`` (rotated by ``rz`` about it); UVs from its own local
+    frame (patterns start at the box corner, independent of where it is placed)."""
     s = mb.n
     sx, sy, sz = size
     mb.box((sx / 2.0 if origin_uv else 0.0, sy / 2.0 if origin_uv else 0.0, 0.0), size, mat,
            taper=taper, skip=skip, top_mat=top)
-    off = Matrix.Translation(Vector((-sx / 2.0, -sy / 2.0, 0.0))) if origin_uv else Matrix.Identity(4)
-    mb.transform(s, T(c[0], c[1], c[2], rz) @ off)
+    mb.transform(s, T(c[0], c[1], c[2], rz))
     return s
 
 
@@ -465,7 +464,7 @@ def roof(mb, center, w, d, H, spec=None, rz=0.0, **kw):
                     pts.append(p)
                 tip = pts[-1]
                 outd = Vector((sx, sy, 0)).normalized()
-                pts.append(tip + outd * rh * 0.7 + Vector((0, 0, rh * 0.75)))
+                pts.append(tip + outd * rh * 0.45 + Vector((0, 0, rh * 0.42)))
                 sweep(mb, pts, sec_hip, sp.ridge_mat, caps=True, smooth=False,
                       scale_fn=lambda t: 1.0 if t < 0.85 else 1.0 - (t - 0.85) * 2.5)
                 for b in range(min(sp.beasts, nseg - 2)):
@@ -1017,7 +1016,7 @@ def pagoda(mb, center=(0, 0, 0), tiers=7, R=4.2, base_h=5.5, tier_h=3.2, taper=0
             a = TAU * (k + 0.5) / n
             cxp, cyp = r * math.cos(a) * 0.985, r * math.sin(a) * 0.985
             if lacquer_frames:
-                mb.box((cxp, cyp, z), (0.28, 0.28, h - 0.3), "W_Lacquer", rz=a)
+                mb.box((cxp, cyp, z), (0.28, 0.28, h - 0.3), "W_Lacquer", rot_z=a)
         for k in range(n):
             a = TAU * k / n
             if (k + t) % 2:

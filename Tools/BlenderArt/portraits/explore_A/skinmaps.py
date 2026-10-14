@@ -297,5 +297,4 @@ def to_bpy(name, arr, colorspace="sRGB", float_buffer=False):
         arr = np.dstack([arr, arr, arr, np.ones_like(arr)])
     img.pixels.foreach_set(np.ascontiguousarray(arr[::-1]).ravel().astype(np.float32))
     img.update()
-    img.pack()
     return img
