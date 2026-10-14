@@ -701,6 +701,7 @@ namespace IronStyle
 
 		return SNew(SButton)
 			.ButtonStyle(&Button())
+			.IsFocusable(false)
 			.OnClicked(WithClickSound(MoveTemp(OnClicked)))
 			.IsEnabled(IsEnabled)
 			.HAlign(HAlign_Center)
@@ -937,6 +938,7 @@ namespace IronStyle
 		const IronStyleDetail::FStyleState& State = IronStyleDetail::ReadyState();
 		return SNew(SButton)
 			.ButtonStyle(&State.ChoiceStyles[bActive ? 1 : 0])
+			.IsFocusable(false)
 			.OnClicked(WithClickSound(MoveTemp(OnClicked)))
 			.HAlign(HAlign_Center)
 			.VAlign(VAlign_Center)

@@ -491,6 +491,11 @@ namespace IronSim
 				return false;
 			}
 			const FPendingEvent& Event = State.PendingEvents.front();
+			if (Event.Choices.empty())
+			{
+				// A choiceless event (e.g. from an older or hand-edited save) is acknowledged with index 0.
+				return ChoiceIndex == 0;
+			}
 			if (ChoiceIndex < 0 || ChoiceIndex >= CountOf(Event.Choices))
 			{
 				return false;
@@ -524,6 +529,10 @@ namespace IronSim
 			}
 			const FPendingEvent Event = State.PendingEvents.front();
 			State.PendingEvents.erase(State.PendingEvents.begin());
+			if (Event.Choices.empty())
+			{
+				return;
+			}
 			EventsDetail::FEventContext Context;
 			Context.City = Event.City;
 			Context.Faction = Event.Faction;

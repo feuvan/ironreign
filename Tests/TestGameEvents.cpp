@@ -196,3 +196,16 @@ IRON_TEST(GameOfficersAppearDefectAndEscape)
 	IRON_EXPECT(State.Officers[static_cast<size_t>(BlueGeneral)].Status != EOfficerStatus::Prisoner || State.Officers[static_cast<size_t>(BlueGeneral)].Captor == 0);
 	IRON_EXPECT(GameEventTests::LogContains(Game, "has lost faith in your cause"));
 }
+
+IRON_TEST(GameEventWithoutChoicesCanBeAcknowledged)
+{
+	IronSim::FGame Game;
+	IronSim::FPendingEvent Pending;
+	Pending.Title = "Old save event";
+	Game.State.PendingEvents.push_back(Pending);
+	IRON_EXPECT(Game.CurrentEvent() != nullptr);
+	IRON_EXPECT(!Game.CanChoose(1));
+	IRON_EXPECT(Game.CanChoose(0));
+	Game.ChooseEventOption(0);
+	IRON_EXPECT(Game.CurrentEvent() == nullptr);
+}

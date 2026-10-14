@@ -808,13 +808,17 @@ void SIronStrategyScreen::EnsureFocus()
 	{
 		return;
 	}
-	if (HasKeyboardFocus() || HasFocusedDescendants())
+	// A descendant (normally the map) already has focus. Focus on the screen itself does not count: clicks on
+	// the non-focusable buttons and SIronRoot::PopModal land it here, and only the map handles WASD/arrows.
+	if (HasFocusedDescendants())
 	{
 		return;
 	}
 	TSharedPtr<SWidget> Focused = FSlateApplication::Get().GetKeyboardFocusedWidget();
 	TSharedPtr<SIronRoot> RootPtr = Root.Pin();
-	const bool bRootOrNothing = !Focused.IsValid() || (RootPtr.IsValid() && Focused.Get() == static_cast<SWidget*>(RootPtr.Get()));
+	const bool bRootOrNothing = !Focused.IsValid()
+		|| Focused.Get() == static_cast<SWidget*>(this)
+		|| (RootPtr.IsValid() && Focused.Get() == static_cast<SWidget*>(RootPtr.Get()));
 	if (bRootOrNothing)
 	{
 		FSlateApplication::Get().SetKeyboardFocus(MapView, EFocusCause::SetDirectly);
@@ -974,9 +978,23 @@ void SIronStrategyScreen::ShowEventModal()
 
 void SIronStrategyScreen::HandleEventChoice(int32 ChoiceIndex)
 {
-	if (Session.IsValid() && Session->HasGame() && Session->Game().CurrentEvent() != nullptr)
+	if (Session.IsValid() && Session->HasGame())
 	{
-		Session->Game().ChooseEventOption(ChoiceIndex);
+		IronSim::FGame& Game = Session->Game();
+		if (const IronSim::FPendingEvent* Event = Game.CurrentEvent())
+		{
+			if (Event->Choices.empty())
+			{
+				// A loaded save/scenario can carry an event without choices; the rules refuse every index for it,
+				// so the dialog's "Continue" would reopen it forever. Drop it here (stopgap until the rules do).
+				IronSim::FGameState& GameState = Session->State();
+				GameState.PendingEvents.erase(GameState.PendingEvents.begin());
+			}
+			else
+			{
+				Game.ChooseEventOption(ChoiceIndex);
+			}
+		}
 	}
 	if (TSharedPtr<SIronRoot> RootPtr = Root.Pin())
 	{

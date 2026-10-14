@@ -113,6 +113,7 @@ void SIronSaveLoadDialog::RebuildSlots()
 		[
 			SNew(SButton)
 			.ButtonStyle(&IronStyle::RowButton())
+			.IsFocusable(false)
 			.ContentPadding(FMargin(0.0f))
 			.IsEnabled(bEnabled)
 			.OnClicked(FOnClicked::CreateSP(this, &SIronSaveLoadDialog::OnSlotClicked, Entry.Slot))

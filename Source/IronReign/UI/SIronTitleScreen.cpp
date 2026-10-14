@@ -171,6 +171,7 @@ TSharedRef<SWidget> SIronTitleScreen::MakeLanguagePicker()
 			[
 				SNew(SButton)
 				.ButtonStyle(&IronStyle::Tab(bActive))
+				.IsFocusable(false)
 				.OnClicked(IronStyle::WithClickSound(FOnClicked::CreateSP(this, &SIronTitleScreen::OnLanguage, CultureName)))
 				.HAlign(HAlign_Center)
 				.VAlign(VAlign_Center)

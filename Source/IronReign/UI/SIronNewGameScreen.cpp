@@ -235,6 +235,7 @@ void SIronNewGameScreen::RebuildScenarioList()
 		[
 			SNew(SButton)
 			.ButtonStyle(&IronStyle::RowButton())
+			.IsFocusable(false)
 			.ContentPadding(FMargin(0.0f))
 			.OnClicked(FOnClicked::CreateSP(this, &SIronNewGameScreen::OnScenarioClicked, Index))
 			[
@@ -310,6 +311,7 @@ TSharedRef<SWidget> SIronNewGameScreen::MakeFactionCard(int32 FactionIndex)
 
 	return SNew(SButton)
 		.ButtonStyle(&IronStyle::RowButton())
+		.IsFocusable(false)
 		.ContentPadding(FMargin(0.0f))
 		.OnClicked(FOnClicked::CreateSP(this, &SIronNewGameScreen::OnFactionClicked, FactionIndex))
 		[
@@ -441,6 +443,7 @@ TSharedRef<SWidget> SIronNewGameScreen::MakeDifficultyRow()
 			[
 				SNew(SButton)
 				.ButtonStyle(&IronStyle::Tab(Level == Difficulty))
+				.IsFocusable(false)
 				.OnClicked(IronStyle::WithClickSound(FOnClicked::CreateSP(this, &SIronNewGameScreen::OnDifficultyClicked, Level)))
 				.HAlign(HAlign_Center)
 				.VAlign(VAlign_Center)
