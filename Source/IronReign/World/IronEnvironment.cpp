@@ -67,6 +67,12 @@ namespace IronEnvironmentDetail
 		return FVector4(Value, Value, Value, 1.0f);
 	}
 
+	/** Scalar of M_IronInk that scales the outlines (Content/Python/ironreign_import.py). */
+	FName InkStrengthParameter()
+	{
+		return FName(TEXT("Strength"));
+	}
+
 	/** Cloud coverage under the parameter names the cloud materials may use (unknown names are ignored). */
 	void SetCloudCoverage(UMaterialInstanceDynamic* Material, float Coverage)
 	{
@@ -296,7 +302,18 @@ void AIronEnvironment::BeginPlay()
 	InkMaterial = IronWorld::LoadMaterial(TEXT("M_IronInk"));
 	if (InkMaterial != nullptr)
 	{
-		PostProcess->Settings.WeightedBlendables.Array.Add(FWeightedBlendable(InkStrength, InkMaterial.Get()));
+		InkInstance = UMaterialInstanceDynamic::Create(InkMaterial.Get(), this);
+		if (InkInstance != nullptr)
+		{
+			const float MaterialStrength = InkInstance->K2_GetScalarParameterValue(IronEnvironmentDetail::InkStrengthParameter());
+			if (MaterialStrength > 0.0f)
+			{
+				InkBaseStrength = MaterialStrength;
+			}
+		}
+		UObject* Blendable = InkInstance != nullptr ? static_cast<UObject*>(InkInstance.Get()) : static_cast<UObject*>(InkMaterial.Get());
+		PostProcess->Settings.WeightedBlendables.Array.Add(FWeightedBlendable(0.0f, Blendable));
+		ApplyInk();
 	}
 
 	ApplyQuality();
@@ -506,17 +523,29 @@ void AIronEnvironment::ApplyDepthOfField()
 void AIronEnvironment::SetInkStrength(float Strength)
 {
 	InkStrength = FMath::Clamp(Strength, 0.0f, 1.0f);
+	ApplyInk();
+}
+
+void AIronEnvironment::ApplyInk()
+{
 	if (InkMaterial == nullptr)
 	{
 		return;
 	}
-	const UObject* InkObject = InkMaterial.Get();
+	// The renderer applies a material blendable fully whenever its weight is above 0 (a weight below 1 only blends
+	// an instance's parameters toward its parent's), so the weight switches the pass and "Strength" fades it.
+	const bool bInkOn = InkStrength > 0.001f;
+	if (InkInstance != nullptr)
+	{
+		InkInstance->SetScalarParameterValue(IronEnvironmentDetail::InkStrengthParameter(), InkBaseStrength * InkStrength);
+	}
+	const UObject* InkObject = InkInstance != nullptr ? static_cast<const UObject*>(InkInstance.Get()) : static_cast<const UObject*>(InkMaterial.Get());
 	for (FWeightedBlendable& Entry : PostProcess->Settings.WeightedBlendables.Array)
 	{
 		const UObject* EntryObject = Entry.Object;
 		if (EntryObject == InkObject)
 		{
-			Entry.Weight = InkStrength;
+			Entry.Weight = bInkOn ? 1.0f : 0.0f;
 		}
 	}
 }

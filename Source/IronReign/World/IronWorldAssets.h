@@ -83,11 +83,11 @@ namespace IronWorld
 	FLinearColor FactionColor(const IronSim::FGameState& State, int32 FactionIndex);
 
 	/**
-	 * Gives every "Tint" material slot (slot name starting with "Tint", or a material derived from M_IronTint) one
-	 * dynamic instance with the vector parameter Tint = Color. The instance derives from the slot's own material (the
-	 * importer's M_IronTint instance carrying the model's base texture), or from TintBase when the slot is empty.
-	 * Pass the instance returned by an earlier call as Existing to just update the colour. Returns nullptr when the
-	 * mesh has no Tint slot.
+	 * Gives every "Tint" material slot (slot name starting with "Tint", or a material derived from M_IronTint) a
+	 * dynamic instance with the vector parameter Tint = Color. Each instance derives from the slot's own material (the
+	 * importer's M_IronTint instance carrying that slot's base texture), or from TintBase when the slot is empty; slots
+	 * sharing a material share one instance. Returns the first instance (nullptr when the mesh has no Tint slot): pass
+	 * it back as Existing to just update the colour of every Tint slot.
 	 */
 	UMaterialInstanceDynamic* ApplyTint(UStaticMeshComponent* Component, const FLinearColor& Color, UMaterialInstanceDynamic* Existing, UMaterialInterface* TintBase);
 

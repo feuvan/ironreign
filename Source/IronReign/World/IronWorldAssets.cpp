@@ -155,17 +155,30 @@ namespace IronWorld
 
 	UMaterialInstanceDynamic* ApplyTint(UStaticMeshComponent* Component, const FLinearColor& Color, UMaterialInstanceDynamic* Existing, UMaterialInterface* TintBase)
 	{
+		const FName TintName(TintParameter);
+		const UStaticMesh* Mesh = Component != nullptr ? Component->GetStaticMesh() : nullptr;
 		if (Existing != nullptr)
 		{
-			Existing->SetVectorParameterValue(FName(TintParameter), Color);
+			Existing->SetVectorParameterValue(TintName, Color);
+			// Tint slots with a base texture of their own got their own instance from the first call.
+			const int32 SlotCount = Mesh != nullptr ? Mesh->GetStaticMaterials().Num() : 0;
+			for (int32 SlotIndex = 0; SlotIndex < SlotCount; ++SlotIndex)
+			{
+				UMaterialInstanceDynamic* SlotInstance = Cast<UMaterialInstanceDynamic>(Component->GetMaterial(SlotIndex));
+				if (SlotInstance != nullptr && SlotInstance != Existing && IronWorldAssetsDetail::IsTintSlot(Mesh->GetStaticMaterials()[SlotIndex], SlotInstance))
+				{
+					SlotInstance->SetVectorParameterValue(TintName, Color);
+				}
+			}
 			return Existing;
 		}
-		const UStaticMesh* Mesh = Component != nullptr ? Component->GetStaticMesh() : nullptr;
 		if (Mesh == nullptr)
 		{
 			return nullptr;
 		}
-		UMaterialInstanceDynamic* Instance = nullptr;
+		UMaterialInstanceDynamic* FirstInstance = nullptr;
+		// One instance per distinct slot material, so every Tint slot keeps its own base texture.
+		TMap<UMaterialInterface*, UMaterialInstanceDynamic*> InstanceByParent;
 		const TArray<FStaticMaterial>& Slots = Mesh->GetStaticMaterials();
 		for (int32 SlotIndex = 0; SlotIndex < Slots.Num(); ++SlotIndex)
 		{
@@ -174,23 +187,33 @@ namespace IronWorld
 			{
 				continue;
 			}
-			if (Instance == nullptr)
+			UMaterialInterface* Parent = SlotMaterial != nullptr ? SlotMaterial : TintBase;
+			if (Parent == nullptr)
 			{
-				UMaterialInterface* Parent = SlotMaterial != nullptr ? SlotMaterial : TintBase;
-				if (Parent == nullptr)
-				{
-					continue;
-				}
+				continue;
+			}
+			UMaterialInstanceDynamic* Instance = nullptr;
+			if (UMaterialInstanceDynamic* const* Found = InstanceByParent.Find(Parent))
+			{
+				Instance = *Found;
+			}
+			else
+			{
 				Instance = UMaterialInstanceDynamic::Create(Parent, Component);
 				if (Instance == nullptr)
 				{
 					continue;
 				}
-				Instance->SetVectorParameterValue(FName(TintParameter), Color);
+				Instance->SetVectorParameterValue(TintName, Color);
+				InstanceByParent.Add(Parent, Instance);
+			}
+			if (FirstInstance == nullptr)
+			{
+				FirstInstance = Instance;
 			}
 			Component->SetMaterial(SlotIndex, Instance);
 		}
-		return Instance;
+		return FirstInstance;
 	}
 
 	UMaterialInstanceDynamic* MakeColoredMaterial(UMaterialInterface* Base, UObject* Outer, const FLinearColor& Color)

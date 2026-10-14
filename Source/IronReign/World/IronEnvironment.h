@@ -91,7 +91,10 @@ public:
 	void SetTiltShift(float InFocusDistanceCm, float HorizontalFovDegrees = 40.0f);
 	/** 0..1 scale of the tilt-shift blur (default 1). */
 	void SetTiltShiftStrength(float Strength);
-	/** Weight 0..1 of the M_IronInk post-process blendable (no-op when the material was not imported). */
+	/**
+	 * 0..1 strength of the M_IronInk outline pass (no-op when the material was not imported). A material blendable's
+	 * weight does not fade it, so this scales the instance's "Strength" parameter; 0 removes the pass.
+	 */
 	void SetInkStrength(float Strength);
 	/** Manual exposure compensation in EV (default 0.3). */
 	void SetExposureBias(float Bias);
@@ -116,6 +119,7 @@ private:
 	void EnsureClouds();
 	void RemoveClouds();
 	void InitPostProcess();
+	void ApplyInk();
 
 	UPROPERTY(VisibleAnywhere, Category = "Iron Reign")
 	TObjectPtr<USceneComponent> SceneRoot;
@@ -148,6 +152,10 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInterface> InkMaterial;
 
+	/** Dynamic instance of M_IronInk used as the blendable (its "Strength" follows SetInkStrength). */
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> InkInstance;
+
 	/** MPC_IronSeason from the import, when present. */
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialParameterCollection> SeasonCollection;
@@ -164,6 +172,8 @@ private:
 	float SunBearingDegrees = 235.0f;
 	float ExposureBias = 0.3f;
 	float InkStrength = 0.0f;
+	/** M_IronInk's own "Strength" (the look at SetInkStrength(1)). */
+	float InkBaseStrength = 0.6f;
 	float TiltShiftStrength = 1.0f;
 	float FocusDistanceCm = 0.0f;
 	float FocusFovDegrees = 40.0f;
