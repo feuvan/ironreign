@@ -146,11 +146,9 @@ class Canvas:
             aa = np.asarray(alpha_along(t), float)
             al[0::2] *= aa
             al[1::2] *= aa
-        tris = []
-        for i in range(n - 1):
-            a, b, c, d = 2 * i, 2 * i + 1, 2 * i + 2, 2 * i + 3
-            tris.append((a, b, c))
-            tris.append((b, d, c))
+        i = 2 * np.arange(n - 1)
+        tris = list(np.concatenate([np.stack([i, i + 1, i + 2], 1),
+                                    np.stack([i + 1, i + 3, i + 2], 1)]))
         if caps:
             extra_v = []
             extra_a = []
@@ -216,15 +214,10 @@ class Canvas:
             al = np.asarray(alpha(S, T), float).reshape(-1)
         else:
             al = np.full(len(V), float(alpha))
-        tris = []
-        for r in range(rows):
-            for c in range(cols - 1):
-                a = r * cols + c
-                b = a + 1
-                d = a + cols
-                e = d + 1
-                tris.append((a, b, e))
-                tris.append((a, e, d))
+        rr, cc = np.meshgrid(np.arange(rows), np.arange(cols - 1), indexing="ij")
+        a = (rr * cols + cc).reshape(-1)
+        tris = np.concatenate([np.stack([a, a + 1, a + cols + 1], 1),
+                               np.stack([a, a + cols + 1, a + cols], 1)])
         C = None
         if colors is not None:
             C = pal.lin_arr(colors(S, T)).reshape(-1, 3)
@@ -249,19 +242,17 @@ class Canvas:
                                  np.asarray(alpha(R, U), float).reshape(-1)])
         else:
             al = np.full(len(V), float(alpha))
-        tris = []
-        for k in range(K):
-            k2 = (k + 1) % K
-            tris.append((0, 1 + k, 1 + k2))
+        k = np.arange(K)
+        k2 = (k + 1) % K
+        tl = [np.stack([np.zeros(K, int), 1 + k, 1 + k2], 1)]
         for j in range(rings - 1):
-            for k in range(K):
-                k2 = (k + 1) % K
-                a = 1 + j * K + k
-                b = 1 + j * K + k2
-                d = 1 + (j + 1) * K + k
-                e = 1 + (j + 1) * K + k2
-                tris.append((a, d, e))
-                tris.append((a, e, b))
+            a = 1 + j * K + k
+            b = 1 + j * K + k2
+            d = a + K
+            e = b + K
+            tl.append(np.stack([a, d, e], 1))
+            tl.append(np.stack([a, e, b], 1))
+        tris = np.concatenate(tl)
         C = None
         if colors is not None:
             cc = pal.lin_arr(colors(R, U)).reshape(-1, 3)

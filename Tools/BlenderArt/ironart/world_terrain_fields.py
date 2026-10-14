@@ -803,71 +803,41 @@ class World:
         return pts, (sy, sx), d, u.astype(np.float32), sv.astype(np.float32), float(arclen(pts)[-1])
 
     def build_relief(self):
+        """Hills and mountain RANGES along the scenario strokes (see :func:`range_relief`):
+        continuous crests with summits and cols, spurs and side valleys running down from the
+        crest, foothill aprons; rolling hill chains; everything eased down towards the city sites
+        with a long, irregular falloff (cities sit in open basins, never in a round crater) and
+        lowered into saddles where roads cross."""
         p = self.p
         cityd, _ = self.city_distance()
         self.f["city_d"] = cityd
-        city_r = np.zeros(self.shape, np.float32)
-        for (_k, cx, cy, s) in self.cities:
-            dd = np.hypot(self.xs - cx, self.ys - cy)
-            city_r = np.maximum(city_r, T.smoothstep(PAD_RADIUS[s] + 60.0, PAD_RADIUS[s] + 10.0, dd))
-        keep_city = 1.0 - city_r          # 0 at city sites, 1 away from them
         road_d = self._road_corridor_distance()
         self.f["road_d0"] = road_d
-        # ---- hills: a chain of rounded tops along each stroke + billowy lumps
-        wx, wy = self.warp(22.0, 90.0, 41)
-        lumps = 0.5 + 0.5 * T.fbm_at(wx, wy, 64.0, 4, seed=self.seed + 42)
-        bill = 1.0 - np.abs(T.fbm_at(wx, wy, 38.0, 3, seed=self.seed + 43))
-        hill_env = np.zeros(self.shape, np.float32)
+        keep = self.city_keep()
+        self.f["city_keep"] = keep
         hills = np.zeros(self.shape, np.float32)
+        hill_env = np.zeros(self.shape, np.float32)
         for k, s in enumerate(self.m["hills"]):
-            _pts, wn, d, u, sv, L = self._stroke(s, 2.8)
-            xs, ys = self.xs[wn], self.ys[wn]
-            w = s["width"]
-            e = np.exp(-(d / (1.0 * w)) ** 2)
-            chain = 0.5 + 0.5 * np.cos(2 * np.pi * u / (0.95 * w + 40.0)
-                                       + 2.2 * T.fbm_at(xs, ys, 80.0, 2, seed=self.seed + 44 + k))
-            hk = p["hill_height"] * e ** 1.2 * (0.30 + 0.38 * chain + 0.32 * lumps[wn] ** 1.3
-                                                + 0.16 * bill[wn])
-            hills[wn] = np.maximum(hills[wn], hk)
-            hill_env[wn] = np.maximum(hill_env[wn], e)
-        saddle_h = 1.0 - 0.3 * np.exp(-(road_d / 24.0) ** 2)
-        hills = hills * saddle_h * keep_city
-        # ---- mountains: a sharp continuous crest per stroke, spurs running down from it
-        #      (ridged noise in stroke-aligned coordinates), summits along the crest, then
-        #      a global ridged massif and derivative-damped erosion detail
-        wx, wy = self.warp(30.0, 130.0, 51)
-        ridged = T.ridged_at(wx, wy, p["mtn_ridge_scale"], 4, 0.5, seed=self.seed + 52, sharpness=1.6)
+            sy, sx, hk, env = range_relief(s, "hill", self.seed + 600 + 41 * k, p)
+            hills[sy, sx] = smax(hills[sy, sx], hk, 0.25)
+            hill_env[sy, sx] = np.maximum(hill_env[sy, sx], env)
         mtn = np.zeros(self.shape, np.float32)
         core_env = np.zeros(self.shape, np.float32)
         foot_env = np.zeros(self.shape, np.float32)
-        pert = T.fbm_at(self.xs, self.ys, 26.0, 3, seed=self.seed + 64)
-        rough = T.fbm_at(self.xs, self.ys, 14.0, 2, seed=self.seed + 65)
-        for k, st in enumerate(self.m["mountains"]):
-            w = float(st["width"])
-            peak = p["mtn_base"] + p["mtn_per_width"] * w
-            ridges = ridge_network(st["points"], w, peak, self.seed + 500 + 37 * k)
-            # envelopes for masks / valley widths (from the original stroke)
-            spts = smooth_line(resample(st["points"], 4.0), 9.0)
-            lc = 0.36 * peak
-            R = 6.0 * lc
-            sy, sx, org = window(spts, R, self.shape)
-            shp = (sy.stop - sy.start, sx.stop - sx.start)
-            d = polyline_field(spts, R, want_t=False, shape=shp, origin=org)
-            d = np.where(np.isfinite(d), d, 1e5)
-            fade = T.smoothstep(R, 0.6 * R, d)
-            core_env[sy, sx] = np.maximum(core_env[sy, sx], np.exp(-(d / (1.6 * lc)) ** 2) * fade)
-            foot_env[sy, sx] = np.maximum(foot_env[sy, sx], np.exp(-(d / (3.3 * lc)) ** 2) * fade)
-            for (rp, rh, lam) in ridges:
-                ridge_raster(mtn, rp, rh, lam, (0, 0), pert=pert)
-        # foothills around every range
-        mtn = smax(mtn, 22.0 * foot_env * (0.35 + 0.65 * lumps), 0.3)
-        mtn = mtn + 9.0 * (ridged - 0.4) * core_env * T.smoothstep(20.0, 80.0, mtn)
-        saddle_m = 1.0 - 0.42 * np.exp(-(self.f["pass_d"] / 34.0) ** 2) - 0.2 * np.exp(-(road_d / 26.0) ** 2)
-        mtn = mtn * saddle_m * keep_city
-        land = self.f["land0"]
-        lift = (np.maximum(hills, 0) + np.maximum(mtn, 0)) * T.smoothstep(-6.0, 30.0, self.f["sd"])
-        h = self._erode(self.f["base"] + lift, lift)
+        for k, s in enumerate(self.m["mountains"]):
+            sy, sx, hk, env, fenv = range_relief(s, "mountain", self.seed + 500 + 37 * k, p)
+            mtn[sy, sx] = smax(mtn[sy, sx], hk, 0.2)
+            core_env[sy, sx] = np.maximum(core_env[sy, sx], env)
+            foot_env[sy, sx] = np.maximum(foot_env[sy, sx], fenv)
+        pass_d = self.f["pass_d"]
+        saddle_m = (1.0 - 0.30 * np.exp(-(road_d / 40.0) ** 2)) * (1.0 - 0.25 * np.exp(-(pass_d / 46.0) ** 2))
+        saddle_h = 1.0 - 0.28 * np.exp(-(road_d / 34.0) ** 2)
+        mtn *= saddle_m * keep
+        hills *= saddle_h * keep
+        lift = smax(hills, mtn, 0.15) * T.smoothstep(-6.0, 40.0, self.f["sd"])
+        h = self.f["base"] + lift
         # islands: a wooded central hill on each small island
+        lumps = 0.5 + 0.5 * T.fbm_at(self.xs, self.ys, 60.0, 3, seed=self.seed + 42)
         for poly in self.m["land"][1:]:
             cx = float(np.mean([q[0] for q in poly]))
             cy = float(np.mean([q[1] for q in poly]))
@@ -875,38 +845,35 @@ class World:
             dd = np.hypot(self.xs - cx, self.ys - cy)
             isl = np.exp(-(dd / (0.55 * r)) ** 2) * (0.6 + 0.4 * lumps)
             h = h + (12.0 + 0.16 * r) * isl * T.smoothstep(-2.0, 25.0, self.f["sd"])
-        # soft ceiling: peaks land at 165-180 m, nothing clips flat
-        top = p["mtn_peak"]
-        knee = top - 26.0
+        # soft ceiling: summits land at 160-179 m, nothing clips flat
+        knee = p["mtn_peak"] - 26.0
         h = np.where(h > knee, knee + 26.0 * np.tanh((h - knee) / 26.0), h)
+        land = self.f["land0"]
         self.f["h_pre"] = np.where(land, h, self.f["base"]).astype(np.float32)
-        self.f["hill_env"] = hill_env.astype(np.float32)
-        self.f["mtn_core"] = core_env.astype(np.float32)
-        self.f["mtn_foot"] = foot_env.astype(np.float32)
+        self.f["hill_env"] = (hill_env * keep).astype(np.float32)
+        self.f["mtn_core"] = (core_env * keep).astype(np.float32)
+        self.f["mtn_foot"] = (foot_env * keep).astype(np.float32)
         self.f["mtn_h"] = mtn.astype(np.float32)
         self.f["hill_h"] = hills.astype(np.float32)
         self.log("[world] relief: max %.1f m, hills max %.1f m, p99.9 mountains %.1f m"
                  % (float(self.f["h_pre"].max()), float(hills.max()),
                     float(np.percentile(self.f["h_pre"][core_env > 0.5], 99.9))))
 
-    def _erode(self, h, lift):
-        """Light droplet erosion on the 2 m grid (gullies, rounded valley floors, small alluvial
-        fans) of the whole relief; droplets start on the hills and ranges and run out onto the
-        plains.  Then talus relaxation.  Returns the eroded master-grid height."""
-        k = 4
-        hk = box_down(h, k)
-        lk = box_down(lift, k)
-        spawn = np.where(lk > 12.0, lk, 0.0) ** 0.5
-        n = int((lk > 12.0).sum() * 1.6)
-        e = erode_droplets(hk, spawn, n, self.seed + 77, unit=100.0, inertia=0.3,
-                           erode_speed=0.3, deposit_speed=0.25, steps=40, max_step=0.006,
-                           log=self.log)
-        e = thermal(e, talus=1.6, rate=0.3, iters=3, cell=float(k))
-        delta = gaussian(e - hk, 0.5) * (box_down(self.f["sd"], k) > 4.0)
-        up = smooth_up(delta, (hk.shape[0] * k, hk.shape[1] * k))
-        out = h.copy()
-        out[:up.shape[0], :up.shape[1]] += up
-        return out
+    def city_keep(self):
+        """0 at a city site -> 1 away from it: relief is eased down over a long, irregular
+        (domain-warped) falloff so a city sits in an open basin of plain, never a round crater."""
+        keep = np.ones(self.shape, np.float32)
+        warp = 26.0 * T.fbm_at(self.xs, self.ys, 75.0, 3, seed=self.seed + 71)
+        for (_k, cx, cy, s) in self.cities:
+            r_in = PAD_RADIUS[s] + 10.0
+            r_out = r_in + 190.0
+            x0, x1 = int(max(0, cx - r_out - 40)), int(min(MAP_W + 1, cx + r_out + 40))
+            y0, y1 = int(max(0, cy - r_out - 40)), int(min(MAP_H + 1, cy + r_out + 40))
+            sl = (slice(y0, y1), slice(x0, x1))
+            dd = np.hypot(self.xs[sl] - cx, self.ys[sl] - cy) + warp[sl]
+            k = 0.03 + 0.97 * T.smoothstep(r_in, r_out, dd) ** 1.2
+            keep[sl] = np.minimum(keep[sl], k)
+        return keep
 
     def _road_corridor_distance(self):
         """Distance to the straight city-to-city road lines (river routes excluded); the passes'
