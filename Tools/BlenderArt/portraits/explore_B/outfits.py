@@ -105,8 +105,8 @@ def warlord_armour(spec, b, surf, kd, rng, col):
     cm_z = nz - 0.13
     p, n = arm.hit((axis[0], axis[1], cm_z), (0, -1, 0))
     if p is not None and o.get("mirror", True):
-        objs.append(C.disc(p + n * 0.012, n, 0.05, "ChestMirror", [M["gold"]], col, dome=0.008))
-        objs.append(C.disc(p + n * 0.016, n, 0.034, "ChestMirrorIn", [M["iron_plain"]], col, dome=0.006))
+        objs.append(C.disc(p + n * 0.012, n, 0.036, "ChestMirror", [M["bronze"]], col, dome=0.006))
+        objs.append(C.disc(p + n * 0.015, n, 0.028, "ChestMirrorIn", [M["gold"]], col, dome=0.006))
     # 5. pauldrons
     pd = C.pauldrons(arm, lm, [M["iron_plain"]], col, lames=o.get("lames", 4), lame_h=0.034,
                      span=(15, 165), out0=0.012)
@@ -121,18 +121,19 @@ def warlord_armour(spec, b, surf, kd, rng, col):
     post = []
     if hinfo is not None and o.get("tassel", True):
         def tassel(surf2, rng2, col2, hinfo=hinfo):
-            root = hinfo["finial"] - np.array([0, 0, 0.012], np.float32)
-            S = 1600
-            roots = root + rng2.normal(size=(S, 3)).astype(np.float32) * np.array([0.004, 0.004, 0.002], np.float32)
+            root = hinfo["top"] + np.array([0, 0, 0.022], np.float32)
+            S = 2600
             ang = rng2.random(S) * 6.283
-            d = np.stack([np.cos(ang), np.sin(ang), np.full(S, 0.35)], 1).astype(np.float32)
-            L = 0.09 * (0.7 + 0.5 * rng2.random(S))
-            pts = HR.grow(roots, d, L, 12, gravity=0.85, stiff=0.7, rng=rng2, noise=0.05)
-            pts = HR.clump(pts, 40, 0.5, rng2)
-            pts = HR.collide(surf2, pts, 0.003)
-            tm = HR.hair_material("Tassel", melanin=0.25, redness=1.0, roughness=0.32,
-                                  tint=(1.0, 0.15, 0.1), random_color=0.15)
-            ob = HR.curves_object("Tassel", pts, 0.00028, 0.0001, tm, col2)
+            rr = 0.010 * np.sqrt(rng2.random(S))
+            roots = root + np.stack([np.cos(ang) * rr, np.sin(ang) * rr, np.zeros(S)], 1).astype(np.float32)
+            d = np.stack([np.cos(ang), np.sin(ang), np.full(S, 1.1)], 1).astype(np.float32)
+            L = 0.075 * (0.75 + 0.4 * rng2.random(S))
+            pts = HR.grow(roots, d, L, 14, gravity=1.0, stiff=0.55, rng=rng2, noise=0.02)
+            pts = HR.clump(pts, 60, 0.55, rng2)
+            pts = HR.collide(surf2, pts, 0.004)
+            tm = HR.hair_material("Tassel", melanin=0.05, redness=1.0, roughness=0.3,
+                                  tint=(0.85, 0.05, 0.03), random_color=0.1)
+            ob = HR.curves_object("Tassel", pts, 0.0003, 0.00015, tm, col2)
             ob.pass_index = 3
         post.append(tassel)
     if o.get("fur", True):
@@ -163,3 +164,127 @@ def warlord_armour(spec, b, surf, kd, rng, col):
         post.append(fur)
     collide = [o2 for o2 in objs if o2 is not None and o2.type == "MESH"]
     return dict(collide=collide, frame=[ao], helmet=hinfo, post=post)
+
+
+def _collar_path(shell, axis, z_top, depth, side, cross_to=-22.0, back=178.0, turn=40.0, steps=48):
+    cx, cy = axis
+    pts, nrs = [], []
+    for t in np.linspace(0.0, 1.0, steps):
+        if t < 0.45:
+            th = math.radians(back - (back - turn) * (t / 0.45))
+            z = z_top - 0.004 * (t / 0.45)
+        else:
+            f = (t - 0.45) / 0.55
+            th = math.radians(turn - (turn - cross_to) * f)
+            z = z_top - 0.004 - depth * (f ** 1.1)
+        th *= side
+        p, n = shell.hit((cx, cy, z), (math.sin(th), -math.cos(th), 0))
+        if p is None:
+            continue
+        pts.append(p)
+        nrs.append(n)
+    return np.array(pts, np.float32), _norm(np.array(nrs, np.float32))
+
+
+def robe(spec, b, surf, kd, rng, col):
+    """Layered silk robe with crossed (jiaoling, left-over-right) collars; options: shawl, beads,
+    fur, headwear ('crown' for scholars/sages, 'pins' for court ladies)."""
+    o = spec["outfit"]
+    lm = b["lm"]
+    bust = b["body"]
+    axis = (0.0, float(lm["j_neck"][1]) + 0.004)
+    nz = float(lm["j_neck"][2])
+    objs = []
+    layers = o["layers"]
+    shells = []
+    M = shading.costume_materials(kd, o.get("palette", {}))
+    for i, L in enumerate(layers):
+        mat = shading.cloth("Robe%d" % i, L["color"], sheen=L.get("sheen", 0.5), rough=L.get("rough", 0.6),
+                            key_dir=kd, pattern=L.get("pattern"), pattern_color=L.get("pattern_color"),
+                            pattern_scale=L.get("pattern_scale", 14.0))
+        sh = C.body_shell(bust, surf, lm, thickness=L.get("thickness", 0.006 + 0.006 * i),
+                          neck_z=nz + L.get("neck", 0.01 - 0.008 * i), front_dip=L.get("dip", 0.03 + 0.04 * i),
+                          name="RobeShell%d" % i, widen=L.get("widen", 0.03 * i))
+        if L.get("folds", 0) > 0:
+            C.robe_folds(sh, lm, amount=L["folds"], count=L.get("fold_count", 9), seed=i + 3)
+        shells.append(sh)
+        objs.append(sh.obj([mat], col, solidify=0.003, subdiv=1, name="Robe%d" % i))
+        # collar band of this layer
+        band = shading.cloth("Band%d" % i, L.get("band", L["color"]), sheen=0.5, rough=0.55, key_dir=kd,
+                             border="v", border_color=L.get("border", "#C9A24A"),
+                             border_width=L.get("border_width", 0.28), pattern_scale=L.get("band_scale", 9.0))
+        for side in (1, -1):
+            over = (side > 0)
+            p, n = _collar_path(sh, axis, nz + L.get("collar_z", 0.012 - 0.006 * i), L.get("depth", 0.06 + 0.035 * i),
+                                side, cross_to=L.get("cross_to", -20.0 - 4 * i))
+            if len(p) < 4:
+                continue
+            outo = 0.004 + (0.003 if over else 0.0)
+            objs.append(C.ribbon(p + n * outo, n, L.get("band_w", 0.02 + 0.007 * i),
+                                 name="Band%d_%s" % (i, "l" if over else "r"), mats=[band], col=col,
+                                 thickness=0.004, rows=3))
+    outer = shells[-1]
+    post = []
+    if o.get("beads"):
+        bk = o["beads"]
+        drop = bk.get("drop", 0.16)
+        th = np.radians(np.linspace(-175, 175, 90))
+        P, N = [], []
+        for t in th:
+            z = nz - 0.012 - drop * (math.cos(t / 2) ** 2.2)
+            p, n = outer.hit((axis[0], axis[1], z), (math.sin(t), -math.cos(t), 0))
+            if p is not None:
+                P.append(p + _norm(n) * 0.010)
+                N.append(_norm(n))
+        if len(P) > 3:
+            bm = shading.metal("Bead", bk.get("color", (0.12, 0.045, 0.02)), rough=0.35) if bk.get("metal") else \
+                shading.cloth("BeadWood", bk.get("hex", "#4A2416"), sheen=0.0, rough=0.3, painter=False)
+            objs.append(C.beads(np.array(P), np.array(N), bk.get("r", 0.0055), "Beads", [bm], col,
+                                big_every=bk.get("big_every", 0)))
+    hw = o.get("headwear")
+    hinfo = None
+    if hw == "crown":
+        top = np.asarray(lm["eye_c"], np.float32) + np.asarray(o.get("crown_at", (0, 0.035, 0.150)), np.float32)
+        cm = shading.cloth("CrownWood", o.get("crown_color", "#1E1612"), sheen=0.1, rough=0.35, painter=False)
+        objs += C.crown(top, "Crown", [cm], col, scale=o.get("crown_scale", 1.0), pin_mat=M["gold"],
+                        tilt=0.1)
+        hinfo = {"top": top}
+    if hw == "pins":
+        knot = np.asarray(lm["eye_c"], np.float32) + np.asarray(spec["groom"]["scalp"].get("knot"), np.float32)
+
+        def pins(surf2, rng2, col2, knot=knot):
+            gold = M["gold"]
+            jade = shading.cloth("Jade", "#5F9E86", sheen=0.0, rough=0.15, painter=False)
+            pearl = shading.cloth("Pearl", "#E8E0D0", sheen=0.3, rough=0.2, painter=False)
+            petal = shading.cloth("Petal", o.get("flower", "#E7A3B0"), sheen=0.6, rough=0.5, painter=False)
+            bun_c = knot + np.array([0, 0, 0.02], np.float32)
+            out = []
+            for k, (ang, el, L, side) in enumerate([(200, 25, 0.12, 1), (-20, 20, 0.11, -1), (160, 40, 0.09, 1),
+                                                    (30, 35, 0.08, -1)]):
+                a = math.radians(ang)
+                d = np.array([math.cos(a), math.sin(a) * 0.4, math.sin(math.radians(el))], np.float32)
+                d /= np.linalg.norm(d)
+                p0 = bun_c + d * 0.065
+                p1 = bun_c - d * (L - 0.065)
+                out += C.rod(p0, p1, 0.0016, "Pin%d" % k, [gold if k % 2 == 0 else jade], col2, head=0.0)
+                # ornament head: flower or jade bead
+                if k % 2 == 0:
+                    out += C.flower(p0, d, 0.010, "PinFl%d" % k, [gold], col2, petals=6, center_mat=pearl)
+                    if k == 0:
+                        out += C.dangle(p0 + d * 0.004, 0.06, "Buyao", [gold], col2, n_beads=7, r=0.0019,
+                                        sway=(0.004, -0.006))
+                        out += C.dangle(p0 + d * 0.004 + np.array([0.006, 0, 0]), 0.05, "Buyao2", [pearl], col2,
+                                        n_beads=6, r=0.0021, sway=(0.008, -0.004))
+                else:
+                    out.append(C.sphere(p0, 0.0045, "PinB%d" % k, [jade], col2))
+            # silk flowers tucked at the side of the bun
+            for k, off in enumerate([(-0.045, -0.012, 0.0), (-0.038, 0.005, 0.018), (0.042, 0.0, 0.005)]):
+                c = bun_c + np.array(off, np.float32)
+                n = _norm(c - bun_c + np.array([0, -0.03, 0.01], np.float32))
+                out += C.flower(c, n, 0.013 - 0.002 * k, "Flower%d" % k, [petal], col2, center_mat=gold)
+            for ob in out:
+                if ob is not None:
+                    ob.pass_index = 5
+        post.append(pins)
+    collide = [x for x in objs if x is not None and x.type == "MESH"]
+    return dict(collide=collide, frame=[outer.obj] if False else [], helmet=hinfo, post=post)

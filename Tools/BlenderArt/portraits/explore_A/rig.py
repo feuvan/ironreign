@@ -21,11 +21,11 @@ def setup_render(w=384, h=480, ss=2, samples=96, threshold=0.02, view="AgX", loo
     cy.adaptive_threshold = threshold
     cy.adaptive_min_samples = 24
     cy.use_denoising = False
-    cy.max_bounces = 8
-    cy.diffuse_bounces = 2
+    cy.max_bounces = 6
+    cy.diffuse_bounces = 1
     cy.glossy_bounces = 2
-    cy.transmission_bounces = 6
-    cy.transparent_max_bounces = 8
+    cy.transmission_bounces = 4
+    cy.transparent_max_bounces = 6
     cy.volume_bounces = 0
     cy.sample_clamp_direct = 0.0
     cy.sample_clamp_indirect = 3.0

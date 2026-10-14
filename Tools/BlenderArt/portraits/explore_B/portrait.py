@@ -31,7 +31,10 @@ def build_identity(d):
     return i
 
 
-def groom(spec, b, surf, mats, rng, col, helmet_info=None):
+def groom(spec, b, surf, mats, rng, col, helmet_info=None, csurf=None):
+    """``surf`` = skin only (scalp/brows/lashes follow the skin), ``csurf`` = skin + costume
+    (beards and locks must fall over the armour / robe)."""
+    csurf = csurf or surf
     g = spec.get("groom", {})
     lm = b["lm"]
     objs = []
@@ -40,9 +43,9 @@ def groom(spec, b, surf, mats, rng, col, helmet_info=None):
         objs.append(HR.make("Brows", HR.brows(surf, lm, rng, **g.get("brows_kw", {})), mats["brow"], col))
     objs.append(HR.make("Lashes", HR.lashes(surf, lm, rng, **g.get("lash_kw", {})), mats["lash"], col))
     if g.get("beard"):
-        objs.append(HR.make("Beard", HR.beard(surf, lm, rng, **g["beard"]), mats["beard"], col))
+        objs.append(HR.make("Beard", HR.beard(csurf, lm, rng, **g["beard"]), mats["beard"], col))
     if g.get("moustache"):
-        objs.append(HR.make("Moustache", HR.moustache(surf, lm, rng, **g["moustache"]), mats["beard"], col))
+        objs.append(HR.make("Moustache", HR.moustache(csurf, lm, rng, **g["moustache"]), mats["beard"], col))
     sc = g.get("scalp")
     if sc:
         knot = np.asarray(lm["eye_c"], np.float32) + np.asarray(sc.get("knot", (0, 0.035, 0.125)), np.float32)
@@ -53,7 +56,7 @@ def groom(spec, b, surf, mats, rng, col, helmet_info=None):
             off = np.asarray(bk.pop("offset", (0, 0, 0.012)), np.float32)
             objs.append(HR.make("Bun%d" % i, HR.bun(knot + off, rng, **bk), hm, col))
     if g.get("side_locks"):
-        objs.append(HR.make("Locks", HR.side_locks(surf, lm, rng, **g["side_locks"]), hm, col))
+        objs.append(HR.make("Locks", HR.side_locks(csurf, lm, rng, **g["side_locks"]), hm, col))
     return [o for o in objs if o is not None]
 
 
@@ -116,7 +119,7 @@ def build(spec, preview=False, out=None):
     csurf = HR.Surface([b["body"]] + cost.get("collide", []),
                        attrs=["z_beard", "z_moustache", "z_brow", "z_lash", "z_scalp", "z_goatee"])
     hm = hair_mats(spec, kd)
-    hobjs = groom(spec, b, csurf, hm, rng, col, cost.get("helmet"))
+    hobjs = groom(spec, b, surf, hm, rng, col, cost.get("helmet"), csurf=csurf)
     for o in hobjs:
         o.pass_index = 3
     times["hair"] = time.time() - t2
@@ -150,6 +153,13 @@ def render(spec, out, preview=False):
     t = time.time()
     bpy.ops.render.render(write_still=True)
     st["times"]["render"] = time.time() - t
+    t = time.time()
+    from . import finish
+    fin = os.path.join(out, "%s.png" % name)
+    small = os.path.join(out, "%s_192x240.png" % name)
+    finish.finish(raw, os.path.join(out, "%s_masks0001.png" % name), os.path.join(out, "%s_eye0001.png" % name),
+                  st["comp"]["bg"], fin, small, spec.get("finish", {}), seed=spec.get("seed", 1))
+    st["times"]["finish"] = time.time() - t
     print("[B] %s times %s" % (name, {k: round(v, 1) for k, v in st["times"].items()}))
     return st
 

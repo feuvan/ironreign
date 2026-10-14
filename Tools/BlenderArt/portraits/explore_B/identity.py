@@ -28,6 +28,9 @@ class Identity:
     skin_ruddy: float = 0.4           # redness of cheeks / nose / ears
     weathered: float = 0.3            # sun/wind: darker, redder, rougher (soldiers)
     wrinkles: float = 0.0             # 0..1 (age-driven by default)
+    frown: float = 0.0                # glabella creases + brow knot (stern / scheming)
+    smile: float = 0.0                # deeper nasolabial folds (jovial)
+    gaunt: float = 0.0                # hollow cheeks (ascetic, old)
     beard_shadow: float = 0.0         # blue-grey stubble tint (shaved men)
     makeup: float = 0.0               # heroines: rouge, lip colour, lid shadow
     lip_color: str = "#A4524A"
@@ -36,6 +39,10 @@ class Identity:
     hair_melanin: float = 0.95
     hair_redness: float = 0.15
     grey: float = 0.0                 # fraction of grey/white strands
+    # painted hair-root masses in the skin (painters block the mass in before the strands)
+    brow_paint: float = 0.75
+    scalp_paint: float = 0.0
+    beard_paint: float = 0.0
 
 
 def wrinkle_default(age):

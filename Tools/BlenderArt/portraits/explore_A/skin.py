@@ -148,22 +148,38 @@ def skin_material(idn, name="Skin"):
     return m
 
 
-def eye_material(eye_png, iris_dark=0.55, name="Eye"):
+def eye_materials(eye_png, iris_dark=0.5, name="Eye"):
+    """(eyeball, cornea) materials.  The MakeHuman eye is an inner textured ball plus a cornea
+    shell (alpha 0 in the texture): the shell becomes a clear fresnel-glossy layer that carries the
+    catchlights."""
     m = bpy.data.materials.new(name)
     nb = NB(m)
     img = bpy.data.images.load(eye_png, check_existing=True)
     tex = nb.image(img)[0]
     hsv = nb.node("ShaderNodeSeparateColor", mode="HSV")
     nb.link(tex, hsv.inputs[0])
-    iris = nb.maprange(hsv.outputs[1], 0.35, 0.6)
-    # dark brown iris; sclera toned down to a warm ivory
-    ir = nb.hsv(tex, h=0.52, s=0.75, v=iris_dark)
-    scl = nb.mix(nb.hsv(tex, h=0.5, s=0.55, v=0.82), (0.80, 0.74, 0.68), 0.25)
+    iris = nb.maprange(hsv.outputs[1], 0.3, 0.55)
+    # dark brown iris; sclera toned down to a warm ivory (never paper white)
+    ir = nb.hsv(tex, h=0.53, s=0.85, v=iris_dark)
+    scl = nb.mix(nb.hsv(tex, h=0.5, s=0.6, v=0.78), (0.78, 0.72, 0.66), 0.3)
     col = nb.mix(scl, ir, iris)
-    p = nb.principled(Base_Color=col, Roughness=0.25, Specular_IOR_Level=0.5, Coat_Weight=1.0,
-                      Coat_Roughness=0.03, Coat_IOR=1.38, Subsurface_Weight=0.0)
+    p = nb.principled(Base_Color=col, Roughness=0.35, Specular_IOR_Level=0.3)
     nb.output(p.outputs[0])
-    return m
+    c = bpy.data.materials.new(name + "Cornea")
+    nb2 = NB(c)
+    tr = nb2.node("ShaderNodeBsdfTransparent")
+    gl = nb2.node("ShaderNodeBsdfGlossy", distribution="GGX")
+    gl.inputs["Roughness"].default_value = 0.015
+    fr = nb2.node("ShaderNodeLayerWeight")
+    fr.inputs["Blend"].default_value = 0.12
+    fac = nb2.math("ADD", fr.outputs["Fresnel"], 0.06, clamp=True)
+    mx = nb2.node("ShaderNodeMixShader")
+    nb2.link(fac, mx.inputs[0])
+    nb2.link(tr.outputs[0], mx.inputs[1])
+    nb2.link(gl.outputs[0], mx.inputs[2])
+    nb2.output(mx.outputs[0])
+    c.blend_method = "BLEND"
+    return m, c
 
 
 def skin_material_tex(idn, A_img, R_img, H_img, name="Skin", sss="BURLEY", bump=1.0):

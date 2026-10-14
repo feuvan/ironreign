@@ -23,8 +23,10 @@ namespace IronEnvironmentDetail
 	// Late-afternoon sun: low enough for long soft shadows, higher in summer.
 	constexpr float MonthSunElevation[12] = {22.0f, 26.0f, 30.0f, 35.0f, 39.0f, 41.0f, 39.0f, 34.0f, 29.0f, 25.0f, 21.0f, 19.0f};
 	constexpr float MonthSunLux[12] = {7.0f, 7.4f, 7.9f, 8.4f, 8.8f, 9.0f, 9.0f, 8.6f, 8.1f, 7.6f, 7.1f, 6.8f};
-	constexpr float MonthSnow[12] = {0.55f, 0.2f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.25f, 0.7f, 0.9f};
-	constexpr float MonthAutumn[12] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.05f, 0.35f, 0.75f, 1.0f, 0.65f, 0.3f, 0.1f};
+	// Snow and autumn colour stay inside the seasons IronSim::SeasonName prints (month 1 = "Spring" keeps only a late
+	// dusting of snow, month 10 = "Winter" is already more snow than leaves).
+	constexpr float MonthSnow[12] = {0.15f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.45f, 0.75f, 0.9f};
+	constexpr float MonthAutumn[12] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.05f, 0.35f, 0.75f, 1.0f, 0.3f, 0.1f, 0.0f};
 	constexpr float MonthWetness[12] = {0.2f, 0.3f, 0.45f, 0.4f, 0.5f, 0.65f, 0.4f, 0.2f, 0.15f, 0.15f, 0.2f, 0.2f};
 	constexpr float MonthFogDensity[12] = {0.0032f, 0.003f, 0.0028f, 0.0022f, 0.0018f, 0.0019f, 0.0016f, 0.0018f, 0.0022f, 0.0026f, 0.003f, 0.0034f};
 	constexpr float MonthCloudCoverage[12] = {0.55f, 0.5f, 0.45f, 0.4f, 0.38f, 0.45f, 0.35f, 0.3f, 0.32f, 0.4f, 0.5f, 0.58f};

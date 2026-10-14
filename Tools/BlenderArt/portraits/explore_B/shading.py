@@ -56,8 +56,8 @@ def skin(ident, key_dir, name="Skin"):
     rest = nb.attr("rest", out="Vector")
     tone = ident.skin_tone
     # base albedo (linear): ivory .. warm tan; East Asian skin = yellow-olive undertone
-    pale = (0.62, 0.42, 0.30)
-    tan = (0.40, 0.22, 0.13)
+    pale = (0.50, 0.33, 0.23)
+    tan = (0.30, 0.15, 0.08)
     base = tuple(p + (t - p) * tone for p, t in zip(pale, tan))
     w = ident.weathered
     base = (base[0] * (1 - 0.12 * w), base[1] * (1 - 0.18 * w), base[2] * (1 - 0.22 * w))
@@ -79,6 +79,18 @@ def skin(ident, key_dir, name="Skin"):
     if ident.beard_shadow > 0:
         bs = nb.math("MULTIPLY", nb.math("MAXIMUM", z("beard"), z("moustache")), ident.beard_shadow)
         col = nb.mix(col, (0.22, 0.20, 0.20), bs)
+    # hair-root masses (dark under brows / scalp / beard so gaps between strands read as hair)
+    mel = ident.hair_melanin
+    hc = (0.012 + 0.10 * (1 - mel), 0.009 + 0.07 * (1 - mel), 0.007 + 0.05 * (1 - mel))
+    gc = (0.30, 0.29, 0.28)
+    hcol = tuple(h + (g - h) * ident.grey * 0.6 for h, g in zip(hc, gc))
+    if ident.brow_paint > 0:
+        col = nb.mix(col, hcol, nb.math("MULTIPLY", z("brow"), ident.brow_paint))
+    if ident.scalp_paint > 0:
+        col = nb.mix(col, hcol, nb.math("MULTIPLY", z("scalp"), ident.scalp_paint))
+    if ident.beard_paint > 0:
+        col = nb.mix(col, hcol, nb.math("MULTIPLY", nb.math("MAXIMUM", z("beard"), z("moustache")),
+                                        ident.beard_paint))
     # lips
     lipc = lin(ident.lip_color)
     lipmix = 0.55 + 0.35 * ident.makeup

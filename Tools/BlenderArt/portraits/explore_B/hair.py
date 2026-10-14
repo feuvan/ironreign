@@ -283,10 +283,11 @@ def beard(surf, lm, rng, density=1.0, chin_len=0.12, cheek_len=0.05, neck_len=0.
     fwd = np.array([0, -1, 0], np.float32)
     d = nor * 0.55 + down * 0.6 + out * 0.15 + fwd * forward * chin_f[:, None]
     pts = grow(pos, d, L, P, gravity=droop, stiff=0.8, curl=curl, curl_freq=2.0, rng=rng,
-               noise=0.04)
-    pts = clump(pts, max(8, n // 40), clumping, rng, power=1.3, spread=0.15)
+               noise=0.015)
+    pts = clump(pts, max(8, n // 60), clumping, rng, power=1.1, spread=0.1)
     pts = collide(surf, pts, 0.002)
-    grey = np.clip(1 - chin_f, 0, 1) * 0.3
+    # grey streaks at the corners of the chin and in the sideburns (not uniform salt & pepper)
+    grey = np.clip(np.abs(pos[:, 0] - chin[0]) / 0.04, 0, 1) * 0.5
     return pts, dict(r_root=r_root, r_tip=r_tip, attrs={"greyness": grey})
 
 
@@ -310,8 +311,8 @@ def moustache(surf, lm, rng, length=0.045, droop=0.6, density=1.0, P=10, clumpin
     return pts, dict(r_root=r_root, r_tip=r_tip, attrs={"greyness": np.zeros(len(pts))})
 
 
-def brows(surf, lm, rng, length=0.011, density=1.0, P=6, lift=0.25, droop=0.0, tail_len=1.0,
-          r_root=0.00011, r_tip=0.00004, count=900, thickness=1.0, angle=0.0):
+def brows(surf, lm, rng, length=0.010, density=1.0, P=6, lift=0.15, droop=0.0, tail_len=1.0,
+          r_root=0.00014, r_tip=0.00005, count=1500, thickness=1.0, angle=0.0):
     """Brow strands lie along the skin: medial ones point up, the body points lateral, the tail
     slightly down.  ``angle`` > 0 raises the lateral end (fierce), < 0 drops it (worried/sage)."""
     w = surf.A["z_brow"] * thickness
@@ -329,10 +330,11 @@ def brows(surf, lm, rng, length=0.011, density=1.0, P=6, lift=0.25, droop=0.0, t
     tail = np.clip((ax - 0.045) / 0.015, 0, 1)[:, None]
     d = lat * (1 - medial * 0.7) + up * (lift + medial * 0.9 - tail * 0.25 + angle * (ax[:, None] / 0.05))
     # flatten onto the skin
-    d = d - nor * np.sum(d * nor, 1, keepdims=True) + nor * 0.12
+    d = d - nor * np.sum(d * nor, 1, keepdims=True) + nor * 0.05
     L = length * (0.6 + 0.4 * rng.random(n)) * (1 + (tail_len - 1) * tail[:, 0])
-    pts = grow(pos, d, L, P, gravity=droop, stiff=1.0, rng=rng, noise=0.05)
-    pts = collide(surf, pts, 0.0007)
+    pts = grow(pos, d, L, P, gravity=droop, stiff=1.0, rng=rng, noise=0.03)
+    pts = clump(pts, max(20, n // 12), 0.35, rng)
+    pts = collide(surf, pts, 0.0005)
     return pts, dict(r_root=r_root, r_tip=r_tip, attrs={"greyness": np.zeros(len(pts))})
 
 

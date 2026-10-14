@@ -84,7 +84,7 @@ def masks():
     global _MASKS
     if _MASKS is not None:
         return _MASKS
-    cp = mh._cache_path("zones_v8")
+    cp = mh._cache_path("zones_v9")
     if os.path.exists(cp):
         d = np.load(cp)
         _MASKS = {k: d[k] for k in d.files}
@@ -171,8 +171,8 @@ def _brow_mask(V):
     ax = np.abs(x)
     # brow centre line (|x| -> y): rises from the head of the brow, arches, falls at the tail
     cy = np.interp(ax, [0.08, 0.20, 0.35, 0.50, 0.62], [7.47, 7.52, 7.56, 7.54, 7.46])
-    half = np.interp(ax, [0.08, 0.20, 0.45, 0.62], [0.050, 0.055, 0.040, 0.022])
-    m = _ss(half + 0.02, half - 0.01, np.abs(y - cy)) * _ss(0.05, 0.10, ax) * _ss(0.68, 0.60, ax)
+    half = np.interp(ax, [0.08, 0.20, 0.45, 0.62], [0.040, 0.044, 0.030, 0.012])
+    m = _ss(half + 0.012, half - 0.008, np.abs(y - cy)) * _ss(0.06, 0.10, ax) * _ss(0.66, 0.58, ax)
     return m * (z > 0.9)
 
 

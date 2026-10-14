@@ -63,7 +63,7 @@ def cycles(samples=64, w=384, h=480, ss=2, adaptive=0.02, clamp_direct=0.0, clam
     sc.view_settings.exposure = exposure
     sc.render.image_settings.file_format = "PNG"
     sc.render.image_settings.color_mode = "RGBA"
-    sc.render.image_settings.color_depth = "16"
+    sc.render.image_settings.color_depth = "8"
     sc.render.dither_intensity = 0.0
     try:
         sc.cycles_curves.shape = "RIBBONS"

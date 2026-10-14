@@ -35,7 +35,7 @@ MASK_SOURCES = {
     "m_lids": ["eyes/l-eye-height2-incr", "eyes/r-eye-height2-incr"],
 }
 
-CROP_Y = 4.0  # MH units: keep the bust above the upper chest
+CROP_Y = 3.3  # MH units: keep the bust down to mid chest (garment shells need it)
 
 
 def region_masks():
@@ -182,6 +182,9 @@ def build(idn, subdiv=2, collection=None):
             for t in efu[k]:
                 loops_uv.append(euv[t])
         uvl.data.foreach_set("uv", np.array(loops_uv, np.float32).ravel())
+        fuv = np.array([euv[list(efu[k])].mean(0) for k in fsel])
+        corn = (fuv[:, 0] > 0.85) & (fuv[:, 1] < 0.15)
+        me.polygons.foreach_set("material_index", corn.astype(np.int32))
         for p in me.polygons:
             p.use_smooth = True
         ob = _new_obj("Eye" + side, me, collection)

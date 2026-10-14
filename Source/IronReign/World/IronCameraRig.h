@@ -43,6 +43,11 @@ public:
 	void FocusOn(const FVector2D& MapPointM, float DistanceM, float DurationSeconds = 1.2f);
 	/** Jumps without animation. */
 	void SnapTo(const FVector2D& MapPointM, float DistanceM);
+	/**
+	 * Re-reads the ground under the current target at once (no spring) and re-poses the camera. Call when the terrain
+	 * heights arrive after a SnapTo that could only see sea level. Works while the rig's tick is disabled.
+	 */
+	void ResnapGround();
 
 	/** Current camera-to-target distance in cm, after terrain clearance (drives the tilt-shift focus). */
 	float GetCameraDistanceCm() const;

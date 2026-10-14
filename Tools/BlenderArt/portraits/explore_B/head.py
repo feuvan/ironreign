@@ -140,10 +140,11 @@ def build(ident, col=None, subdiv=2, crop_y=None):
         at.data.foreach_set("value", arr[used].astype(np.float32))
     if subdiv:
         m = ob.modifiers.new("Subdiv", "SUBSURF")
-        m.levels = 1
+        m.levels = subdiv
         m.render_levels = subdiv
         m.uv_smooth = "PRESERVE_BOUNDARIES"
         m.boundary_smooth = "ALL"
+        displace_wrinkles(ob, ident)
     # eyes (high-poly proxy)
     px = mh.load_proxy("eyes/high-poly/high-poly.mhclo")
     ev = mh.to_blender(px.fit(v))
@@ -169,6 +170,44 @@ def build(ident, col=None, subdiv=2, crop_y=None):
         em.render_levels = 1
         eyes.append(eo)
     return dict(body=ob, eyes=eyes, lm=lm, verts_mh=v, used=used, base=base)
+
+
+def displace_wrinkles(ob, ident):
+    """Apply the subdivision and displace the dense mesh by the wrinkle height field."""
+    from . import wrinkles
+    from . import meshutil as MU
+    dg = bpy.context.evaluated_depsgraph_get()
+    ev = ob.evaluated_get(dg)
+    me = bpy.data.meshes.new_from_object(ev, preserve_all_data_layers=True, depsgraph=dg)
+    old = ob.data
+    ob.modifiers.clear()
+    ob.data = me
+    bpy.data.meshes.remove(old)
+    n = len(me.vertices)
+    co = np.zeros(n * 3, np.float32)
+    me.vertices.foreach_get("co", co)
+    co = co.reshape(-1, 3)
+    rest = np.zeros(n * 3, np.float32)
+    me.attributes["rest"].data.foreach_get("vector", rest)
+    rest = rest.reshape(-1, 3)
+    Z = {}
+    for k in ("forehead", "neck"):
+        a = np.zeros(n, np.float32)
+        me.attributes["z_" + k].data.foreach_get("value", a)
+        Z[k] = a
+    h = wrinkles.height(rest, Z, age_w=ident.wrinkles, frown=ident.frown, smile=ident.smile,
+                        gaunt=ident.gaunt)
+    if np.abs(h).max() > 0:
+        me.update()
+        nr = np.zeros(n * 3, np.float32)
+        me.vertices.foreach_get("normal", nr)
+        nr = nr.reshape(-1, 3)
+        co = co + nr * h[:, None]
+        me.vertices.foreach_set("co", co.ravel())
+        me.update()
+    a = me.attributes.get("wrinkle") or me.attributes.new("wrinkle", "FLOAT", "POINT")
+    a.data.foreach_set("value", np.clip(-h / 0.0012, 0, 1).astype(np.float32))
+    me.polygons.foreach_set("use_smooth", [True] * len(me.polygons))
 
 
 def aim_eyes(eyes, target, amount=0.8, up_bias=0.0):

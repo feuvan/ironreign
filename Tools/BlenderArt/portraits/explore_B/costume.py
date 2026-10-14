@@ -54,6 +54,10 @@ class Shell:
         loc, nor, idx, dist = self.bvh.ray_cast(o, -d, far * 1.5)
         if loc is None:
             return None, None
+        # reject hits on the far side of the axis (the ray missed this side and went through)
+        rel = loc - Vector(origin_axis)
+        if rel.x * d.x + rel.y * d.y < 0:
+            return None, None
         if nor.dot(d) < 0:
             nor = -nor
         return np.array(loc, np.float32), np.array(nor, np.float32)
@@ -133,7 +137,7 @@ def lamellar(shell, axis_xy, z_rows, theta_range, plate_w=0.021, plate_h=0.052, 
     """Rows of overlapping plates on ``shell``.  ``z_rows`` top-to-bottom row centre heights;
     ``theta_range`` (deg) around the vertical axis through ``axis_xy`` (0 = front, + = left)."""
     rng = rng or np.random.default_rng(0)
-    gV, gF, guv = _plate_grid(plate_w, plate_h)
+    gV, gF, guv = _plate_grid(plate_w, plate_h, dome=0.0007, round_bottom=0.3)
     Vall, Fall, UVall, MI, RID = [], [], [], [], []
     off = 0
     nrows = len(z_rows)
@@ -347,7 +351,7 @@ def head_extents(bust, lm):
     return H.min(0), H.max(0)
 
 
-def helmet(bust, lm, mats, col=None, clearance=0.016, rim_front=0.008, rim_side=0.02,
+def helmet(bust, lm, mats, col=None, clearance=0.016, rim_front=0.024, rim_side=0.02,
            rim_back=-0.02, peak=0.035, ribs=8, name="Helmet", neck_guard=True, rng=None,
            guard_rows=3, crest=True):
     """Chinese iron bowl helmet: ellipsoid bowl with a raised point, bronze rim band, ribs, a
@@ -420,14 +424,14 @@ def helmet(bust, lm, mats, col=None, clearance=0.016, rim_front=0.008, rim_side=
                            mats=[mats["bronze"]], col=col, thickness=0.0025, rows=2))
     # finial (stacked turned profile) at the crown
     top = Vb[-1].mean(0)
-    prof = [(0.0, 0.000), (0.016, 0.000), (0.018, 0.006), (0.010, 0.010), (0.007, 0.020),
-            (0.011, 0.028), (0.006, 0.034), (0.004, 0.060), (0.0015, 0.075), (0.0, 0.078)]
+    prof = [(0.0, 0.000), (0.016, 0.000), (0.018, 0.005), (0.010, 0.009), (0.006, 0.016),
+            (0.010, 0.022), (0.012, 0.026), (0.004, 0.030), (0.0025, 0.046), (0.0, 0.050)]
     objs.append(lathe(prof, top, name + "_finial", [mats["gold"]], col))
     # brow plaque
     front = Vb[0, 0]
-    objs.append(plaque(front + np.array([0, -0.006, 0.026], np.float32), name + "_plaque",
-                       [mats["gold"]], col))
-    info = {"finial": top + np.array([0, 0, 0.06], np.float32), "top": top, "c": c, "rx": rx,
+    objs.append(plaque(front + np.array([0, -0.005, 0.024], np.float32), name + "_plaque",
+                       [mats["gold"]], col, w=0.026, h=0.032))
+    info = {"finial": top + np.array([0, 0, 0.027], np.float32), "top": top, "c": c, "rx": rx,
             "ry": ry, "rim": Vb[0], "cy": cy}
     if neck_guard:
         objs += neck_guard_lamellar(Vb[0], c, cy, mats, col, rows=guard_rows, rng=rng, name=name)
@@ -481,8 +485,8 @@ def plaque(center, name, mats, col, w=0.034, h=0.04):
     return ob
 
 
-def neck_guard_lamellar(rim, c, cy, mats, col, rows=3, rng=None, name="Helmet", drop=0.11,
-                        flare=0.045, theta=(55, 305)):
+def neck_guard_lamellar(rim, c, cy, mats, col, rows=3, rng=None, name="Helmet", drop=0.085,
+                        flare=0.022, theta=(62, 298)):
     """Flared skirt of plates hanging from the helmet rim at the sides and back."""
     rng = rng or np.random.default_rng(2)
     NU = len(rim)
@@ -551,3 +555,163 @@ def disc(center, normal, radius, name, mats, col, dome=0.006, rings=6, seg=48, r
     m.thickness = 0.003
     m.offset = -1
     return ob
+
+
+# ---------------------------------------------------------------------------------------------
+# robes
+# ---------------------------------------------------------------------------------------------
+def robe_folds(shell, lm, amount=0.004, count=9, seed=0):
+    """Displace a robe shell with soft vertical drape folds that start under the collar and
+    deepen towards the chest / arms (in place)."""
+    rng = np.random.default_rng(seed)
+    V = shell.V
+    N = shell.N
+    cy = float(lm["j_neck"][1])
+    nz = float(lm["j_neck"][2])
+    th = np.arctan2(V[:, 0], -(V[:, 1] - cy))
+    ph = rng.random(3) * 6.28
+    f = (np.sin(th * count + ph[0] + 2.0 * np.sin(V[:, 2] * 25 + ph[1]))
+         + 0.5 * np.sin(th * count * 2.3 + ph[2]))
+    depth = _ss(nz - 0.02, nz - 0.12, V[:, 2])
+    shell.V = (V + N * (amount * f * depth)[:, None]).astype(np.float32)
+    shell.__init__(shell.V, shell.Q, shell.name)
+    return shell
+
+
+def beads(path, normals, radius, name, mats, col, gap=1.05, big_every=0, big_scale=1.4):
+    """String of spheres along a polyline (prayer beads)."""
+    path = np.asarray(path, np.float32)
+    seg = np.linalg.norm(np.diff(path, axis=0), axis=1)
+    s = np.concatenate([[0], np.cumsum(seg)])
+    step = 2 * radius * gap
+    centers = []
+    nrm = []
+    k = 0
+    t = 0.0
+    while t < s[-1]:
+        i = np.searchsorted(s, t) - 1
+        i = max(0, min(i, len(seg) - 1))
+        f = (t - s[i]) / max(seg[i], 1e-9)
+        centers.append(path[i] + (path[i + 1] - path[i]) * f)
+        nrm.append(normals[i])
+        r = radius * (big_scale if big_every and k % big_every == 0 else 1.0)
+        t += step * (r / radius)
+        k += 1
+    V, F = [], []
+    seg_u, seg_v = 10, 7
+    for c, n in zip(centers, nrm):
+        r = radius
+        c = np.asarray(c) + np.asarray(n) * r * 0.9
+        base = len(V)
+        for j in range(seg_v + 1):
+            phi = math.pi * j / seg_v
+            for i in range(seg_u):
+                a = 2 * math.pi * i / seg_u
+                V.append((c[0] + r * math.sin(phi) * math.cos(a), c[1] + r * math.sin(phi) * math.sin(a),
+                          c[2] + r * math.cos(phi)))
+        for j in range(seg_v):
+            for i in range(seg_u):
+                a = base + j * seg_u + i
+                b = base + j * seg_u + (i + 1) % seg_u
+                F.append((a, b, b + seg_u, a + seg_u))
+    if not V:
+        return None
+    return MU.make_mesh(name, np.array(V), F, col=col, mats=mats)
+
+
+def crown(top, name, mats, col, scale=1.0, pin_mat=None, pin_len=0.11, tilt=0.0):
+    """Small lotus / scholar's crown (xiaoguan) on the top-knot with a hairpin through it."""
+    s = scale
+    prof = [(0.0, 0.0), (0.019 * s, 0.0), (0.021 * s, 0.004 * s), (0.017 * s, 0.012 * s),
+            (0.019 * s, 0.020 * s), (0.014 * s, 0.028 * s), (0.008 * s, 0.031 * s), (0.0, 0.032 * s)]
+    objs = [lathe(prof, top, name, mats, col, seg=32)]
+    # front ridge (lotus petal plates)
+    if pin_mat is not None:
+        a = np.array(top, np.float32) + np.array([0, 0, 0.015 * s], np.float32)
+        d = np.array([1.0, 0.0, tilt], np.float32)
+        d /= np.linalg.norm(d)
+        p0, p1 = a - d * pin_len / 2, a + d * pin_len / 2
+        objs.append(rod(p0, p1, 0.0018, name + "_pin", [pin_mat], col, head=0.0045))
+    return objs
+
+
+def rod(p0, p1, r, name, mats, col, seg=10, head=0.0, head_end=1):
+    p0, p1 = np.asarray(p0, np.float32), np.asarray(p1, np.float32)
+    d = p1 - p0
+    L = float(np.linalg.norm(d))
+    d /= L
+    up = np.array([0, 0, 1.0], np.float32) if abs(d[2]) < 0.9 else np.array([1.0, 0, 0], np.float32)
+    u = _norm(np.cross(d, up))
+    v = np.cross(d, u)
+    V, F = [], []
+    rings = 8
+    for j in range(rings + 1):
+        t = j / rings
+        rr = r * (1 - 0.6 * t ** 3) if head_end == 1 else r
+        c = p0 + d * L * t
+        for i in range(seg):
+            a = 2 * math.pi * i / seg
+            V.append(tuple(c + (u * math.cos(a) + v * math.sin(a)) * rr))
+    for j in range(rings):
+        for i in range(seg):
+            a = j * seg + i
+            b = j * seg + (i + 1) % seg
+            F.append((a, b, b + seg, a + seg))
+    objs = MU.make_mesh(name, np.array(V), F, col=col, mats=mats)
+    if head > 0:
+        sph = sphere(p0 - d * head * 0.6, head, name + "_head", mats, col)
+        return [objs, sph]
+    return objs
+
+
+def sphere(c, r, name, mats, col, seg=14, rings=9, squash=1.0):
+    V, F = [], []
+    for j in range(rings + 1):
+        phi = math.pi * j / rings
+        for i in range(seg):
+            a = 2 * math.pi * i / seg
+            V.append((c[0] + r * math.sin(phi) * math.cos(a), c[1] + r * math.sin(phi) * math.sin(a),
+                      c[2] + r * squash * math.cos(phi)))
+    for j in range(rings):
+        for i in range(seg):
+            a = j * seg + i
+            b = j * seg + (i + 1) % seg
+            F.append((a, b, b + seg, a + seg))
+    ob = MU.make_mesh(name, np.array(V), F, col=col, mats=mats)
+    return ob
+
+
+def flower(c, normal, r, name, mats, col, petals=5, center_mat=None):
+    """Five-petal silk flower facing ``normal``."""
+    n = _norm(np.asarray(normal, np.float32))
+    up = np.array([0, 0, 1.0], np.float32)
+    u = _norm(np.cross(n, up if abs(n[2]) < 0.9 else np.array([1.0, 0, 0], np.float32)))
+    v = np.cross(n, u)
+    V = [tuple(c + n * r * 0.25)]
+    F = []
+    K = petals * 8
+    for i in range(K):
+        a = 2 * math.pi * i / K
+        rr = r * (0.55 + 0.45 * abs(math.cos(petals * a / 2)) ** 0.7)
+        cup = r * 0.25 * (rr / r) ** 2
+        V.append(tuple(c + (u * math.cos(a) + v * math.sin(a)) * rr + n * cup))
+    for i in range(K):
+        F.append((0, 1 + i, 1 + (i + 1) % K))
+    ob = MU.make_mesh(name, np.array(V), F, col=col, mats=mats)
+    m = ob.modifiers.new("Solid", "SOLIDIFY")
+    m.thickness = 0.0008
+    objs = [ob]
+    if center_mat is not None:
+        objs.append(sphere(c + n * r * 0.3, r * 0.22, name + "_c", [center_mat], col))
+    return objs
+
+
+def dangle(top, length, name, mats, col, n_beads=6, r=0.0018, sway=(0.0, 0.0)):
+    """Bead strand hanging from ``top`` (buyao pendant)."""
+    V = []
+    out = []
+    for k in range(n_beads):
+        t = (k + 1) / n_beads
+        p = np.asarray(top, np.float32) + np.array([sway[0] * t * t, sway[1] * t * t, -length * t], np.float32)
+        out.append(sphere(p, r * (1.4 if k == n_beads - 1 else 1.0), "%s_%d" % (name, k), mats, col, seg=8, rings=6))
+    return out

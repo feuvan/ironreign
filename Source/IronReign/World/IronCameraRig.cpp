@@ -256,3 +256,11 @@ void AIronCameraRig::SnapTo(const FVector2D& MapPointM, float DistanceM)
 	bGroundInitialized = true;
 	UpdatePose();
 }
+
+void AIronCameraRig::ResnapGround()
+{
+	GroundZM = GroundUnderTarget(CurrentTarget);
+	GroundVelocity = 0.0;
+	bGroundInitialized = true;
+	UpdatePose();
+}

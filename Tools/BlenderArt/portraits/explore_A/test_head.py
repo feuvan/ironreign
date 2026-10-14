@@ -40,14 +40,21 @@ ir = skinmaps.to_bpy("SkinR", Rg, "Non-Color")
 ih = skinmaps.to_bpy("SkinH", Hh, "Non-Color", float_buffer=True)
 b["head"].data.materials.append(skin.skin_material_tex(idn, ia, ir, ih, sss=sss))
 b["head"].pass_index = rig.PASS["skin"]
-em = skin.eye_material(os.path.join(mh.MH_DATA, "eyes", "materials", "brown_eye.png"))
+em, ec = skin.eye_materials(os.path.join(mh.MH_DATA, "eyes", "materials", "brown_eye.png"))
 for e in b["eyes"]:
     e.data.materials.append(em)
+    e.data.materials.append(ec)
     e.pass_index = rig.PASS["eyes"]
 rig.setup_render(samples=samples)
 lm = b["lm"]
 cam = rig.camera(lm)
-H.aim_eyes(b["eyes"], cam.location, 0.9)
+if "--eyecu" in sys.argv:
+    cam.data.lens = 420
+    cam.data.shift_y = 0.0
+    from mathutils import Vector
+    tgt = Vector(lm["eye_c"]) * 0.5 + Vector(lm["eye_l"]) * 0.0 + Vector(lm["eye_r"]) * 0.5
+    cam.rotation_euler = (tgt - cam.location).to_track_quat("-Z", "Y").to_euler()
+H.aim_eyes(b["eyes"], cam.location, float(os.environ.get("AIMW", "0.9")))
 rig.lights(cam, lm["eye_c"])
 print("build", time.time() - t0)
 dt = rig.render(out)

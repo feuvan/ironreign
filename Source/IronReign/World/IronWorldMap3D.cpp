@@ -38,6 +38,20 @@ namespace IronWorldMap3DDetail
 	constexpr float ArmyPickRadiusM = 20.0f;
 	constexpr float CameraStartDistanceM = 1100.0f;
 	constexpr float RingLiftM = 1.0f;
+	/** Marching armies leave and reach a city this far outside its footprint radius (gate to gate). */
+	constexpr double GateClearanceM = 14.0;
+	/** Trees are kept this far outside a city model's footprint. */
+	constexpr double TreeClearanceM = 8.0;
+	/** Radius of the tree-free ground around an army camp and a sect temple. */
+	constexpr double CampClearingM = 24.0;
+	constexpr double SectClearingM = 26.0;
+	/** Ring placement: ground samples on two circles (fractions of the ring's half size), plus the centre. */
+	constexpr int32 RingSampleCount = 16;
+	constexpr double RingSampleRadii[2] = {0.55, 0.97};
+	/** Steepest slope (rise over run) a ring is tilted to. */
+	constexpr double RingMaxSlope = 0.6;
+	/** A view target farther than this (cm) from the map camera is another scene (the battle board is 100 km away). */
+	constexpr double BlendMaxDistanceCm = 2.0e6;
 
 	FLinearColor HoverColor()
 	{
@@ -57,6 +71,37 @@ namespace IronWorldMap3DDetail
 	float CityRadius(int32 CitySize)
 	{
 		return CityRadiusM[FMath::Clamp(CitySize, 1, 3) - 1];
+	}
+
+	/** Where an army waiting in a city camps, relative to the city point: beside the walls, toward the camera. */
+	FVector2D CampOffset(int32 CitySize)
+	{
+		return FVector2D(static_cast<double>(CityRadius(CitySize)) + 18.0, 14.0);
+	}
+
+	/** Length (m) of a road's polyline from city A through its waypoints to city B; at least 1. */
+	double RoadPolylineM(const IronSim::FGameState& State, int32 Road)
+	{
+		if (Road < 0 || Road >= static_cast<int32>(State.Roads.size()))
+		{
+			return 1.0;
+		}
+		const IronSim::FRoad& Data = State.Roads[static_cast<size_t>(Road)];
+		const int32 CityCount = static_cast<int32>(State.Cities.size());
+		if (Data.A < 0 || Data.B < 0 || Data.A >= CityCount || Data.B >= CityCount)
+		{
+			return 1.0;
+		}
+		FVector2D Previous = IronWorld::FromSim(State.Cities[static_cast<size_t>(Data.A)].Position);
+		double Total = 0.0;
+		for (const IronSim::FPoint& Waypoint : Data.Points)
+		{
+			const FVector2D Current = IronWorld::FromSim(Waypoint);
+			Total += FVector2D::Distance(Previous, Current);
+			Previous = Current;
+		}
+		Total += FVector2D::Distance(Previous, IronWorld::FromSim(State.Cities[static_cast<size_t>(Data.B)].Position));
+		return FMath::Max(1.0, Total);
 	}
 
 	/** Top of a mesh above its origin, in metres, at a uniform scale. */
