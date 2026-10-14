@@ -14,8 +14,22 @@ frames, so a change that breaks the look fails the run.
 
 ## 1. The look
 
-Painterly non-photorealistic rendering over real 3D, in the style of Koei games of 1998-2004
-(Romance of the Three Kingdoms IX and Taiko Risshiden IV).
+> **Direction change: all art is now gongbi.** The user chose classical Chinese ink-and-colour painting
+> for every family: gongbi (工笔) for figures and objects, ruled-line jiehua (界画) for architecture and
+> blue-green landscape (青绿山水) for terrain and scenery. That covers portraits, the map and its sprites,
+> scenes, the battle board, UI chrome, icons and the textures of the 3D models. `docs/DESIGN.md`
+> section 8 has the silk ground, the mineral palette and the rules.
+>
+> - **Overrides:** the realistic painterly rules below (Rembrandt portrait lighting, Kuwahara paint, cast
+>   shadows) are superseded where they conflict.
+> - **Still binding:** the pipeline, units, framing, tinting, sprite and naming contracts in sections 2,
+>   3, 8, 10 and 13.
+> - **Technique:** Freestyle calligraphic ink lines with flat or toon mineral-colour washes, composited
+>   on aged silk.
+> - **Faces:** faces follow the classical figure-painting canon and never use an ethnicity preset.
+
+The earlier direction, kept for reference: painterly non-photorealistic rendering over real 3D, in the
+style of Koei games of 1998-2004 (Romance of the Three Kingdoms IX and Taiko Risshiden IV).
 
 | Family | What it must read as |
 |---|---|
