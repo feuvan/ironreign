@@ -107,72 +107,63 @@ def _cell_broad(mb, rng, cx, cy, n=105, R=0.47):
                     fold=0.22)
 
 
+def _needle(mb, rng, p, d, Ln, w=0.0055, z0=0.0, rise=0.03):
+    s = mb.n
+    px, py = -d[1] * w, d[0] * w
+    z1 = z0 + rise
+    ids = [mb.v((p[0] + px, p[1] + py, z0)), mb.v((p[0] + d[0] * Ln + px * 0.3, p[1] + d[1] * Ln + py * 0.3, z1)),
+           mb.v((p[0] + d[0] * Ln - px * 0.3, p[1] + d[1] * Ln - py * 0.3, z1)), mb.v((p[0] - px, p[1] - py, z0))]
+    mb.face(ids[::-1], "Leaf", None, True)
+    mb.set_attr("tone", s, mb.n, rng.random())
+    for vid, al in zip(ids, (0.0, 1.0, 1.0, 0.0)):
+        mb.vattr.setdefault("along", {})[vid] = al
+
+
 def _cell_pine(mb, rng, cx, cy, R=0.47):
-    """Pine pad: twigs radiating from the centre, each densely set with needle fascicles."""
-    for k in range(rng.randint(6, 8)):
-        a = TAU * k / 7 + rng.uniform(-0.3, 0.3)
-        Lt = R * rng.uniform(0.55, 0.85)
-        pts = []
-        for j in range(6):
-            t = j / 5
-            aa = a + 0.25 * math.sin(t * 2.0 + k)
-            pts.append((cx + math.cos(aa) * Lt * t, cy + math.sin(aa) * Lt * t, 0.02 * t))
-        _twig(mb, pts, 0.014)
-        for j in range(1, 22):
-            t = j / 21
-            p = Vector(pts[0]).lerp(Vector(pts[-1]), t)
-            tang = (Vector(pts[-1]) - Vector(pts[0])).normalized()
-            for q in range(rng.randint(5, 8)):
-                side = 1 if q % 2 else -1
-                ang = math.atan2(tang.y, tang.x) + side * rng.uniform(0.35, 1.1)
-                Ln = rng.uniform(0.09, 0.15) * (1.0 - 0.3 * t)
-                d = (math.cos(ang), math.sin(ang))
-                s = mb.n
-                w = 0.0055
-                px, py = -d[1] * w, d[0] * w
-                z0 = 0.03 * t + rng.uniform(0, 0.03)
-                z1 = z0 + rng.uniform(0.0, 0.05)
-                ids = [mb.v((p.x + px, p.y + py, z0)), mb.v((p.x + d[0] * Ln + px * 0.3, p.y + d[1] * Ln + py * 0.3, z1)),
-                       mb.v((p.x + d[0] * Ln - px * 0.3, p.y + d[1] * Ln - py * 0.3, z1)), mb.v((p.x - px, p.y - py, z0))]
-                mb.face(ids[::-1], "Leaf", None, True)
-                tone = rng.random()
-                mb.set_attr("tone", s, mb.n, tone)
-                for vid, al in zip(ids, (0.0, 1.0, 1.0, 0.0)):
-                    mb.vattr.setdefault("along", {})[vid] = al
-        # terminal tuft
-        tip = Vector(pts[-1])
-        for q in range(14):
-            ang = rng.uniform(0, TAU)
-            Ln = rng.uniform(0.06, 0.11)
-            d = (math.cos(ang), math.sin(ang))
-            s = mb.n
-            w = 0.005
-            px, py = -d[1] * w, d[0] * w
-            ids = [mb.v((tip.x + px, tip.y + py, 0.05)), mb.v((tip.x + d[0] * Ln, tip.y + d[1] * Ln, 0.08)),
-                   mb.v((tip.x - px, tip.y - py, 0.05))]
-            mb.face(ids[::-1], "Leaf", None, True)
-            mb.set_attr("tone", s, mb.n, rng.random())
-            for vid, al in zip(ids, (0.0, 1.0, 0.0)):
-                mb.vattr.setdefault("along", {})[vid] = al
+    """Pine pad seen from above: a lobed 'cloud' of needle tufts (as in Chinese pine painting) -
+    4-6 overlapping tufts, each a dense rosette of needles radiating from its twig tip, joined by
+    the twig skeleton."""
+    tufts = []
+    for k in range(rng.randint(5, 7)):
+        a = rng.uniform(0, TAU)
+        r = R * rng.uniform(0.0, 0.48)
+        tufts.append((cx + math.cos(a) * r, cy + math.sin(a) * r, R * rng.uniform(0.26, 0.36)))
+    # skeleton: from the cell edge to each tuft centre
+    entry = (cx - R * 0.95, cy - R * 0.2 + rng.uniform(-0.1, 0.1), 0.0)
+    for (tx, ty, tr) in tufts:
+        mid = ((entry[0] + tx) / 2 + rng.uniform(-0.05, 0.05), (entry[1] + ty) / 2 + rng.uniform(-0.05, 0.05), 0.01)
+        _twig(mb, [entry, mid, (tx, ty, 0.02)], 0.016)
+    for (tx, ty, tr) in tufts:
+        n = int(260 * (tr / (R * 0.3)) ** 1.5)
+        for q in range(n):
+            a = rng.uniform(0, TAU)
+            rr = tr * (rng.random() ** 0.8) * 0.55
+            b = (tx + math.cos(a) * rr, ty + math.sin(a) * rr)
+            da = a + rng.uniform(-0.6, 0.6)
+            Ln = tr * rng.uniform(0.45, 0.75) * (1.0 - 0.35 * rr / tr)
+            z0 = 0.04 * (1.0 - rr / tr) + rng.uniform(0, 0.03)
+            _needle(mb, rng, b, (math.cos(da), math.sin(da)), Ln, 0.0055, z0, rng.uniform(-0.01, 0.04))
 
 
 def _cell_bamboo(mb, rng, cx, cy, R=0.47):
-    """Bamboo spray: a thin twig across the cell with fans of lanceolate leaves drooping off it."""
-    a = rng.uniform(0, TAU)
-    d = Vector((math.cos(a), math.sin(a), 0))
-    start = Vector((cx, cy, 0)) - d * R * 0.75
-    pts = [start + d * (R * 1.5 * t / 5) + Vector((0, 0, 0.02 * t)) for t in range(6)]
-    _twig(mb, [tuple(p) for p in pts], 0.01)
-    for f in range(4):
-        p = pts[1 + f]
-        k = rng.randint(4, 7)
-        base_ang = a + rng.uniform(-0.3, 0.3)
-        for q in range(k):
-            ang = base_ang + (q - (k - 1) / 2) * rng.uniform(0.28, 0.42)
-            Lh = rng.uniform(0.2, 0.28)
-            _leaf_shape(mb, (p.x, p.y), (math.cos(ang), math.sin(ang)), Lh, Lh * rng.uniform(0.13, 0.17),
-                        0.06 + 0.02 * f, rng.uniform(-0.05, 0.15), rng.random(), seg=5, fold=0.12,
-                        droop=rng.uniform(0.1, 0.35))
+    """Bamboo sprays: 3 thin twigs across the cell, each with fans of lanceolate drooping leaves."""
+    for t in range(3):
+        a = rng.uniform(0, TAU)
+        d = Vector((math.cos(a), math.sin(a), 0))
+        off = Vector((rng.uniform(-0.15, 0.15), rng.uniform(-0.15, 0.15), 0))
+        start = Vector((cx, cy, 0)) + off - d * R * 0.7
+        pts = [start + d * (R * 1.3 * k / 5) + Vector((0, 0, 0.02 * k + 0.03 * t)) for k in range(6)]
+        _twig(mb, [tuple(p) for p in pts], 0.01)
+        for f in range(5):
+            p = pts[1 + f // 1] if f < 5 else pts[-1]
+            k = rng.randint(5, 7)
+            base_ang = a + rng.uniform(-0.4, 0.4) + (0.5 if f % 2 else -0.5)
+            for q in range(k):
+                ang = base_ang + (q - (k - 1) / 2) * rng.uniform(0.22, 0.34)
+                Lh = rng.uniform(0.18, 0.26)
+                _leaf_shape(mb, (p.x, p.y), (math.cos(ang), math.sin(ang)), Lh, Lh * rng.uniform(0.13, 0.17),
+                            0.06 + 0.02 * f + 0.03 * t, rng.uniform(-0.05, 0.15), rng.random(), seg=5, fold=0.12,
+                            droop=rng.uniform(0.1, 0.3))
 
 
 def _cell_shrub(mb, rng, cx, cy):
@@ -610,78 +601,80 @@ def broadleaf(tb, rng, H=22.0, crown=0.66, lobes=7, cards_per=30, card=(3.0, 4.4
     return crown_c
 
 
-def pine(tb, rng, H=26.0, sides=7, tiers=7, pads_per=(3, 5), card=(3.0, 4.4)):
-    """Chinese pine (Pinus tabuliformis): tall straight-ish trunk, near-horizontal limbs in loose
-    tiers getting shorter upwards (umbrella / flat top), flat needle pads at the limb ends."""
-    r0 = H * 0.022
-    lean = Vector((rng.uniform(-0.08, 0.08), rng.uniform(-0.08, 0.08), 1.0)).normalized()
-    trunk = _curve((0, 0, -0.8), lean, H * 0.9, 8, (rng.uniform(-0.15, 0.15), rng.uniform(-0.15, 0.15), 0), rng, 0.03)
+def pine(tb, rng, H=26.0, sides=7, tiers=8, card=(3.6, 5.2)):
+    """Chinese pine (Pinus tabuliformis): tall, slightly bent trunk; near-horizontal limbs in
+    loose tiers getting shorter upwards (an umbrella / flat top); layered needle-pad clouds of
+    horizontal cards at the limb ends and along them."""
+    r0 = H * 0.024
+    lean = Vector((rng.uniform(-0.1, 0.1), rng.uniform(-0.1, 0.1), 1.0)).normalized()
+    trunk = _curve((0, 0, -0.8), lean, H * 0.9, 8, (rng.uniform(-0.2, 0.2), rng.uniform(-0.2, 0.2), 0), rng, 0.035)
     radii = [r0 * (1.5 if i == 0 else 1.1 if i == 1 else 1.0 - 0.75 * i / 8) for i in range(len(trunk))]
     tb.limb(trunk, radii, sides)
     pads = []
+    az = rng.uniform(0, TAU)
     for t in range(tiers):
         f = t / max(1, tiers - 1)
-        z = H * (0.38 + 0.52 * f)
+        z = H * (0.36 + 0.54 * f)
         i = min(7, int(z / (H * 0.9) * 8))
-        base = trunk[i].lerp(trunk[i + 1], (z - trunk[i].z) / max(1e-3, trunk[i + 1].z - trunk[i].z))
-        nb = 2 if t < tiers - 1 else 3
+        base = trunk[i].lerp(trunk[i + 1], max(0.0, min(1.0, (z - trunk[i].z) / max(1e-3, trunk[i + 1].z - trunk[i].z))))
+        nb = 3 if t < tiers - 2 else 2
         for k in range(nb):
-            az = rng.uniform(0, TAU) if k == 0 else az + TAU / nb + rng.uniform(-0.6, 0.6)
-            el = math.radians(rng.uniform(-6, 18))
-            Lb = H * (0.34 - 0.2 * f) * rng.uniform(0.8, 1.15)
+            az += TAU / nb * 0.62 + rng.uniform(-0.5, 0.5)
+            el = math.radians(rng.uniform(-8, 14))
+            Lb = H * (0.36 - 0.22 * f) * rng.uniform(0.75, 1.15)
             d = Vector((math.cos(az) * math.cos(el), math.sin(az) * math.cos(el), math.sin(el)))
-            pts = _curve(base, d, Lb, 3, (0, 0, 0.25), rng, 0.08)
-            tb.limb(pts, [r0 * 0.38, r0 * 0.27, r0 * 0.16, r0 * 0.06], 5)
-            pads.append((pts[-1], Lb * 0.55 + 1.5))
-            if Lb > H * 0.16:
-                pads.append((pts[1].lerp(pts[2], 0.5) + Vector((0, 0, 0.6)), Lb * 0.35 + 1.0))
-    pads.append((trunk[-1] + Vector((0, 0, 0.3)), H * 0.14))
-    centre = Vector((0, 0, H * 0.7))
+            pts = _curve(base, d, Lb, 3, (0, 0, 0.3), rng, 0.08)
+            tb.limb(pts, [r0 * 0.4, r0 * 0.28, r0 * 0.16, r0 * 0.06], 5)
+            pads.append((pts[-1] + Vector((0, 0, 0.4)), 1.6 + Lb * 0.32))
+            if Lb > H * 0.15:
+                pads.append((pts[1].lerp(pts[2], 0.6) + Vector((0, 0, 0.5)), 1.2 + Lb * 0.22))
+    pads.append((trunk[-1] + Vector((0, 0, 0.5)), H * 0.13))
+    centre = Vector((0, 0, H * 0.72))
     for (c, R) in pads:
         c = Vector(c)
-        n_cards = rng.randint(*pads_per) + int(R / 2.0)
+        n_cards = 4 + int(R * 1.6)
         for q in range(n_cards):
-            off = Vector((rng.gauss(0, 0.5), rng.gauss(0, 0.5), rng.gauss(0, 0.12))) * R * 0.6
+            off = Vector((rng.gauss(0, 0.45), rng.gauss(0, 0.45), 0.0)) * R
+            off.z = rng.gauss(0, 0.12) * R + 0.25 * R * (1.0 - min(1.0, off.length / R))
             p = c + off
-            n = Vector((rng.uniform(-0.35, 0.35), rng.uniform(-0.35, 0.35), 1.0)).normalized()
-            if q % 4 == 3:          # a few steeper cards give the pad a side silhouette
+            n = Vector((rng.uniform(-0.3, 0.3), rng.uniform(-0.3, 0.3), 1.0)).normalized()
+            if q % 5 == 4:
                 out = Vector((off.x, off.y, 0)).normalized() if off.length > 1e-3 else Vector((1, 0, 0))
-                n = (out + Vector((0, 0, 0.8))).normalized()
-            tb.card(p, n, rng.uniform(*card) * (0.8 + 0.25 * R / 4.0), rng.uniform(0, TAU),
-                    (rng.randint(0, 1), rng.randint(0, 1)), bend_center=c - Vector((0, 0, R * 0.4)),
-                    bend=0.45, up_bias=0.45)
+                n = (out + Vector((0, 0, 1.0))).normalized()
+            tb.card(p, n, rng.uniform(*card) * (0.75 + 0.18 * R / 2.5), rng.uniform(0, TAU),
+                    (rng.randint(0, 1), rng.randint(0, 1)), bend_center=c - Vector((0, 0, R * 0.7)),
+                    bend=0.5, up_bias=0.5)
     return centre
 
 
-def bamboo(tb, rng, H=18.0, culms=16, radius=1.6, card=(2.2, 3.2), sides=5, segs=7):
-    """Bamboo clump: culms leaning out from a root circle, arching at the top, leaf sprays along
-    the upper part and a drooping crown."""
-    centre = Vector((0, 0, H * 0.7))
+def bamboo(tb, rng, H=18.0, culms=22, radius=1.8, card=(3.0, 4.2), sides=5, segs=7):
+    """Bamboo clump: culms leaning out from a root circle and arching at the top, dense drooping
+    leaf sprays along the upper two thirds and a crown at each tip."""
+    centre = Vector((0, 0, H * 0.65))
     for c in range(culms):
         a = rng.uniform(0, TAU)
         rr = radius * math.sqrt(rng.random())
         base = Vector((math.cos(a) * rr, math.sin(a) * rr, -0.6))
-        h = H * rng.uniform(0.72, 1.0)
-        out = Vector((math.cos(a), math.sin(a), 0)) * (rr / radius + 0.3)
-        lean = (Vector((0, 0, 1)) + out * 0.12 + Vector((rng.uniform(-0.05, 0.05), rng.uniform(-0.05, 0.05), 0))).normalized()
-        pts = _curve(base, lean, h, segs, out * 0.25, None)
-        r = rng.uniform(0.07, 0.11) * H / 18.0
+        h = H * rng.uniform(0.7, 1.0)
+        out = Vector((math.cos(a), math.sin(a), 0)) * (rr / radius + 0.35)
+        lean = (Vector((0, 0, 1)) + out * 0.14 + Vector((rng.uniform(-0.05, 0.05), rng.uniform(-0.05, 0.05), 0))).normalized()
+        pts = _curve(base, lean, h, segs, out * 0.35, None)
+        r = rng.uniform(0.09, 0.13) * H / 18.0
         tb.limb(pts, [r * (1.0 - 0.45 * i / segs) for i in range(segs + 1)], sides)
-        # sprays: from 40 % of the height to the tip
-        for k in range(rng.randint(6, 9)):
-            t = 0.4 + 0.6 * k / 8 + rng.uniform(-0.03, 0.03)
+        for k in range(rng.randint(10, 13)):
+            t = 0.32 + 0.68 * k / 12 + rng.uniform(-0.03, 0.03)
             i = min(segs - 1, int(t * segs))
-            p = pts[i].lerp(pts[i + 1], t * segs - i)
-            az = a + rng.uniform(-1.6, 1.6)
+            p = pts[i].lerp(pts[i + 1], min(1.0, t * segs - i))
+            az = a + rng.uniform(-1.8, 1.8)
             dirh = Vector((math.cos(az), math.sin(az), 0))
-            sz = rng.uniform(*card) * (0.75 + 0.35 * t)
-            cpos = p + dirh * sz * 0.45 - Vector((0, 0, sz * 0.2))
-            n = (dirh * 0.5 + Vector((0, 0, 1)) + Vector((rng.uniform(-0.3, 0.3), rng.uniform(-0.3, 0.3), 0))).normalized()
+            sz = rng.uniform(*card) * (0.7 + 0.4 * t)
+            cpos = p + dirh * sz * 0.42 - Vector((0, 0, sz * 0.18))
+            n = (dirh * 0.75 + Vector((0, 0, 1)) + Vector((rng.uniform(-0.3, 0.3), rng.uniform(-0.3, 0.3), 0))).normalized()
             tb.card(cpos, n, sz, rng.uniform(0, TAU), (rng.randint(0, 1), rng.randint(0, 1)),
-                    bend_center=Vector((0, 0, p.z - 2.0)), bend=0.5, up_bias=0.2)
+                    bend_center=Vector((0, 0, p.z - 3.0)), bend=0.55, up_bias=0.25)
         tipd = (pts[-1] - pts[-2]).normalized()
-        for k in range(2):
-            n = (Vector((0, 0, 1)) + tipd * 0.6 + Vector((rng.uniform(-0.4, 0.4), rng.uniform(-0.4, 0.4), 0))).normalized()
-            tb.card(pts[-1] + tipd * 0.8, n, rng.uniform(*card), rng.uniform(0, TAU),
+        for k in range(3):
+            n = (Vector((0, 0, 1)) + tipd * 0.7 + Vector((rng.uniform(-0.5, 0.5), rng.uniform(-0.5, 0.5), 0))).normalized()
+            tb.card(pts[-1] + tipd * 0.6 - Vector((0, 0, 0.6 * k)), n, rng.uniform(*card), rng.uniform(0, TAU),
                     (rng.randint(0, 1), rng.randint(0, 1)), bend_center=centre, bend=0.5, up_bias=0.2)
     return centre
