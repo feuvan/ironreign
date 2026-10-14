@@ -57,16 +57,17 @@ class Head:
         dep = sh["depth"]
         # half-width profile a(y)
         self.a_keys = [
-            (0.00, 0.02), (0.04, 0.17 * w), (0.12, 0.29 * w), (0.22, 0.345 * w * fh),
-            (0.32, 0.365 * w * fh), (0.42, 0.362 * w), (0.52, 0.358 * w * ch),
-            (0.60, 0.352 * w * ch), (0.68, 0.338 * w * (0.5 + 0.5 * jw)),
-            (0.76, 0.318 * w * jw), (0.83, 0.292 * w * jw), (0.89, 0.245 * w * (0.6 * jw + 0.4 * cw)),
-            (0.94, 0.180 * w * cw), (0.975, 0.120 * w * cw), (1.00, 0.055 * w * cw),
+            (0.00, 0.02), (0.04, 0.16 * w), (0.12, 0.262 * w), (0.22, 0.308 * w * fh),
+            (0.32, 0.324 * w * fh), (0.42, 0.326 * w), (0.52, 0.320 * w * ch),
+            (0.60, 0.308 * w * ch), (0.68, 0.290 * w * (0.5 + 0.5 * jw)),
+            (0.76, 0.272 * w * jw), (0.82, 0.252 * w * jw), (0.87, 0.226 * w * jw),
+            (0.91, 0.195 * w * (0.6 * jw + 0.4 * cw)), (0.945, 0.155 * w * (0.3 * jw + 0.7 * cw)),
+            (0.975, 0.110 * w * cw), (1.00, 0.065 * w * cw),
         ]
         cf = sh["chin_fwd"]
         self.zc_keys = [
-            (0.00, 0.00), (0.55, 0.00), (0.70, 0.02), (0.80, 0.07), (0.88, 0.14 * cf),
-            (0.94, 0.21 * cf), (1.00, 0.29 * cf),
+            (0.00, 0.00), (0.62, 0.00), (0.70, 0.002), (0.78, 0.012), (0.84, 0.035 * cf),
+            (0.89, 0.075 * cf), (0.93, 0.125 * cf), (0.965, 0.19 * cf), (1.00, 0.27 * cf),
         ]
         self.d_keys = [
             (0.00, 0.05), (0.06, 0.25), (0.15, 0.40), (0.30, 0.46), (0.50, 0.465),
@@ -126,29 +127,62 @@ class Head:
         p = np.asarray(pts3, float).reshape(-1, 3)
         return self.proj(p[:, 0], p[:, 1], p[:, 2])
 
-    def section(self, y, n=180):
-        """Cross-section points (x0, z) at height y."""
-        a = float(self.a(y))
+    def section(self, y, n=180, dr=0.0):
+        """Cross-section points (x0, z) at height y (optionally expanded by dr)."""
+        a = float(self.a(y)) + dr
         k = float(self.k(y))
         zc = float(self.zc(y))
-        d = float(self.d(y))
+        d = float(self.d(y)) + dr
         ph = np.linspace(0, 2 * math.pi, n, endpoint=False)
         c, s = np.cos(ph), np.sin(ph)
         x0 = a * np.sign(c) * np.abs(c) ** (2 / k)
         z = zc + d * np.sign(s) * np.abs(s) ** (2 / k)
         return x0, z
 
-    def silhouette(self, y0=0.0, y1=1.0, n=80, side=+1):
-        """Outline on one screen side: side=+1 -> right (max X), -1 -> left (min X)."""
+    def silhouette(self, y0=0.0, y1=1.0, n=80, side=+1, dr=0.0):
+        """Outline on one screen side: side=+1 -> right (max X), -1 -> left (min X).
+        dr may be a function of y (hair volume varying with height)."""
         ys = np.linspace(y0, y1, n)
         out = []
         cyaw, syaw = math.cos(self.yaw), math.sin(self.yaw)
         for y in ys:
-            x0, z = self.section(y)
+            x0, z = self.section(y, dr=float(dr(y)) if callable(dr) else dr)
             X = x0 * cyaw + z * syaw
             i = np.argmax(X) if side > 0 else np.argmin(X)
             out.append((x0[i], y, z[i]))
         return self.Pz(out), np.array(out)
+
+    # surface addressed by longitude: lon 0 = face centre, +-pi/2 = sides, pi = back
+    def lon_xyz(self, lon, y, dr=0.0):
+        lon = np.asarray(lon, float)
+        y = np.asarray(y, float)
+        a = self.a(y) + dr
+        d = self.d(y) + dr
+        k = self.k(y)
+        sl, cl = np.sin(lon), np.cos(lon)
+        x0 = a * np.sign(sl) * np.abs(sl) ** (2 / k)
+        z = self.zc(y) + d * np.sign(cl) * np.abs(cl) ** (2 / k)
+        return x0, y, z
+
+    def Plon(self, lon, y, dr=0.0):
+        x0, y, z = self.lon_xyz(lon, y, dr)
+        return self.proj(x0, y, z)
+
+    def facing_lon(self, lon, y, dr=0.0, eps=1e-3):
+        """>0 where the surface at (lon, y) faces the viewer."""
+        lon = np.asarray(lon, float)
+        y = np.asarray(y, float)
+        p = np.stack(self.lon_xyz(lon, y, dr), -1)
+        pl = np.stack(self.lon_xyz(lon + eps, y, dr), -1)
+        py = np.stack(self.lon_xyz(lon, y + eps, dr), -1)
+        n = np.cross(pl - p, py - p)
+        n = n / np.maximum(np.linalg.norm(n, axis=-1, keepdims=True), 1e-12)
+        v = np.array([-math.sin(self.yaw), 0.0, math.cos(self.yaw)])
+        f = n @ v
+        # orientation: front point must face the viewer
+        n0 = np.cross(np.stack(self.lon_xyz(eps, 0.5), -1) - np.stack(self.lon_xyz(0.0, 0.5), -1),
+                      np.stack(self.lon_xyz(0.0, 0.5 + eps), -1) - np.stack(self.lon_xyz(0.0, 0.5), -1))
+        return f * (1 if n0[2] > 0 else -1)
 
     def far_side(self):
         """+1 if the far (narrow) side of the face is on the viewer's right."""

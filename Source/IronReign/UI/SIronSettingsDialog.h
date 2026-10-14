@@ -13,8 +13,9 @@ enum class EIronPresentationMode : uint8;
 
 /**
  * Modal options: language (live relabel), music and effect volumes, graphics (presentation mode Auto / 3D / 2D, quality,
- * tilt-shift, ink outlines; applied live by AIronReignPlayerController and the strategy screen), campaign map playback
- * speed and battle animation speed. The content scrolls when the window is too short for it.
+ * tilt-shift, ink outlines; applied live by AIronReignPlayerController and the screens; the 3D scenes always use the
+ * painted gongbi look, so no look is offered), campaign map playback speed and battle animation speed. The content
+ * scrolls when the window is too short for it.
  */
 class SIronSettingsDialog : public SCompoundWidget
 {

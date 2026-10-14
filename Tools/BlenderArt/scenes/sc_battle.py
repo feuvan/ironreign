@@ -1,218 +1,170 @@
 """Event: Battle - two armies clash on an open plain.
 
-Low camera inside the charging (left) army: spearmen and a standard bearer run past in the
-foreground towards the clash line that recedes diagonally to the right; the enemy host with
-cavalry pours in from the far side; dust rises along the line, glowing in the low sun ahead;
-a volley of arrows arcs across the hazy sky; banners everywhere.
-"""
+From a low rise: the cinnabar-bannered cavalry of one host charges in from the left into the
+azurite-bannered spear wall of the other; forests of banners above both, generals under their
+standards, a volley of arrows arcing over, dust rising as pale ochre washes; low blue-green hills
+and far ranges behind, mist along their feet."""
 
 import math
 import random
 
+import numpy as np
 from mathutils import Matrix, Vector
 
-from ironart import materials as M
-from ironart import scenes_flora as F
+from ironart import scenes_gongbi as GB
+from ironart import scenes_gongbi_kit as K
+from ironart import scenes_gongbi_land as LD
 from ironart import scenes_look as L
-from ironart import scenes_people as P
-from ironart import scenes_sky as S
-from ironart import scenes_terrain as T
 from ironart.geometry import MeshBuilder
 
 SPEC = dict(name="Battle", art="Art/Events/Battle.png", master="Events/Battle@2x.png",
-            size=(1280, 720), ss=1, spp=20, preview_spp=12, seed=21)
+            size=(640, 360), k=4, m=2, seed=21, spp=12, preview_spp=6)
 
-SUN = (102.0, 13.0)
-
-
-def face(dx, dy):
-    """Rotation (rad) turning a -Y facing figure towards (dx, dy)."""
-    return math.atan2(dx, -dy)
+CAM = (-6.0, -52.0, 15.0)
+TARGET = (2.0, 40.0, 1.0)
+FOCAL = 34.0
+SM = K.ScreenMap(CAM, TARGET, FOCAL)
 
 
-def line_x(y):
-    """The clash line runs away from the viewer, drifting right."""
-    return 2.0 + 0.12 * y
+def height(X, Y):
+    from ironart.scenes_terrain import fbm2
+    peaks = SM.peaks([
+        (0.15, 0.28, 900, 260, 2.2), (0.42, 0.25, 1300, 380, 1.8), (0.78, 0.22, 1500, 420, 1.6),
+        (0.98, 0.30, 800, 240, 2.0), (0.60, 0.15, 3200, 900, 1.2), (0.25, 0.17, 3800, 1000, 1.3),
+        (0.90, 0.12, 4200, 1100, 1.1),
+    ])
+    Hh = LD.peak_field(X, Y, peaks, seed=21, ridge=0.35, ridge_scale=160.0, softmax=4.0)
+    roll = (fbm2(X, Y, 90.0, 3, seed=4) - 0.5) * 2.5
+    near = np.clip(1.0 - (Y - 60.0) / 200.0, 0, 1)
+    return Hh + roll * near + np.clip(Y - 120.0, 0, None) * 0.004
 
 
 def build(r):
-    import bpy
-    pv = r["preview"]
     rng = random.Random(21)
-    S.build(dict(
-        stops=[(0.0, "#E8C49A"), (0.04, "#DDB08A"), (0.15, "#B8A898"), (0.4, "#8C98AC"),
-               (1.0, "#5A6C88")],
-        strength=1.3,
-        glows=[dict(dir=SUN, color="#FFC07A", lobes=[(5, 1.2), (40, 3.0), (600, 18.0)],
-                    horizon=(1.5, 0.06, 2.0))],
-        discs=[dict(dir=SUN, radius_deg=0.6, color="#FFF0D8", strength=70.0)],
-        clouds=[dict(height=1800, scale=2800, coverage=0.58, softness=0.18, lit="#F8CC98",
-                     shadow="#585260", rim=3.0, opacity=0.95, stretch=(1.0, 0.5), fade=0.08,
-                     shade=9.0, seed=4.0, haze=0.5, core_dark=0.5)],
-        light=dict(strength=0.6, tint="#D8DCE8"),
-        fog=dict(haze=1.6e-4, haze_falloff=0.002, haze_max=0.9, haze_zmax=0.1,
-                 mist=0.0025, mist_falloff=0.12, mist_h0=0.0, mist_max=0.5,
-                 mist_color="#C8A47E", mist_strength=1.0),
-    ))
-    S.sun(SUN[0], SUN[1], energy=5.5, color="#FFD0A0", angle_deg=1.0)
-    # ---- ground -----------------------------------------------------------------------------
-    gm = T.terrain_material("BattleGround", grass=("#6A6A3A", "#8A7E48"), dry="#A08A5A",
-                            dirt="#7E6A4E", rock=("#6E665A", "#8E8676"), slope=(0.7, 0.85),
-                            grass_scale=0.02, dry_amt=0.6)
+    pv = r["preview"]
+    cols = GB.collections()
+    mats = K.materials(cloth=["cinnabar", "azurite", "#5A564E", "#3A3530", "ochre", "#E2D6BC",
+                              "rouge", "teal", "#7A5A3A", "white", "vermilion", "indigo"],
+                       banners=["cinnabar", "gold", "azurite", "white", "#2E2A28", "vermilion"],
+                       armor="#6A6258")
+    land = LD.qinglv("GB_Battle_Land", z0=5.0, z1=420.0, cun=0.7, cun_px=7.0, cun_len=60.0,
+                     moss_px=10.0, var_scale=0.004, near=40.0, far=5000.0, plain_h=0.02,
+                     plain=("#D6CBA2", "#CDBB8E"), plain_bare=0.3, ribs=True)
+    fpx = FOCAL / 36.0 * 640.0
+    peaks_w = SM.peaks([(0.15, 0.28, 900, 260, 2.2), (0.42, 0.25, 1300, 380, 1.8), (0.78, 0.22, 1500, 420, 1.6),
+                        (0.98, 0.30, 800, 240, 2.0), (0.60, 0.15, 3200, 900, 1.2), (0.25, 0.17, 3800, 1000, 1.3),
+                        (0.90, 0.12, 4200, 1100, 1.1)])
+    yaw = math.degrees(SM.yaw)
+    LD.fan_terrain("Land", CAM[:2], yaw, 56.0, 15.0, 9000.0, 520, 340, height, land, cols["land"],
+                   attrs={"rib": lambda X, Y: LD.peak_ribs(X, Y, peaks_w, CAM[:2], fpx, 7.0)})
 
-    def hfn(X, Y):
-        import numpy as np
-        h = 2.5 * T.fbm2(X, Y, 120.0, 4, seed=2)
-        hills = T.ridged2(X, Y, 700.0, 5, seed=3, warp=300.0)
-        far = T.smoothstep(400.0, 1600.0, Y)
-        knoll = 11.0 * np.exp(-(((X + 42.0) / 38.0) ** 2 + ((Y + 34.0) / 30.0) ** 2))
-        return h + hills * 220.0 * far + T.smoothstep(900.0, 3000.0, Y) * 150.0 + knoll
-    g = T.field_from(hfn, -1500, 2500, -80, 3200, 4.0 if pv else 2.0)
-    g.build("Plain", gm)
-    rmat = T.terrain_material("BattleRange", grass=("#5E6A48", "#7A7656"), rock=("#6A6660", "#8A8478"),
-                              slope=(0.72, 0.86), grass_scale=0.002)
+    def ground(x, y):
+        return float(height(np.array([[x]]), np.array([[y]]))[0, 0])
 
-    def rfn(X, Y):
-        r_ = T.ridged2(X, Y, 1800.0, 7, sharp=1.8, seed=8, warp=900.0)
-        return r_ ** 1.3 * 800.0
-    T.field_from(rfn, -12000, 14000, 6000, 18000, 60.0).build("Range", rmat)
-    # ---- armies (instanced prototypes) ------------------------------------------------------
-    mats = P.materials(cloth=["#5A1E18", "#22304A", "#34445E", "#3A3A30", "#7A6A50", "#4A3A2A",
-                              "#2E3A4E", "#6E2A1E", "#8A7A5A", "#B8A888", "#9A3020", "#1C2436"],
-                       banners=["#A82018", "#D8A42E", "#1E2A44", "#E2D6BE", "#8E1A14", "#3A3A44"],
-                       armor="#3A3632", armor_dark="#221E1C")
-    mats["Metal"] = M.principled("BHelmet", "#4A4C50", 0.42, metallic=0.9)
-    A_specs = [("charge", "armored", dict(weapon="spear", hat="helmet", cloth=0, cloth2=3)),
-               ("charge", "soldier", dict(weapon="spear", hat="helmet", cloth=7, cloth2=5)),
-               ("thrust", "armored", dict(weapon="spear", hat="helmet_plume", cloth=0, cloth2=3)),
-               ("charge", "soldier", dict(weapon="halberd", hat="helmet", cloth=10, cloth2=4, shield=True)),
-               ("slash_high", "armored", dict(weapon="sword", hat="helmet", cloth=0, cloth2=3, shield=True)),
-               ("charge", "soldier", dict(weapon="spear", hat="helmet", cloth=7, cloth2=3, banner=0)),
-               ("guard", "armored", dict(weapon="sword", hat="helmet", cloth=0, cloth2=5, shield=True)),
-               ("charge", "armored", dict(weapon="standard", hat="helmet", cloth=0, cloth2=3, banner=4))]
-    B_specs = [("charge", "armored", dict(weapon="spear", hat="helmet", cloth=1, cloth2=4)),
-               ("charge", "soldier", dict(weapon="halberd", hat="helmet", cloth=2, cloth2=1)),
-               ("thrust", "armored", dict(weapon="spear", hat="helmet", cloth=11, cloth2=1)),
-               ("slash_high", "soldier", dict(weapon="sword", hat="helmet", cloth=2, cloth2=1, shield=True)),
-               ("charge", "soldier", dict(weapon="spear", hat="helmet", cloth=1, cloth2=8, banner=1)),
-               ("guard", "armored", dict(weapon="sword", hat="helmet_plume", cloth=11, cloth2=1, shield=True)),
-               ("charge", "armored", dict(weapon="standard", hat="helmet", cloth=1, cloth2=4, banner=2))]
-    builders = []
-    for (pose, outfit, kw) in A_specs + B_specs:
-        builders.append(lambda mb, pose=pose, outfit=outfit, kw=kw:
-                        P.figure(mb, random.Random(hash((pose, outfit, str(kw))) & 0xFFFF), pose, outfit, jitter=6.0, **kw))
-    for i, (pose, wpn, ban, cl) in enumerate([("ride_charge", "spear", None, 0), ("ride_spear", "halberd", 4, 7),
-                                              ("ride_charge", "spear", None, 1), ("ride_spear", "spear", 2, 11)]):
-        builders.append(lambda mb, pose=pose, wpn=wpn, ban=ban, cl=cl, i=i:
-                        P.rider(mb, random.Random(50 + i), "gallop", pose, weapon=wpn, hat="helmet_plume",
-                                cloth=cl, cloth2=3, coat="HorseCoat%d" % (i % 4), banner=ban))
-    pcol = F.prototypes(builders, mats, "BattleFigures")
-    nA, nB = len(A_specs), len(B_specs)
-    pts = []
-    dA = Vector((1.0, 0.12)).normalized()                     # army A (left) charges right
-    dB = Vector((-1.0, -0.12)).normalized()
-    rows = 26 if not pv else 16
-    for side, specs_n, base_k, dvec in ((-1, nA, 0, dA), (1, nB, nA, dB)):
-        for row in range(rows):
-            for k in range(int(440 / 1.2)):
-                y = 2.0 + k * 1.2 + rng.uniform(-0.35, 0.35) + (0.6 if row % 2 else 0.0)
-                depth = 0.7 + row * 1.5 + rng.uniform(-0.35, 0.35)
-                x = line_x(y) + side * depth
-                if y < 12.0 and row < 3:
-                    continue                                   # the hero duel near the camera
-                if row > 2 and rng.random() < 0.12 + 0.01 * row:
-                    continue
-                if side < 0:
-                    kind = rng.choices(range(nA), weights=[4, 4, 2, 2, 2, 1, 1, 0.6])[0]
-                else:
-                    kind = nA + rng.choices(range(nB), weights=[4, 3, 2, 2, 1, 1, 0.6])[0]
-                if row in (5, 6) and k % 10 == 0:
-                    kind = base_k + specs_n - 1                # standard bearers
-                if row > 8 and rng.random() < 0.18:
-                    kind = nA + nB + (rng.choice([0, 1]) if side < 0 else rng.choice([2, 3]))
-                ang = face(dvec.x, dvec.y) + rng.uniform(-0.35, 0.35)
-                if row == 0:
-                    x += rng.uniform(-0.8, 0.8)                # the melee mixes along the line
-                pts.append((x, y, g.z(x, y) - 0.03, ang, rng.uniform(0.94, 1.06), kind))
-    # a cavalry wedge of army A sweeping across the left foreground towards the line
-    for i in range(46 if not pv else 30):
-        row = int(math.sqrt(i * 2))
-        k = i - row * (row + 1) // 2
-        x = -14.0 - row * 5.0 + rng.uniform(-0.8, 0.8)
-        y = -6.0 + (k - row / 2.0) * 3.4 + rng.uniform(-0.6, 0.6)
-        if y > 1.0 and x > line_x(y) - 42.0:
-            continue
-        kind = nA + nB + rng.choice([0, 1])
-        pts.append((x, y, g.z(x, y) - 0.05, face(dA.x, dA.y) + rng.uniform(-0.12, 0.12), rng.uniform(0.96, 1.04), kind))
-    F.instance("Armies", pts, pcol)
-    # foreground heroes (army A) close to the camera, unique meshes
-    fg = MeshBuilder()
-    heroes = [(-1.2, 3.0, "thrust", dA, dict(weapon="spear", hat="helmet_plume", cloth=0, cloth2=3, cape=True)),
-              (1.6, 4.2, "guard", dB, dict(weapon="sword", hat="helmet", cloth=1, cloth2=4, shield=True)),
-              (-3.4, 7.0, "charge", dA, dict(weapon="standard", hat="helmet", cloth=0, cloth2=3, banner=0)),
-              (3.6, 8.5, "slash_high", dB, dict(weapon="sword", hat="helmet_plume", cloth=11, cloth2=1)),
-              (-1.0, 10.0, "charge", dA, dict(weapon="halberd", hat="helmet", cloth=7, cloth2=3, shield=True)),
-              (5.6, 5.0, "charge", dB, dict(weapon="spear", hat="helmet", cloth=2, cloth2=1)),
-              (-5.6, 4.0, "charge", dA, dict(weapon="spear", hat="helmet", cloth=0, cloth2=5)),
-              (-2.6, -1.0, "fall", dB, dict(weapon=None, hat="helmet", cloth=1, cloth2=4)),
-              (2.8, 0.5, "thrust", dB, dict(weapon="halberd", hat="helmet", cloth=2, cloth2=1))]
-    for i, (x, y, pose, dv, kw) in enumerate(heroes):
+    def put(mb, x, y, rz, fn, **kw):
+        z = ground(x, y)
         f = MeshBuilder()
-        P.figure(f, random.Random(300 + i), pose, "armored", jitter=3.0, **kw)
-        fg.extend(f, Matrix.Translation((x, y, g.z(x, y))) @ Matrix.Rotation(face(dv.x, dv.y) + rng.uniform(-0.25, 0.25), 4, "Z"))
-    fg.build("Heroes", mats)
-    # trampled debris: dropped spears and shields
-    deb = MeshBuilder()
-    for _ in range(140 if not pv else 60):
-        y = rng.uniform(5, 300)
-        x = line_x(y) + rng.uniform(-20, 20)
-        z = g.z(x, y) + 0.04
-        a = rng.uniform(0, math.tau)
-        L_ = rng.uniform(2.0, 3.2)
-        deb.cylinder((x, y, z), (x + math.cos(a) * L_, y + math.sin(a) * L_, z + 0.02), 0.018, 0.018, "Wood", 5)
-    deb.build("Debris", mats)
-    # ---- arrows: a volley arcing over the line ----------------------------------------------
-    ar = MeshBuilder()
-    for _ in range(420 if not pv else 200):
-        cy = rng.uniform(40, 220)
-        cx = line_x(cy) + rng.gauss(0, 18)
-        cz = rng.uniform(22, 60)
-        d = Vector((-0.85 + rng.uniform(-0.06, 0.06), -0.25, -0.3 + rng.uniform(-0.08, 0.08))).normalized()
-        p0 = Vector((cx, cy, cz))
-        ar.cylinder(tuple(p0), tuple(p0 + d * 1.0), 0.012, 0.012, "Wood", 4)
-        ar.cylinder(tuple(p0 + d * 1.0), tuple(p0 + d * 1.1), 0.02, 0.0, "Metal", 4)
-        ar.cylinder(tuple(p0 - d * 0.05), tuple(p0 + d * 0.18), 0.03, 0.03, "Feather", 3)
-    ar.build("Arrows", mats)
-    # ---- dust ---------------------------------------------------------------------------------
-    for i in range(26 if not pv else 14):
-        y = rng.uniform(25, 420)
-        x = line_x(y) + rng.uniform(-14, 14)
-        w = rng.uniform(25, 70)
-        h = rng.uniform(8, 22)
-        dm = T.mist_material("Dust%d" % i, rng.choice(["#E0B88A", "#D6A87C", "#E8C49A"]),
-                             strength=rng.uniform(1.05, 1.4), density=rng.uniform(0.8, 1.0),
-                             seed=float(i), softness=0.5, stretch=2.0, edge=0.25)
-        T.card("Dust%d" % i, (x, y, g.z(x, y) + h * 0.42), (w, h), dm, rot_z=rng.uniform(-0.25, 0.25) + 0.0)
-    for i in range(5):
-        dm = T.mist_material("WedgeDust%d" % i, "#DCB890", strength=1.15, density=0.7, seed=float(40 + i),
-                             softness=0.55, stretch=2.0, edge=0.3)
-        x = -36.0 - i * 5.0
-        y = -10.0 + i * 4.0
-        T.card("WedgeDust%d" % i, (x, y, g.z(x, y) + 3.2), (26.0, 7.0), dm, rot_z=math.radians(-24))
-    # camera: low, behind the left army's flank
-    # the commander and his guard watch from the knoll (foreground silhouettes)
-    cmd = MeshBuilder()
-    for i, (x, y, rz, wpn, ban) in enumerate([(-33.5, -22.0, -0.5, "spear", None), (-37.0, -24.5, -0.35, "standard", 0),
-                                              (-30.5, -25.0, -0.6, "spear", None)]):
-        h = MeshBuilder()
-        P.rider(h, random.Random(70 + i), "stand", "ride" if i else "ride_spear", weapon=wpn,
-                hat="helmet_plume", cloth=0, cloth2=3, coat="HorseCoat%d" % (i % 4), banner=ban, cape=(i == 0))
-        cmd.extend(h, Matrix.Translation((x, y, g.z(x, y) - 0.12)) @ Matrix.Rotation(rz, 4, "Z"))
-    cmd.build("Commander", mats)
-    cam = L.camera((-44.0, -40.0, g.z(-44.0, -40.0) + 4.5), (14.0, 90.0, -2.0), focal_mm=35.0, dof=(22.0, 9.0))
-    return dict(camera=cam, beams=tuple(S.dir_from(*SUN) * 20000.0),
-                beams_cfg=dict(ray_length=0.28, strength=0.3, threshold=1.2),
-                glow=dict(threshold=1.0, mix=-0.8, size=8),
-                grade=dict(saturation=1.03, contrast=1.08, shadows=(0.01, 0.0, -0.01),
-                           highlights=(0.03, 0.01, -0.025), clarity=0.14, vignette=0.26,
-                           canvas=0.012, sharpen=0.3))
+        fn(f, **kw)
+        mb.extend(f, Matrix.Translation((x, y, z)) @ Matrix.Rotation(rz, 4, "Z"))
+
+    from ironart import scenes_people as P
+    army = MeshBuilder()
+    flags = MeshBuilder()
+    # ---- the red host: cavalry wedge charging right, infantry following -------------------------
+    n_cav = 26 if not pv else 14
+    for i in range(n_cav):
+        row = i // 6
+        x = -6.0 - row * 4.2 + rng.uniform(-1.0, 1.0) - (i % 6) * 0.6
+        y = 6.0 + (i % 6) * 3.1 - row * 1.0 + rng.uniform(-0.8, 0.8)
+        rz = math.pi / 2 + rng.uniform(-0.2, 0.15)
+        coat = "HorseCoat%d" % rng.randrange(4)
+        put(army, x, y, rz, lambda f: P.rider(f, random.Random(i), gait="gallop", pose="ride_charge",
+                                                outfit="armored", weapon="spear" if i % 4 else "halberd",
+                                                hat="helmet_plume" if i % 3 == 0 else "helmet",
+                                                cloth=0, cloth2=3, coat=coat,
+                                                banner=0 if i % 5 == 1 else None))
+    for i in range(40 if not pv else 18):
+        x = -26.0 - (i % 8) * 1.6 + rng.uniform(-0.4, 0.4)
+        y = 4.0 + (i // 8) * 3.4 + rng.uniform(-0.6, 0.6) + (i % 8) * 0.5
+        put(army, x, y, math.pi / 2 + rng.uniform(-0.15, 0.15),
+            lambda f: P.figure(f, random.Random(100 + i), "charge", "soldier", cloth=0, cloth2=3,
+                               weapon="spear", hat="helmet", jitter=6.0))
+    # red general under his standard on the rise at the left
+    put(army, -20.0, -4.0, math.pi / 2 - 0.3,
+        lambda f: P.rider(f, random.Random(7), gait="rear", pose="ride_spear", outfit="general",
+                          weapon="halberd", hat="helmet_plume", cloth=0, cloth2=3, coat="HorseCoat1",
+                          cape=True))
+    # ---- the blue host: spear wall facing left, archers and banners behind --------------------
+    for i in range(54 if not pv else 24):
+        rank = i // 9
+        x = 4.0 + rank * 1.5 + rng.uniform(-0.25, 0.25)
+        y = 2.0 + (i % 9) * 2.6 + rank * 0.8 + rng.uniform(-0.3, 0.3)
+        pose = "thrust" if rank < 2 else ("guard" if rank < 3 else "march_spear")
+        put(army, x, y, -math.pi / 2 + rng.uniform(-0.12, 0.12),
+            lambda f: P.figure(f, random.Random(300 + i), pose, "soldier", cloth=1, cloth2=11,
+                               weapon="spear", hat="helmet", shield=rank == 0, jitter=5.0))
+    for i in range(24 if not pv else 10):
+        x = 14.0 + (i // 8) * 1.8 + rng.uniform(-0.3, 0.3)
+        y = 6.0 + (i % 8) * 2.8 + rng.uniform(-0.4, 0.4)
+        put(army, x, y, -math.pi / 2 - 0.2,
+            lambda f: P.figure(f, random.Random(500 + i), "aim_up", "soldier", cloth=11, cloth2=1,
+                               weapon="bow", hat="band", jitter=4.0))
+    put(army, 22.0, 4.0, -math.pi / 2 + 0.4,
+        lambda f: P.rider(f, random.Random(9), gait="walk", pose="ride_spear", outfit="general",
+                          weapon="spear", hat="helmet_plume", cloth=1, cloth2=11, coat="HorseCoat2",
+                          cape=True))
+    # banners: tall poles above both hosts
+    for i in range(9):
+        x = -12.0 - i * 2.6 + rng.uniform(-0.8, 0.8)
+        y = 8.0 + rng.uniform(-4, 9)
+        K.banner(flags, rng, color=[0, 5, 1][i % 3], at=(x, y, ground(x, y)), height=rng.uniform(5.5, 7.0), cloth=(1.4, 2.3))
+    for i in range(9):
+        x = 9.0 + i * 1.9 + rng.uniform(-0.6, 0.6)
+        y = 10.0 + rng.uniform(-5, 12)
+        K.banner(flags, rng, color=[2, 4, 3][i % 3], at=(x, y, ground(x, y)), height=rng.uniform(5.5, 7.0), cloth=(1.4, 2.3))
+    K.banner(flags, rng, color=0, at=(-21.5, -2.5, ground(-21.5, -2.5)), height=8.5, cloth=(2.0, 3.2))
+    K.banner(flags, rng, color=2, at=(23.5, 5.0, ground(23.5, 5.0)), height=8.5, cloth=(2.0, 3.2))
+    K.emit(army, "Armies", mats, "fig")
+    K.emit(flags, "Banners", mats, "fig")
+    # a few trees on the rise and the hills
+    tmb = MeshBuilder()
+    pl = []
+    for (sx, sy, d, rad, n) in ((0.06, 0.55, 140, 14, 5), (0.97, 0.52, 160, 18, 6), (0.30, 0.43, 420, 30, 8),
+                                (0.70, 0.42, 520, 40, 9)):
+        x, y, _ = SM.at(sx, sy, d)
+        pl += K.grove(rng, (x, y), rad, n, ground=ground, kinds=("Leaf", "LeafDark", "pine"))
+    K.trees(tmb, pl, rng, cam_dir=Vector(TARGET) - Vector(CAM), size=0.5, low=True)
+    K.emit(tmb, "Trees", mats, "tree")
+    cam = L.camera(CAM, TARGET, focal_mm=FOCAL)
+    look = dict(
+        sky=dict(stops=[(0.0, "ochre_l", 0.18), (0.25, "silk", 0.05), (0.4, "silk", 0.0)]),
+        fade=dict(d0=120.0, d1=4000.0, color=GB.mixc("silk", "ochre_l", 0.25), amount=0.8, gamma=0.7, cover=0.45),
+        mist=[dict(y=(0.30, 0.37), soft=0.02, jitter=0.02, dist_min=500.0, amount=1.0, noise_px=120, holes=0.2),
+              dict(y=(0.18, 0.24), soft=0.02, jitter=0.02, dist_min=2500.0, amount=0.9, noise_px=120, holes=0.3)],
+        ink=1.0,
+    )
+
+    def paint2d(cv, r):
+        rr = np.random.default_rng(3)
+        # dust raised by the charge and the melee: pale ochre washes (front, partly transparent)
+        for (cx, cy, rx, ry, a) in ((0.47, 0.52, 120, 40, 0.38), (0.30, 0.58, 150, 34, 0.32),
+                                    (0.62, 0.50, 90, 30, 0.28), (0.20, 0.63, 110, 24, 0.25)):
+            G2wash(cv, "front", "#D8C29A", a, (cx, cy), rx, ry, rr)
+        # a volley of arrows arcing from the blue archers over the melee
+        with cv.paint("sky", "ink", 0.8) as d:
+            for i in range(26):
+                x0 = rr.uniform(0.55, 0.78)
+                y0 = rr.uniform(0.18, 0.30)
+                L_ = rr.uniform(0.018, 0.026)
+                a = math.radians(rr.uniform(160, 172))
+                d.stroke([(x0, y0), (x0 + math.cos(a) * L_, y0 + math.sin(a) * L_ * 0.4 + 0.004)], 0.7, "flat")
+    return dict(camera=cam, look=look, paint2d=paint2d, notes="no UI keep-out; clash centred at x ~45%")
+
+
+def G2wash(cv, where, color, alpha, c, rx, ry, rr):
+    """Irregular soft wash made of a few overlapping blobs."""
+    with cv.paint(where, color, alpha, soft=min(rx, ry) * 0.6) as d:
+        for k in range(6):
+            dx = rr.uniform(-0.6, 0.6) * rx / cv.W * cv.k
+            dy = rr.uniform(-0.5, 0.5) * ry / cv.H * cv.k
+            d.ellipse((c[0] + dx, c[1] + dy), rx * rr.uniform(0.4, 0.7), ry * rr.uniform(0.5, 0.8))

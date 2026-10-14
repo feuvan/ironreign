@@ -61,11 +61,14 @@ namespace IronBattleUI
  * Game logic lives in SIronBattleScreen; the view reports clicks.
  *
  * With an active AIronBattleBoard3D (argument Board) the widget is a transparent overlay over the real-time 3D board
- * (docs/DESIGN.md 12.4) and must cover the whole game viewport: hover and clicks are picked on the board, left or
+ * (docs/DESIGN.md 12.4, 12.7) and must cover the whole game viewport: hover and clicks are picked on the board, left or
  * middle drag pans its camera, the wheel zooms and Home / R reset the view; highlights, the hover ring and every unit,
- * gate and effect animation are drawn by the board (fed from the same FBattleEvent stream); the widget draws the
- * projected unit plates (name, troop bar), gate bars, floating numbers, the day banner and the tooltip, and plays the
- * sounds on the board's animation timeline. Without a board (or when it stops being active) it draws the 2D board.
+ * gate and effect animation are drawn by the board (fed from the same FBattleEvent stream); the widget draws the unit
+ * plates (name, troop bar), gate bars (on the drawn gatehouse or rubble) and floating numbers, all projected with the
+ * board's per-frame FIronViewProjection, plus the day banner and the tooltip. Floating texts, sounds and the banner run
+ * on the board's animation clock (AIronBattleBoard3D::GetAnimationClock) at the moments PlayEvent reports
+ * (FIronBoardEventTiming), so they stay in sync through frame hitches. Without a board (or when it stops being active)
+ * it draws the 2D board on the wall clock.
  */
 class SIronHexView : public SLeafWidget
 {
@@ -88,7 +91,10 @@ public:
 	void ShowBanner(const FText& Text);
 	/** Drops every running animation and queued sound (e.g. after a fast-forward). */
 	void ClearAnimations();
-	/** FPlatformTime::Seconds() until which queued animations (2D moves, or the 3D board's blocking animations) play. */
+	/**
+	 * Timeline seconds (see TimelineNow) until which queued animations play: 2D moves, or the 3D board's blocking
+	 * animations.
+	 */
 	double GetBusyUntil() const;
 	/** True while queued animations should hold back the next AI step or the result dialog. */
 	bool IsAnimating() const;
@@ -211,8 +217,13 @@ private:
 
 	void AddFx(EFxKind Kind, IronSim::FHex Hex, double Start, float Duration);
 	void AddFloat(IronSim::FHex Hex, const FString& Text, const FLinearColor& Color, double Start, float FontSize = 18.0f);
-	/** Plays SfxName now, or when Start is reached if the event's animation is still queued behind a move. */
+	/** Plays SfxName now, or when Start (timeline seconds) is reached if the event's animation is still queued. */
 	void AddSound(const TCHAR* SfxName, double Start);
+	/**
+	 * Now on this view's animation timeline: the 3D board's animation clock when the view was built for a board (it
+	 * stands still while the board is inactive), else FPlatformTime::Seconds(). Every queued start time uses it.
+	 */
+	double TimelineNow() const;
 	void PlayDueSounds(double Now);
 	EActiveTimerReturnType OnAnimationTick(double InCurrentTime, float InDeltaTime);
 
@@ -276,6 +287,9 @@ private:
 	TArray<FQueuedSound> QueuedSounds;
 	/** Moves play back to back; effects of later events start once earlier moves finished. */
 	double AnimCursor = 0.0;
+	/** The timeline is the board's animation clock (the view was built for a 3D board), and its last known value. */
+	bool bBoardTimeline = false;
+	mutable double LastBoardClock = 0.0;
 	FText BannerText;
 	double BannerStart = -100.0;
 

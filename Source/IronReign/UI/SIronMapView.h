@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "InputCoreTypes.h"
 #include "Layout/Geometry.h"
+#include "Layout/Margin.h"
 #include "UObject/WeakObjectPtr.h"
 #include "UObject/WeakObjectPtrTemplates.h"
 #include "Widgets/DeclarativeSyntaxSupport.h"
@@ -10,6 +11,7 @@
 
 class AIronWorldMap3D;
 class FIronSession;
+struct FIronViewProjection;
 
 DECLARE_DELEGATE_OneParam(FOnIronMapCityClicked, int32 /*City*/);
 /** An army was clicked on the 3D map (FArmy::Id), or open ground (-1: clear the army selection). */
@@ -21,14 +23,16 @@ DECLARE_DELEGATE_OneParam(FOnIronMapArmyClicked, int32 /*ArmyId*/);
  * Pan by dragging with the left or right mouse button, zoom with the wheel (0.5x..2.5x, the map always fills the view).
  * All hit testing happens in map coordinates (pixels of the map image).
  *
- * Over the real-time 3D map (SetWorldMap with an active AIronWorldMap3D, docs/DESIGN.md section 12) the widget is a
- * transparent overlay instead: the 3D scene draws the terrain, roads, cities and armies; this widget paints only Slate
- * overlays projected from the scene (map labels, planned march routes, city name plaques with owner colour and
- * garrison, army troop tags, the hover tooltip and a thin frame) and forwards input to the map: left/right drag pans,
- * the wheel zooms toward the cursor, middle drag and Q/E rotate, WASD/arrows pan, +/- zoom, a click selects an army
- * or a city (plaques and tags first, then AIronWorldMap3D::PickCity / PickArmy), a double click flies to it.
- * Slate local coordinates and game viewport pixels are converted through the game viewport widget's geometry (see
- * FViewportMapping), so DPI scaling and Retina backing scales are handled.
+ * Over the real-time 3D map (SetWorldMap with an active AIronWorldMap3D, docs/DESIGN.md sections 12.6 and 12.7) the
+ * widget is a transparent overlay instead: the 3D scene draws the terrain, roads, cities and armies; this widget paints
+ * only Slate overlays projected from the scene with the map's per-frame FIronViewProjection (map labels, planned march
+ * routes from the drawn army models, city name plaques with owner colour and garrison, army troop tags following the
+ * drawn models, the hover tooltip and a thin frame) and forwards input to the map: left/right drag pans, the wheel
+ * zooms toward the cursor, middle drag and Q/E rotate, Home/R turn back to north, WASD/arrows pan, +/- zoom, a click
+ * selects an army or a city (plaques and tags first, then AIronWorldMap3D::PickAt), a double click flies to it
+ * (FocusArmy / FocusCity) or centres open ground. Slate local coordinates and game viewport pixels are converted
+ * through the game viewport widget's geometry (see FViewportMapping), so DPI scaling and Retina backing scales are
+ * handled.
  */
 class IRONREIGN_API SIronMapView : public SLeafWidget
 {
@@ -63,6 +67,13 @@ public:
 	void SetWorldMap(AIronWorldMap3D* InWorldMap);
 	/** True while the widget is the overlay of an active 3D map. */
 	bool IsShowingWorldMap() const;
+	/**
+	 * Fractions (0..0.45) of the game viewport outside this widget on each side (left, top, right, bottom): what the
+	 * screen's opaque panels cover around the map area, for AIronWorldMap3D::SetFramingInsets. Measured from the last
+	 * layout (tick space); false before the widget was laid out or without a game viewport. Works while the 2D map is
+	 * shown, so a map that is not active yet is framed before it appears.
+	 */
+	bool ComputeFramingInsets(const AIronWorldMap3D& Map, FMargin& OutInsets) const;
 	/** City under the cursor (-1 if none). */
 	int32 GetHoveredCity() const { return HoverCity; }
 
@@ -151,17 +162,21 @@ private:
 	bool MakeViewportMapping(const AIronWorldMap3D& Map, FViewportMapping& OutMapping, bool bPaintSpace = false) const;
 	static FVector2D LocalToViewportPixel(const FViewportMapping& Mapping, const FGeometry& Geometry, const FVector2f& LocalPos);
 	static FVector2f ViewportPixelToLocal(const FViewportMapping& Mapping, const FGeometry& Geometry, const FVector2D& Pixel);
-	/** Map point (metres) at HeightM above the surface (terrain or sea) to local coordinates; false when not on screen. */
-	static bool ProjectToLocal(const AIronWorldMap3D& Map, const FViewportMapping& Mapping, const FGeometry& Geometry, const FVector2D& MapPointM, float HeightAboveSurfaceM, FVector2f& OutLocal);
+	/**
+	 * Map point (metres) at HeightM above the surface (terrain or sea) to local coordinates through this frame's View;
+	 * false behind the camera.
+	 */
+	static bool ProjectToLocal(const AIronWorldMap3D& Map, const FIronViewProjection& View, const FViewportMapping& Mapping, const FGeometry& Geometry, const FVector2D& MapPointM, float HeightAboveSurfaceM, FVector2f& OutLocal);
+	/** Plaque or tag under the cursor, else AIronWorldMap3D::PickAt (city or army, and the ground point). */
 	void UpdateWorldHover(const FGeometry& Geometry, const FVector2f& LocalPos);
 	void PushWorldHighlights(AIronWorldMap3D& Map) const;
 	FReply HandleWorldKey(AIronWorldMap3D& Map, const FGeometry& Geometry, const FKey& Key);
 
 	int32 PaintWorldOverlay(const AIronWorldMap3D& Map, const FGeometry& Geo, FSlateWindowElementList& OutDrawElements, int32 LayerId) const;
-	int32 PaintWorldLabels(const AIronWorldMap3D& Map, const FViewportMapping& Mapping, const FGeometry& Geo, FSlateWindowElementList& OutDrawElements, int32 Layer) const;
-	int32 PaintWorldRoutes(const AIronWorldMap3D& Map, const FViewportMapping& Mapping, const FGeometry& Geo, FSlateWindowElementList& OutDrawElements, int32 Layer, float Fraction) const;
-	int32 PaintWorldCities(const AIronWorldMap3D& Map, const FViewportMapping& Mapping, const FGeometry& Geo, FSlateWindowElementList& OutDrawElements, int32 Layer) const;
-	int32 PaintWorldArmies(const AIronWorldMap3D& Map, const FViewportMapping& Mapping, const FGeometry& Geo, FSlateWindowElementList& OutDrawElements, int32 Layer) const;
+	int32 PaintWorldLabels(const AIronWorldMap3D& Map, const FIronViewProjection& View, const FViewportMapping& Mapping, const FGeometry& Geo, FSlateWindowElementList& OutDrawElements, int32 Layer) const;
+	int32 PaintWorldRoutes(const AIronWorldMap3D& Map, const FIronViewProjection& View, const FViewportMapping& Mapping, const FGeometry& Geo, FSlateWindowElementList& OutDrawElements, int32 Layer, float Fraction) const;
+	int32 PaintWorldCities(const AIronWorldMap3D& Map, const FIronViewProjection& View, const FViewportMapping& Mapping, const FGeometry& Geo, FSlateWindowElementList& OutDrawElements, int32 Layer) const;
+	int32 PaintWorldArmies(const AIronWorldMap3D& Map, const FIronViewProjection& View, const FViewportMapping& Mapping, const FGeometry& Geo, FSlateWindowElementList& OutDrawElements, int32 Layer) const;
 
 	TSharedPtr<FIronSession> Session;
 	TAttribute<float> FractionalDayAttr;
@@ -183,6 +198,9 @@ private:
 	int32 HoverCity = -1;
 	int32 HoverArmyId = -1;
 	FVector2f HoverLocal = FVector2f(0.0f, 0.0f);
+	/** 3D: the ground point (map metres) under the cursor at the last scene pick (open-ground double click). */
+	FVector2D HoverGroundM = FVector2D::ZeroVector;
+	bool bHoverHasGround = false;
 
 	/** Cloth area of Art/Map/Banner.png (x, y, w, h in source pixels) for the faction glyph. */
 	float GlyphAreaX = 14.0f;

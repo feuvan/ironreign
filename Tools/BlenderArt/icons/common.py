@@ -1,9 +1,12 @@
-"""Icons family: the shared material set (one look for all 40 icons).
+"""Icons family (gongbi): the shared pigment set - one palette for all 40 icons.
 
-``M()`` returns a lazily-filled dict-like accessor: ``M()["gold"]`` builds the material on first
-use and caches it for the scene (``scene.reset`` wipes it between icons).
+``M()`` returns a lazily-filled dict-like accessor: ``M()["gold"]`` builds the pigment material
+on first use and caches it for the scene (``scene.reset`` wipes it between icons).  Colours are
+DESIGN.md mineral pigments (``ironart.icons_gongbi.PAL``) and mixes of them; every material is
+an emission wash (no light, no specular) with the facing 分染 and the painter's light term.
 """
 
+import math
 import os
 import sys
 
@@ -12,68 +15,162 @@ TOOLS = os.path.dirname(HERE)
 if TOOLS not in sys.path:
     sys.path.insert(0, TOOLS)
 
-from ironart import icons_mats as im  # noqa: E402
 from ironart import REPO_DIR  # noqa: E402
+from ironart import icons_gongbi as gb  # noqa: E402
 
 FONT_BRUSH = os.path.join(REPO_DIR, "Content", "Data", "Fonts", "Brush.ttf")
-FONT_SC = os.path.join(REPO_DIR, "Content", "Data", "Fonts", "CJK-SC-Bold.ttf")
 
-#: material key -> (factory, kwargs)
+
+# ---------------------------------------------------------------------------------------------
+# texture strokes (ic_ink AOV) - kept sparse: they must survive a 64 px downsample
+# ---------------------------------------------------------------------------------------------
+def _grain(axis="Z", freq=7.0, width=0.07, amount=0.55):
+    """Wood grain: wavy lines running along local ``axis``."""
+    def fn(b):
+        co = b.sep(gb.obj_coord(b))
+        across = co[0] if axis != "X" else co[1]
+        return b.math("MULTIPLY", gb.stripes(b, across, freq, width, wobble=0.22, wscale=1.6,
+                                             vec=gb.obj_coord(b)), amount)
+    return fn
+
+
+def _straw(freq=16.0, width=0.08, amount=0.4):
+    def fn(b):
+        co = b.sep(gb.obj_coord(b))
+        ang = b.math("ARCTAN2", co[1], co[0])
+        return b.math("MULTIPLY", gb.stripes(b, ang, freq / math.tau, width), amount)
+    return fn
+
+
+def _weave(scale=9.0, amount=0.28):
+    """Hemp weave: a faint chequer of short strokes."""
+    def fn(b):
+        n = b.node("ShaderNodeTexChecker")
+        n.inputs["Scale"].default_value = scale
+        b.link(gb.obj_coord(b), n.inputs["Vector"])
+        n.inputs["Color1"].default_value = (1, 1, 1, 1)
+        n.inputs["Color2"].default_value = (0, 0, 0, 1)
+        return b.math("MULTIPLY", n.outputs["Fac"], amount)
+    return fn
+
+
+def _bricks(scale=(1.0, 1.0, 1.0), amount=0.75, brick=(0.5, 0.25), mortar=0.03):
+    """Ruled masonry lines (界画): the Brick texture's mortar in object space."""
+    def fn(b):
+        n = b.node("ShaderNodeTexBrick")
+        n.inputs["Scale"].default_value = 1.0
+        n.inputs["Mortar Size"].default_value = mortar
+        n.inputs["Mortar Smooth"].default_value = 0.2
+        n.inputs["Brick Width"].default_value = brick[0]
+        n.inputs["Row Height"].default_value = brick[1]
+        n.offset = 0.5
+        m = b.node("ShaderNodeMapping")
+        m.inputs["Scale"].default_value = scale
+        # bricks in the XZ (front) and YZ (side) planes: use x + y as the horizontal run
+        co = b.sep(gb.obj_coord(b))
+        hx = b.math("ADD", co[0], co[1])
+        b.link(b.comb(hx, co[2], 0.0), m.inputs["Vector"])
+        b.link(m.outputs["Vector"], n.inputs["Vector"])
+        return b.math("MULTIPLY", n.outputs["Fac"], amount)
+    return fn
+
+
+def _rows(axis=2, freq=8.0, width=0.08, amount=0.6):
+    def fn(b):
+        co = b.sep(gb.obj_coord(b))
+        return b.math("MULTIPLY", gb.stripes(b, co[axis], freq, width), amount)
+    return fn
+
+
+def _zgrad(z0, z1, k=1.0):
+    """Deepen from z1 (0) down to z0 (k) in object space."""
+    def fn(b):
+        co = b.sep(gb.obj_coord(b))
+        return b.maprange(co[2], z0, z1, k, 0.0)
+    return fn
+
+
+def _zgrad_up(z0, z1, k=1.0):
+    def fn(b):
+        co = b.sep(gb.obj_coord(b))
+        return b.maprange(co[2], z0, z1, 0.0, k)
+    return fn
+
+
+# ---------------------------------------------------------------------------------------------
+# the library: key -> (factory, kwargs)
+# ---------------------------------------------------------------------------------------------
+P = gb.pigment
 LIBRARY = {
-    "gold": (im.gold, dict(name="I_Gold", color="#F4C25E", rough=0.24)),
-    "gold_old": (im.gold, dict(name="I_GoldOld", color="#D9A84E", rough=0.3, worn=0.5)),
-    "bronze": (im.bronze, dict(name="I_Bronze", color="#B8894A", patina_amt=0.28)),
-    "bronze_clean": (im.bronze, dict(name="I_BronzeClean", color="#C29152", patina_amt=0.08,
-                                      rough=0.24)),
-    "copper": (im.bronze, dict(name="I_Copper", color="#B87A4A", patina="#3E7A66",
-                                patina_amt=0.22, rough=0.32, pscale=9.0)),
-    "steel": (im.steel, dict(name="I_Steel", color="#C8CCD2", rough=0.18)),
-    "iron": (im.iron, dict(name="I_Iron", color="#60646B", rough=0.4)),
-    "iron_dark": (im.iron, dict(name="I_IronDark", color="#3E4248", rough=0.45, rust_amt=0.1)),
-    "lacquer_red": (im.lacquer, dict(name="I_LacquerRed", color="#9A2416", rough=0.4)),
-    "lacquer_dark": (im.lacquer, dict(name="I_LacquerDark", color="#5A140E", rough=0.4)),
-    "lacquer_black": (im.lacquer, dict(name="I_LacquerBlack", color="#1C1612", rough=0.35,
-                                        vary=0.02)),
-    "wood": (im.wood, dict(name="I_Wood", color="#8A5C36", grain="#55361F", axis="Z")),
-    "wood_x": (im.wood, dict(name="I_WoodX", color="#8A5C36", grain="#55361F", axis="X")),
-    "wood_y": (im.wood, dict(name="I_WoodY", color="#8A5C36", grain="#55361F", axis="Y")),
-    "wood_dark": (im.wood, dict(name="I_WoodDark", color="#5A3A22", grain="#33200F", axis="Z",
-                                 coat=0.35)),
-    "wood_dark_x": (im.wood, dict(name="I_WoodDarkX", color="#5A3A22", grain="#33200F",
-                                   axis="X", coat=0.35)),
-    "wood_pale": (im.wood, dict(name="I_WoodPale", color="#B8925E", grain="#8A6436", axis="Z")),
-    "wood_pale_x": (im.wood, dict(name="I_WoodPaleX", color="#B8925E", grain="#8A6436",
-                                   axis="X")),
-    "bamboo": (im.bamboo, dict(name="I_Bamboo", color="#B89A58")),
-    "jade": (im.jade, dict(name="I_Jade", color="#4E9A72")),
-    "silk_red": (im.silk, dict(name="I_SilkRed", color="#B02A1C")),
-    "silk_gold": (im.silk, dict(name="I_SilkGold", color="#D2A23E", sheen=0.7)),
-    "silk_blue": (im.silk, dict(name="I_SilkBlue", color="#2E4E86")),
-    "silk_green": (im.silk, dict(name="I_SilkGreen", color="#3E7A52")),
-    "silk_white": (im.silk, dict(name="I_SilkWhite", color="#ECE6DA", sheen=0.5, sss=0.2)),
-    "silk_black": (im.silk, dict(name="I_SilkBlack", color="#26201C", sheen=0.8)),
-    "paper": (im.paper, dict(name="I_Paper", color="#EADFC4")),
-    "straw": (im.straw, dict(name="I_Straw")),
-    "hemp": (im.hemp, dict(name="I_Hemp")),
-    "celadon": (im.ceramic, dict(name="I_Celadon", color="#9CBBA0", pool="#5E8A6A",
-                                  crackle=0.35)),
-    "porcelain": (im.ceramic, dict(name="I_Porcelain", color="#ECE8DE", pool="#B8BCB8")),
-    "stoneware": (im.stoneware, dict(name="I_Stoneware")),
-    "stone": (im.stone, dict(name="I_Stone")),
-    "masonry": (im.masonry, dict(name="I_Masonry")),
-    "plaster": (im.plaster, dict(name="I_Plaster")),
-    "roof": (im.roof_tile, dict(name="I_Roof")),
-    "rope_red": (im.rope, dict(name="I_RopeRed", color="#A42A1C")),
-    "rope_straw": (im.rope, dict(name="I_RopeStraw", color="#B89858", sheen=0.2, rough=0.8)),
-    "rope_gold": (im.rope, dict(name="I_RopeGold", color="#D0A040", sheen=0.8)),
-    "hide": (im.hide, dict(name="I_Hide")),
-    "leather": (im.leather, dict(name="I_Leather")),
-    "feather": (im.feather, dict(name="I_Feather")),
-    "flame": (im.flame, dict(name="I_Flame")),
-    "cloud": (im.cloud, dict(name="I_Cloud")),
-    "rice": (im.plain, dict(name="I_Rice", color="#F2EEE4", rough=0.45, sss=0.3)),
-    "ink": (im.plain, dict(name="I_Ink", color="#1A1410", rough=0.5)),
-    "vermilion": (im.plain, dict(name="I_Vermilion", color="#C0301E", rough=0.6)),
+    # metals: mud-gold, bronze, iron as painted washes (no speculars)
+    "gold": (P, dict(name="I_Gold", light="#E4C77C", deep="#A07A30", fen=0.75, formk=0.22)),
+    "gold_dark": (P, dict(name="I_GoldDark", light="#C9A24B", deep="#7E5E24", fen=0.7)),
+    "bronze": (P, dict(name="I_Bronze", light="#C09A5A", deep="#6E4E24", fen=0.75, formk=0.24)),
+    "patina": (P, dict(name="I_Patina", light="#8CBFA0", deep="#3E8E6E", fen=0.6)),
+    "steel": (P, dict(name="I_Steel", light="#DCE0DA", deep="#7C8A90", fen=0.8, formk=0.22)),
+    "iron": (P, dict(name="I_Iron", light="#8E928E", deep="#4A4E50", fen=0.6)),
+    "iron_dark": (P, dict(name="I_IronDark", light="#5E605C", deep="#2E302E", fen=0.5)),
+    # woods (ochre / ink-brown washes with sparse grain)
+    "wood": (P, dict(name="I_Wood", light="#B88452", deep="#6E4426", ink=_grain("Z"))),
+    "wood_x": (P, dict(name="I_WoodX", light="#B88452", deep="#6E4426", ink=_grain("X"))),
+    "wood_plain": (P, dict(name="I_WoodPlain", light="#B88452", deep="#6E4426")),
+    "wood_dark": (P, dict(name="I_WoodDark", light="#80563A", deep="#3E2818", fen=0.5)),
+    "wood_pale": (P, dict(name="I_WoodPale", light="#D8B484", deep="#9A7044", ink=_grain("Z", 6.0))),
+    "wood_pale_x": (P, dict(name="I_WoodPaleX", light="#D8B484", deep="#9A7044",
+                            ink=_grain("X", 6.0))),
+    "bamboo": (P, dict(name="I_Bamboo", light="#C9BA78", deep="#8A7A3E")),
+    "bamboo_green": (P, dict(name="I_BambooGreen", light="#A9C08A", deep="#5E7E48")),
+    # lacquer, silk, paper
+    "lacquer_red": (P, dict(name="I_LacquerRed", light="#C64A34", deep="#7A1E16", fen=0.6)),
+    "lacquer_black": (P, dict(name="I_LacquerBlack", light="#4E463E", deep="#1E1A16", fen=0.5,
+                              hi=("#7A7068", 0.35))),
+    "silk_red": (P, dict(name="I_SilkRed", light="#CC5038", deep="#8A2A20")),
+    "silk_rouge": (P, dict(name="I_SilkRouge", light="#B85A66", deep="#7A2A38")),
+    "silk_blue": (P, dict(name="I_SilkBlue", light="#7FA6C8", deep="#2B5C8A")),
+    "silk_azure": (P, dict(name="I_SilkAzure", light="#4E7EAE", deep="#1E4468")),
+    "silk_green": (P, dict(name="I_SilkGreen", light="#8CBFA0", deep="#3E8E6E")),
+    "silk_gold": (P, dict(name="I_SilkGold", light="#E2C67E", deep="#A88438")),
+    "silk_white": (P, dict(name="I_SilkWhite", light="#F6F0E2", deep="#CFC2A4", fen=0.6)),
+    "silk_ink": (P, dict(name="I_SilkInk", light="#5A5248", deep="#2A241E")),
+    "paper": (P, dict(name="I_Paper", light="#F6F0E2", deep="#D4C4A2", fen=0.45, formk=0.14)),
+    "paper_old": (P, dict(name="I_PaperOld", light="#EADBB8", deep="#C2A87A", fen=0.45)),
+    # fibres, food, ceramics
+    "straw": (P, dict(name="I_Straw", light="#E6CC8A", deep="#A6843E")),
+    "straw_lines": (P, dict(name="I_StrawLines", light="#E6CC8A", deep="#A6843E",
+                            ink=_rows(2, 14.0, 0.07, 0.35))),
+    "rice": (P, dict(name="I_Rice", light="#F4ECD4", deep="#C8B080", fen=0.6)),
+    "grain": (P, dict(name="I_Grain", light="#E8C870", deep="#B08A34", fen=0.6)),
+    "hemp": (P, dict(name="I_Hemp", light="#DCC79E", deep="#9A7E54", fen=0.6)),
+    "celadon": (P, dict(name="I_Celadon", light="#BCD8C0", deep="#5E8E74", fen=0.7)),
+    "porcelain": (P, dict(name="I_Porcelain", light="#F8F4EA", deep="#BEC2BA", fen=0.7)),
+    "stoneware": (P, dict(name="I_Stoneware", light="#A86E44", deep="#4E301C", fen=0.75)),
+    "tea": (P, dict(name="I_Tea", light="#B88A3E", deep="#7A5420", fen=0.2, formk=0.0)),
+    "wine": (P, dict(name="I_Wine", light="#C4A060", deep="#8A6A34", fen=0.2, formk=0.0)),
+    # building
+    "stone": (P, dict(name="I_Stone", light="#D2CAB4", deep="#8E8672", fen=0.5)),
+    "masonry": (P, dict(name="I_Masonry", light="#CFC6AE", deep="#8A826C", fen=0.35,
+                        ink=_bricks((2.6, 4.2, 1.0), 0.6))),
+    "plaster": (P, dict(name="I_Plaster", light="#F2EADA", deep="#CDBF9E", fen=0.4)),
+    "roof": (P, dict(name="I_Roof", light="#7E9094", deep="#3A4A50", fen=0.5)),
+    "roof_ridge": (P, dict(name="I_RoofRidge", light="#5E6E72", deep="#2C383C", fen=0.4)),
+    "pillar": (P, dict(name="I_Pillar", light="#C8503A", deep="#8A2A20", fen=0.5)),
+    "earth": (P, dict(name="I_Earth", light="#C8A878", deep="#8A6A44", fen=0.5)),
+    # misc
+    "rope_red": (P, dict(name="I_RopeRed", light="#C8503A", deep="#7A2018", fen=0.5)),
+    "rope_straw": (P, dict(name="I_RopeStraw", light="#D2B47A", deep="#8A6E3A", fen=0.5)),
+    "rope_gold": (P, dict(name="I_RopeGold", light="#E2C67E", deep="#9A7A34", fen=0.5)),
+    "tassel_red": (P, dict(name="I_TasselRed", light="#C84A36", deep="#8A2418", fen=0.3)),
+    "hide": (P, dict(name="I_Hide", light="#F0E2C2", deep="#BEA070", fen=0.65)),
+    "leather": (P, dict(name="I_Leather", light="#9A6A42", deep="#4E3020", fen=0.6)),
+    "jade": (P, dict(name="I_Jade", light="#9ACCAE", deep="#3E8E6E", fen=0.7)),
+    "skin": (P, dict(name="I_Skin", light="#F4E2C8", deep="#CC9C78", fen=0.6, formk=0.12)),
+    "ink": (gb.flat, dict(name="I_Ink", color="#2A241E")),
+    "seal": (gb.flat, dict(name="I_Seal", color="#B5382A")),
+    "white": (P, dict(name="I_White", light="#F8F4EA", deep="#D2C6AA", fen=0.5)),
+    "feather": (P, dict(name="I_Feather", light="#F6F0E2", deep="#C8BCA0", fen=0.5)),
+    "target_red": (P, dict(name="I_TargetRed", light="#C8503A", deep="#9A3424", fen=0.15)),
+    "target_white": (P, dict(name="I_TargetWhite", light="#F4EEE0", deep="#D8CCB0", fen=0.15)),
+    "target_blue": (P, dict(name="I_TargetBlue", light="#5E86B0", deep="#2B5C8A", fen=0.15)),
 }
 
 
@@ -87,3 +184,30 @@ class _Lib(dict):
 
 def M():
     return _Lib()
+
+
+def flame_material(name="I_Flame", z0=0.0, z1=1.0):
+    """Flame: gold heart rising into vermilion and cinnabar tongues (gradient up the flame) -
+    the painted flames of Buddhist halos and battle scrolls."""
+    def grad(b):
+        co = b.sep(gb.obj_coord(b))
+        return b.maprange(co[2], z0, z1, 0.0, 1.0)
+    mat, b, created = gb.new_material(name)
+    if not created:
+        return mat
+    t = grad(b)
+    lw = b.node("ShaderNodeLayerWeight")
+    lw.inputs["Blend"].default_value = 0.35
+    f = b.smooth(lw.outputs["Facing"], 0.05, 0.95)
+    k = b.clamp01(b.math("ADD", b.math("MULTIPLY", t, 0.75), b.math("MULTIPLY", f, 0.55)))
+    ramp = b.ramp(k, [(0.0, gb.lin("#F2D47A") + (1.0,)), (0.35, gb.lin("#E89A48") + (1.0,)),
+                      (0.7, gb.lin("#D0643C") + (1.0,)), (1.0, gb.lin("#A42E20") + (1.0,))])
+    em = b.node("ShaderNodeEmission")
+    b.set(em.inputs["Color"], ramp)
+    b.output(em.outputs[0])
+    return mat
+
+
+def cloud_material(name="I_Cloud", light="#F4EEE2", deep="#7FA6C8"):
+    """Auspicious cloud (祥云): lead white body, azurite 晕染 into the scroll edges."""
+    return gb.pigment(name, light, deep, fen=0.95, formk=0.1)

@@ -1,9 +1,11 @@
-"""Review render of any exported model (re-imported from its GLB, as Unreal will get it).
+"""Gongbi review renders of the exported World Models (re-imported GLBs, no rebuild).
 
-    Tools/BlenderArt/render.sh Tools/BlenderArt/world_models/review.py <Name> [pitch yaw fill W H spp] [--dist D] [--out file]
+    Tools/BlenderArt/render.sh Tools/BlenderArt/world_models/review.py [City_1 Tree_Pine ...] [--sheet]
 
-Writes <scratch>/previews/<Name>_review_p<pitch>_y<yaw>.png (perspective 40 deg FOV, studio sun, sky,
-terrain-like ground, Filmic Medium Contrast).
+Each GLB in ArtSource/Models is re-imported into a clean scene and rendered with
+ironart.world_gongbi_render.preview (soft shadowless light + Freestyle ink on aged silk, an
+approximation of Unreal's painted post-process) to <scratch>/previews/<Name>_gongbi.png;
+``--sheet`` also writes previews/World_Models_gongbi_sheet.png (all nine).
 """
 
 import os
@@ -12,36 +14,56 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common  # noqa: E402
 
-from ironart import scene, world_bake as WB, world_render as WR  # noqa: E402
+from ironart import world_bake as WB, world_gongbi_render as GR  # noqa: E402
+
+#: name: preview kwargs
+VIEWS = {
+    "City_1": dict(res=(1280, 800), pitch=48.0, yaw=-20.0, fill=0.84),
+    "City_2": dict(res=(1280, 800), pitch=48.0, yaw=-20.0, fill=0.84),
+    "City_3": dict(res=(1280, 800), pitch=48.0, yaw=-20.0, fill=0.84),
+    "Sect": dict(res=(960, 800), pitch=38.0, yaw=-25.0, fill=0.92),
+    "Banner": dict(res=(640, 800), pitch=12.0, yaw=-30.0, target=(2.0, 0.0, 11.8), dist=44.0),
+    "Flag": dict(res=(640, 800), pitch=12.0, yaw=-30.0, target=(1.4, 0.0, 5.3), dist=21.0),
+    "Tree_Pine": dict(res=(640, 640), pitch=24.0, yaw=-20.0, fill=0.9),
+    "Tree_Broad": dict(res=(640, 640), pitch=24.0, yaw=-20.0, fill=0.9),
+    "Tree_Bamboo": dict(res=(640, 640), pitch=24.0, yaw=-20.0, fill=0.9),
+}
+
+
+def render(name, samples=24):
+    objs = WB.reimport(os.path.join(common.MODELS_DIR, name + ".glb"))
+    path = os.path.join(common.out("previews"), "%s_gongbi.png" % name)
+    secs = GR.preview(objs, path, samples=samples, ink_px=1.1, **VIEWS[name])
+    return path, secs
+
+
+def sheet(paths, out):
+    from PIL import Image
+    ims = [Image.open(p).convert("RGB") for p in paths]
+    h = 400
+    ims = [im.resize((int(im.width * h / im.height), h), Image.LANCZOS) for im in ims]
+    rows = [ims[:3], ims[3:6], ims[6:]]
+    W = max(sum(i.width for i in r) for r in rows if r)
+    sh = Image.new("RGB", (W, h * len([r for r in rows if r])), (230, 216, 184))
+    for j, r in enumerate([r for r in rows if r]):
+        x = 0
+        for im in r:
+            sh.paste(im, (x, j * h))
+            x += im.width
+    sh.save(out)
+    return out
 
 
 def main():
-    a = scene.args()
-    dist = None
-    out = None
-    if "--dist" in a:
-        i = a.index("--dist")
-        dist = float(a[i + 1])
-        del a[i:i + 2]
-    tgt = None
-    if "--target" in a:
-        i = a.index("--target")
-        tgt = tuple(float(v) for v in a[i + 1].split(","))
-        del a[i:i + 2]
-    if "--out" in a:
-        i = a.index("--out")
-        out = a[i + 1]
-        del a[i:i + 2]
-    name = a[0]
-    vals = [float(x) for x in a[1:]]
-    pitch, yaw, fill, W, H, spp = (vals + [50.0, -25.0, 0.9, 1280, 720, 40][len(vals):])[:6]
-    path = os.path.join(common.MODELS_DIR, name + ".glb")
-    objs = WB.reimport(path)
-    target = tgt if tgt else ((0, 0, 0) if dist else None)
-    out = out or os.path.join(common.out("previews"), "%s_review_p%d_y%d%s.png" % (name, pitch, yaw, "_d%d" % dist if dist else ""))
-    WR.beauty(objs, out, res=(int(W), int(H)), samples=int(spp), pitch=pitch, yaw=yaw, fill=fill, dist=dist,
-              target=target)
-    print("[ironart] review", out)
+    fl = common.flags()
+    names = [n for n in fl["names"] if n in VIEWS] or list(VIEWS)
+    paths = []
+    for n in names:
+        p, secs = render(n, 12 if fl["preview"] else 24)
+        print("[ironart] review %s -> %s (%.1fs)" % (n, p, secs))
+        paths.append(p)
+    if "--sheet" in sys.argv:
+        print("[ironart] sheet", sheet(paths, os.path.join(common.out("previews"), "World_Models_gongbi_sheet.png")))
 
 
 if __name__ == "__main__":

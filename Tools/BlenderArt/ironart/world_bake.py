@@ -457,13 +457,15 @@ def _pixels(img):
 
 def bake(objs, size, out_dir, name, ao=True, ao_samples=24, ao_distance=2.5, samples=4,
          margin=16, cavity=0.22, skip_mats=("Leaves", "Bark", "Water", "Tint"), height=None,
-         ao_floor=0.35, select=None, jpeg=False):
+         ao_floor=0.35, select=None, jpeg=False, const=None):
     """Bake base / roughness / metallic / normal (+ AO) of every non-skipped material on
     ``objs`` (all selected, one shared atlas via their active UV layer).  Writes
     ``<name>_Base.png`` (sRGB; ``.jpg`` 4:4:4 q93 when ``jpeg``), ``<name>_ORM.png`` (linear: AO,
     roughness, metallic) and
     ``<name>_Normal.png`` into ``out_dir``; returns {'base', 'orm', 'normal': path, 'secs'}.
-    Other objects in the scene still occlude the AO bake (ground plates use that)."""
+    Other objects in the scene still occlude the AO bake (ground plates use that).
+    ``const`` = {'rough': v, 'metal': v}: skip that bake and write the constant (gongbi matte
+    pigment is uniform; saves two bake passes)."""
     sc = bpy.context.scene
     h = height or size
     os.makedirs(out_dir, exist_ok=True)
@@ -489,8 +491,12 @@ def bake(objs, size, out_dir, name, ao=True, ao_samples=24, ao_distance=2.5, sam
     # objects in one atlas a later object's margin paints over earlier objects' islands.  The
     # coverage mask pass + dilate() below make one correct margin for the whole atlas.
     sc.render.bake.margin = 0
+    const = const or {}
     for key, sock, srgb in (("mask", None, False), ("base", "Base Color", True), ("rough", "Roughness", False),
                             ("metal", "Metallic", False)):
+        if key in const:
+            res[key] = np.full((h, size, 4), float(const[key]), np.float32)
+            continue
         img = _image("%s_%s" % (name, key), size, h, srgb)
         _set_target(mats, img)
         sc.cycles.samples = 1 if key == "mask" else samples
@@ -916,7 +922,8 @@ def manifest_add(paths, root=ART_SOURCE):
 # one-call atlas for a set of prototypes
 # ---------------------------------------------------------------------------------------------
 def atlas_bake(protos, size, out_dir, name, preview=False, weights=None, angle_deg=62.0, ao_distance=2.0,
-               ao_samples=24, jpeg=True, keep=("Leaves", "Bark", "Water", "Tint"), gap=6.0):
+               ao_samples=24, jpeg=True, keep=("Leaves", "Bark", "Water", "Tint"), gap=6.0, ao=True, cavity=0.22,
+               samples=4, const=None, on_unwrapped=None):
     """prepare -> spread -> unwrap (rows / details handled) -> separate rows -> bake -> row UVs
     from the roof under them -> rejoin -> every atlas slot = the ``Atlas`` material -> back to the
     origin.  Returns (maps, material)."""
@@ -924,9 +931,11 @@ def atlas_bake(protos, size, out_dir, name, preview=False, weights=None, angle_d
         prepare(o)
     spread(protos, gap=gap)
     unwrap(protos, size=size, margin_px=4 if preview else 6, angle_deg=angle_deg, weights=weights)
+    if on_unwrapped is not None:          # e.g. world_gongbi.set_density(atlas_density(protos, size))
+        on_unwrapped(protos)
     rows = {o.name: separate_rows(o) for o in protos}
     maps = bake(protos, size, out_dir, name, ao_samples=8 if preview else ao_samples, ao_distance=ao_distance,
-                jpeg=jpeg)
+                jpeg=jpeg, ao=ao, cavity=cavity, samples=samples, const=const)
     for o in protos:
         r = rows.get(o.name)
         if r is not None:

@@ -1,89 +1,59 @@
-"""PanelDark.png (128x128 9-slice, 24 px border): deep black lacquer with mother-of-pearl and
-gold inlay trim.
+"""PanelDark.png (128x128 9-slice, 24 px margins): ink-dark silk with a painted mud-gold (泥金)
+border and mud-gold ruyi cloud heads (如意云头) in the corners.
 
-Cross-section (d from the outer edge, px = mm, mitred):
-    0-5.8    black-lacquer rim, flat top between crisp rounded arrises, glassy coat
-    5.9-7.9  gold bead
-    7.9-11.8 lacquer band with an inlaid mother-of-pearl strip (9.45-10.45, flush; the shell's
-             pastel play of colour runs *across* the strip so it stretches cleanly)
-    11.8-12.9 gold fillet, 13-13.8 bevel down to the field
-    field    Night #1B1712 in the strips, lifted to #2A2119 in the middle of the 9-slice centre
-Corners: a raden (mother-of-pearl) ruyi head inlaid flush in the field corner - small nacre
-pieces with hairline lacquer gaps, point to the corner, lobes to the panel - outlined and curled
-in raised gold wire, inside the 24 px corners.
+Cross-section (d = mitred distance from the outer edge, target px; rings depend on d only):
+    0.0-0.9   ink edge
+    0.9-4.0   deep-umber edge silk, 晕染 lighter towards its middle, lengthwise threads
+    4.0-5.1   mud-gold rule (gold powder grain along the rule)
+    5.1-6.3   ink silk
+    6.3-6.8   mud-gold hairline (75 %)
+    6.8-      ink-dark silk field #1E1A16 (Night +-3) with a faint deep-umber glow and silk
+              texture in the 9-slice centre only
+Corners: ruyi heads 12 px, centred 9 px from both edges, pointing into the panel, painted in
+mud-gold with engraved curls; a halo of field colour interrupts the rules behind them.
+Text on it: TextLight / Gold.
 """
 
 import numpy as np
 
-import kit
-from ironart import ui_chrome_motifs as MO
+from ironart import ui_chrome_paint as P
 from ironart import ui_chrome_sdf as S
-from ironart.ui_chrome_maps import Maps, L
 
 NAME = "PanelDark"
-SPEC = dict(size=(128, 128), ss=4, spp=48, margins=(24, 24, 24, 24), seed=12)
+SPEC = dict(size=(128, 128), ss=4, margins=(24, 24, 24, 24), seed=21)
 W = H = 128
-M = 24
+FIELD = "#1E1A16"
+GLOW = "#2A2119"
+RUYI = dict(c=9.0, size=12.0, rot=315.0)
 
 
-def corner_inlay(ss):
-    """Top-left corner on a 24 x 24 grid: (shell mask, shell colour, gap mask, shell relief,
-    wire height, wire mask).  The ruyi is raden work - small nacre pieces with hairline gaps -
-    outlined in raised gold wire, its curls drawn in gold wire too."""
-    G = S.Grid(M, M, ss)
-    F = kit.Folded(G.X, G.Y)
-    sd, eng = MO.ruyi(F, 16.6, 16.6, 8.6, rot=135.0)        # max reach x = 22.9 < 24
-    wire = np.abs(sd + 0.15) - 0.42
-    wire = np.minimum(wire, eng - 0.2)
-    wm = S.aa_mask(wire, G)
-    wz = S.round_relief(wire, 0.45, 0.3)
-    shell = S.aa_mask(sd, G)
-    col, gaps, rel = kit.raden(G, shell, seed=77, cell=1.9)
-    return shell, col, gaps, rel, wz, wm
+def paint(G, variant=None, seed=None):
+    seed = SPEC["seed"] if seed is None else seed
+    d = S.inset_distance(G, W, H, r=1.5)
+    C = P.Canvas(G)
+    shape = P.aa(-d, G)
 
+    # ---- field: ink silk with a faint umber glow in the centre ------------------------------
+    cw = P.centre_weight(G, SPEC["margins"], fade=14.0)
+    tex = P.silk_texture(G, seed, weave=0.0, slub=0.0, mottle=0.018, mottle_cell=40.0)
+    u = (G.X - W / 2) / (W / 2 - 24)
+    v = (G.Y - H / 2) / (H / 2 - 24)
+    glow = np.clip(1.0 - (u * u + v * v) / 2.0, 0, 1) ** 1.5 * cw
+    fcol = P.mix(FIELD, GLOW, 0.55 * glow) * (1.0 + (tex - 1.0) * cw)[..., None]
+    C.over(shape, fcol)
 
-def build(G, variant=None):
-    d = S.inset_distance(G, W, H, r=2.5)
-    m = Maps(G.shape, base="#1B1712")
-    # rim: a flat lacquer top (mirrors the dark ceiling: deep black) between two crisp
-    # rounded arrises that catch the studio light as fine highlight lines
-    pts = [(-1, 0.0), (0.0, 0.25), (0.35, 1.45), (0.9, 2.15), (1.5, 2.32), (4.5, 2.32),
-           (5.1, 2.12), (5.55, 1.7), (5.85, 1.45)]
-    pts += kit.bead(6.9, 1.0, 1.35)
-    pts += [(7.95, 1.32), (8.2, 1.28), (11.7, 1.28), (11.85, 1.5), (12.85, 1.5), (13.0, 1.25),
-            (13.8, 0.62), (14.4, 0.6), (40, 0.6)]
-    z = S.Profile(pts, round_px=0.12)(d)
+    # ---- border -----------------------------------------------------------------------------
+    t = 1.0 - np.abs(d - 2.45) / 1.55
+    edge = P.mix("#241C15", "#3A2C21", P.smoothstep(0.0, 0.9, t))
+    edge = edge * (1.0 + 0.06 * P.noise1d(d, 0.3, seed + 3, 1))[..., None]
+    C.over(P.band(d, 0.8, 4.0, G), edge)
+    C.over(P.band(d, 4.0, 5.1, G), P.strip_color(d, "gold", seed + 4, amp=0.06, period=0.45))
+    C.over(P.band(d, 6.3, 6.8, G), P.strip_color(d, "gold", seed + 5, amp=0.05), 0.75)
+    C.over(P.band(d, -5, 0.9, G) * shape, "#110E0B")
 
-    rim = S.band(d, -5, 5.9, G)
-    gold = S.band(d, 5.9, 7.95, G)
-    bandl = S.band(d, 7.95, 11.8, G)
-    fillet = S.band(d, 11.8, 12.95, G)
-    field = S.band(d, 12.95, 999, G)
-    shell_strip = S.band(d, 9.45, 10.45, G)
-
-    m.paint(rim, "lacquer_black", base=kit.coat_cal(L("#1E1914")))
-    m.paint(gold, "gold")
-    m.paint(bandl, "lacquer_black", base=kit.coat_cal(L("#17130F")))
-    # mother-of-pearl strip: pastel interference colours ACROSS the strip (stretch-safe)
-    t = np.clip((d - 9.45) / 1.0, 0, 1)
-    pearl = (kit.lerp3(L("#E7C9D4"), L("#C9E2DA"), kit.smoothstep(0.0, 0.55, t)) * (1 - kit.smoothstep(0.5, 1.0, t))[..., None]
-             + kit.lerp3(L("#C9E2DA"), L("#CFD9F0"), kit.smoothstep(0.5, 1.0, t)) * kit.smoothstep(0.5, 1.0, t)[..., None])
-    m.paint(shell_strip, "pearl", base=pearl * 0.42 * L("#FFE6D8", 1.0) / L("#FFFFFF"), mop=0.0)
-    m.paint(fillet, "gold_satin")
-    lift = kit.centre_mask(G, W, H, (M, M, M, M), fade=34.0)
-    fb = kit.lerp3(kit.coat_cal(L("#1B1712")), kit.coat_cal(L("#2A2119")), lift)
-    m.paint(field, "lacquer_black", base=fb)
-
-    # ---- corner ruyi inlays -----------------------------------------------------------------------
-    shell, col, gaps, rel, wz, wm = corner_inlay(G.ss)
-    shell, gaps, wz, wm = (kit.stamp(G, a) for a in (shell, gaps, wz, wm))
-    rel = kit.stamp_signed(G, rel)
-    colf = np.dstack([kit.stamp(G, col[..., c]) for c in range(3)])
-    # flush nacre pieces in the field corner (each tilted a hair) + raised gold wire outline
-    z = z + rel * shell * (1 - wm) + wz * wm
-    m.paint(shell, "pearl", base=colf, mop=0.35)
-    m.paint(shell * gaps, "lacquer_black", base=kit.coat_cal(L("#1B1712")))
-    m.paint(wm, "gold")
-    m.height = z.astype(np.float32)
-    m.alpha = S.aa_mask(-d, G)
-    return m
+    # ---- corners: ruyi cloud heads -----------------------------------------------------------
+    c, size, rot = RUYI["c"], RUYI["size"], RUYI["rot"]
+    for (x, y, r) in ((c, c, rot), (W - c, c, rot + 90), (W - c, H - c, rot + 180),
+                      (c, H - c, rot + 270)):
+        P.paint_ruyi(C, G, x, y, size, r, seed + 7, halo=FIELD, halo_w=0.9, engrave="#2E2318")
+    return C.rgba()

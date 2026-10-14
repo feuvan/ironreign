@@ -1,74 +1,67 @@
-"""Tab.png / Tab_Active.png (160x48 9-slice, margins l 18, t 14, r 18, b 10): lighter variants
-of the button - a slim gold bead around the top and sides (the bottom is open: tabs sit on the
-panel below), rounded top corners.
+"""Tab.png / Tab_Active.png (160x48 9-slice, margins l 18, t 14, r 18, b 10): light silk-paper
+tabs edged with brocade along the top and sides, concave (委角) top corners, open bottom.
 
-    inactive  lacquered rosewood plaque, straight horizontal grain (a function of y only, so it
-              stretches cleanly sideways), satin gold bead, darkening towards the bottom edge
-    active    cinnabar lacquer plaque, bright gold bead, a gold underline bar along the bottom
-              edge (y 44.6-47) with a warm glow rising from it
-
-The UI tints the inactive tab x0.78 (normal) and shows it unmodified on hover; text is TextLight
-(inactive) / Gold (active), 13 px.
+Cross-section from the top / side edges (d, target px):
+    0.0-1.1   ink outline
+    1.1-4.5   brocade edge: azurite (inactive) / cinnabar (active), 晕染 to both edges,
+              lengthwise threads; a mud-gold thread at 3.7-4.25 (active: brighter)
+    4.5-5.05  ink hairline
+    field     light silk paper with a soft vertical wash (paler at the top); the inactive tab
+              ends in an ink-brown hairline 1.2 px above the bottom edge (it sits *behind* the
+              page), the active tab stays open at the bottom (joined to the page)
+The Slate code tints the inactive tab x0.78 (normal) and shows it unmodified on hover.
+Labels must be dark: Ink (#2A2119) on both, Lacquer or bold Ink on the active tab - the
+light silk does not carry TextLight / Gold labels.
 """
 
 import numpy as np
 
-import kit
+from ironart import ui_chrome_paint as P
 from ironart import ui_chrome_sdf as S
-from ironart.ui_chrome_maps import Maps, L
 
 NAME = "Tab"
-SPEC = dict(size=(160, 48), ss=4, spp=48, margins=(18, 14, 18, 10), seed=31)
+SPEC = dict(size=(160, 48), ss=4, margins=(18, 14, 18, 10), seed=31)
 W, H = 160, 48
 VARIANTS = ("inactive", "active")
 FILE = {"inactive": "Tab", "active": "Tab_Active"}
+EXT = 24.0          # the shape continues below the image (open bottom)
 
 
-def build(G, variant="inactive"):
+def paint(G, variant="inactive", seed=None):
+    seed = SPEC["seed"] if seed is None else seed
     active = variant == "active"
-    ext = 60.0
-    d = -S.sd_round_box(G, W / 2, (H + ext) / 2, W / 2, (H + ext) / 2, 6.0)
-    m = Maps(G.shape, base="#7E1F17")
-    zf = 0.75
-    pts = [(-1, 0.0), (0.0, 0.25), (0.45, 0.8), (0.9, 0.95)]
-    pts += kit.bead(1.9, 0.95, 0.9)
-    pts += [(2.95, 0.9), (3.2, 0.7), (3.7, 0.66), (4.4, zf), (60, zf)]
-    z = S.Profile(pts, round_px=0.12)(d)
-    lip = S.band(d, -5, 0.95, G)
-    gold = S.band(d, 0.95, 2.9, G)
-    groove = S.band(d, 2.9, 3.75, G)
-    field = S.band(d, 3.75, 999, G)
-    # gentle cylindrical plaque across the visible height
-    yy = np.clip(np.abs(G.Y - (H / 2 - 2)) / (H / 2 - 2), 0, 1)
-    z = z + 0.35 * (1 - yy ** 2) * kit.smoothstep(4.0, 7.0, d) * field
+    # plaque taller than the image: only its top corners are in frame
+    box = S.sd_round_box(G, W / 2.0, (H + EXT) / 2.0, W / 2.0 - 1.0, (H + EXT) / 2.0 - 1.0, 0.0)
+    q = None
+    for x in (1.0, W - 1.0):
+        c = np.hypot(G.X - x, G.Y - 1.0) - 4.0
+        q = c if q is None else np.minimum(q, c)
+    sd = np.maximum(box, -q)
+    d = -sd
+    C = P.Canvas(G)
+    shape = P.aa(sd, G)
 
-    def lac(col, k=1.0, rough=0.42):
-        return dict(base=kit.coat_cal(L(col, k)), metal=0.0, rough=rough, coat=1.0, spec=0.06)
+    # ---- field ----------------------------------------------------------------------------------
+    v = np.broadcast_to((G.Y - 1.0) / (H - 2.0), G.shape)
+    top, low = ("#F3EBD8", "#E6DBC2") if active else ("#EDE3CC", "#DED1B5")
+    fcol = P.mix(top, low, P.smoothstep(0.1, 1.0, v))
+    rim = 1.0 - P.smoothstep(4.8, 10.0, d)
+    fcol = P.mix(fcol, "silk_dark", 0.35 * rim ** 1.5)
+    C.over(shape, fcol)
 
+    # ---- brocade edge -------------------------------------------------------------------------
+    t = 1.0 - np.abs(d - 2.8) / 1.7
     if active:
-        m.paint(lip, lac("#2A0B07"))
-        m.paint(gold, "gold")
-        m.paint(groove, lac("#3A0E09"))
-        m.paint(field, lac("#7E1F17"))
-        m.tint(field, kit.vgrad(G, H, 0.10))
-        # gold underline bar + glow above it
-        bar = S.band(G.Y, H - 3.4, H + 5, G)
-        bz = S.Profile([(H - 3.6, 0.0), (H - 3.3, 0.55), (H - 2.2, 0.85), (H - 1.2, 0.85),
-                        (H - 0.3, 0.55), (H, 0.4)], round_px=0.12)(G.Y)
-        z = np.where(bar > 0, np.maximum(z, zf + bz), z)
-        m.paint(bar, "gold")
-        glow = np.clip(1.0 - (H - 3.4 - G.Y) / 9.0, 0, 1) ** 2 * (G.Y < H - 3.4) * field
-        m.emit = m.emit + np.array([0.06, 0.022, 0.006], np.float32) * glow[..., None]
+        bcol = P.mix("#7A2018", "cinnabar", P.smoothstep(0.0, 0.8, t))
     else:
-        m.paint(lip, lac("#1A0F0A"))
-        m.paint(gold, "gold_satin")
-        m.paint(groove, lac("#1E120C"))
-        g = kit.grain1d(G.Y, 8, freq=1.15, lo=0.66, hi=1.22)
-        m.paint(field, lac("#5C3526", rough=0.36))
-        m.tint(field, g)
-        # towards the bottom the plaque falls into the panel's shadow
-        m.tint(field, 1.0 - 0.35 * kit.smoothstep(H - 16.0, H, G.Y))
-        m.tint(field, kit.vgrad(G, H, 0.06))
-    m.height = z.astype(np.float32)
-    m.alpha = S.aa_mask(-d, G)
-    return m
+        bcol = P.mix("brocade_blue_deep", "brocade_blue", P.smoothstep(0.0, 0.8, t))
+    bcol = bcol * (1.0 + 0.06 * P.noise1d(d, 0.3, seed + 3, 1))[..., None]
+    C.over(P.band(d, 0.9, 4.5, G), bcol)
+    gold = P.strip_color(d, "gold_light" if active else "gold", seed + 4, amp=0.05)
+    C.over(P.band(d, 3.7, 4.25, G), gold, 0.95)
+    C.over(P.band(d, 4.5, 5.05, G), "ink_ui")
+    C.over(P.band(d, -3.0, 1.1, G) * shape, "ink")
+    if not active:
+        y = np.broadcast_to(G.Y, G.shape)
+        C.over(P.band(y, H - 1.8, H - 1.2, G) * P.aa(1.0 - d, G), "ink_soft", 0.85)
+    return C.rgba()

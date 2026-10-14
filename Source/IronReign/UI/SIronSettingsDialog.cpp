@@ -340,8 +340,10 @@ TSharedRef<SWidget> SIronSettingsDialog::MakeGraphicsSection()
 {
 	const EIronPresentationMode CurrentMode = Session.IsValid() ? Session->GetPresentationMode() : EIronPresentationMode::Auto;
 	const int32 CurrentQuality = Session.IsValid() ? Session->GetGraphicsQuality() : 2;
-	const bool bTiltShiftOn = !Session.IsValid() || Session->IsTiltShiftEnabled();
-	const bool bInkOn = Session.IsValid() && Session->IsInkOutlinesEnabled();
+	// Without a session the painted look's defaults (FIronSession: ink outlines on, tilt-shift off). There is no look
+	// choice: the 3D scenes are always painted in the gongbi style of all the art (docs/DESIGN.md 8 and 12.6).
+	const bool bTiltShiftOn = Session.IsValid() && Session->IsTiltShiftEnabled();
+	const bool bInkOn = !Session.IsValid() || Session->IsInkOutlinesEnabled();
 	const FSlateFontInfo ChoiceFont = IronStyle::BodyBold(15.0f);
 
 	struct FModeChoice

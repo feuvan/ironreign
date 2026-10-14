@@ -1,98 +1,99 @@
-"""Divider.png (512x16, transparent; the UI stretches it to the widget width at 8-16 px high):
-gold filigree with a central ruyi knot.
+"""Divider.png (512x16, transparent): a fine gongbi ink line with a painted ruyi cloud knot.
 
-    knot     two ruyi heads back to back (lobes outwards, 13 px tall) clasping a domed cinnabar
-             cabochon in a gold bezel, x 256 +- 14
-    scrolls  a cloud curl above and below the wires on each side of the knot
-    wires    twin twisted gold wires (r 0.55 px, 2.9 px apart) that converge into one and taper
-             to a point at x = 256 +- 246 (the ends fade so any stretch stays graceful)
-The filigree floats 1 mm above a shadow catcher, so it carries its own soft cast shadow
-(bottom-right) onto whatever the UI draws it on - legible on paper and on dark lacquer.
+    knot      a cinnabar ruyi head (如意, tip down) at x 256, 晕染 deepening to its rim, mud-gold
+              engraved curls and a fine ink outline; flanked by two mud-gold cloud curls
+              (卷云) that spring from its side lobes and turn back towards it
+    line      one ink stroke each way, pressed where it leaves the cloud curl (1.5 px) and
+              lifting off to a hair at the ends (x 12 / 500); a mud-gold hairline runs beside
+              it (y +2.1) the whole way, so the rule reads on light silk and on ink-dark panels
+The UI stretches the image to the width of its column and 8-16 px high: the knot is kept
+compact (x 228-284) so a 0.6-1.8x horizontal stretch still reads.
 """
+
+import math
 
 import numpy as np
 
-import kit
 from ironart import ui_chrome_motifs as MO
+from ironart import ui_chrome_paint as P
 from ironart import ui_chrome_sdf as S
-from ironart.ui_chrome_maps import Maps, L
 
 NAME = "Divider"
-SPEC = dict(shader_alpha=True, size=(512, 16), ss=4, spp=48, seed=51)
+SPEC = dict(size=(512, 16), ss=4, seed=61)
 W, H = 512, 16
 CX, CY = 256.0, 8.0
-LIFT = 1.0
-KY = CY - 0.3            # knot centre (a hair high: its shadow falls down-right)
 
 
-def build(G, variant=None):
-    m = Maps(G.shape, base="#000000", alpha=0.0)
-    X, Y = G.X, G.Y
-    ax = np.abs(X - CX)
-    # ---- wires: separation shrinks from 2.9 px to 0 between x+-60 and x+-200 -----------------
-    sep = 1.45 * (1 - kit.smoothstep(60.0, 205.0, ax))
-    rad = 0.58 * (1 - kit.smoothstep(150.0, 246.0, ax)) + 0.0
-    rad = np.maximum(rad, 0.0)
-    dw = np.minimum(np.abs(Y - (CY - sep)), np.abs(Y - (CY + sep))) - rad
-    dw = np.where(ax < 14.5, 9.0, dw)
-    dw = np.where(ax > 246.0, 9.0, dw)
-    wire = S.aa_mask(dw, G)
-    # twisted-wire profile: round section + diagonal cuts (period 1.1 px)
-    zr = np.sqrt(np.clip(1 - ((np.clip(dw + rad, -9, 9)) / np.maximum(rad, 1e-3)) ** 2, 0, 1)) * rad
-    ph = (X + (Y - CY) * 0.9) / 1.1
-    cut = np.abs((ph - np.floor(ph)) - 0.5) * 2.0
-    zw = zr * (0.78 + 0.22 * kit.smoothstep(0.0, 0.5, cut))
-
-    # ---- knot: ruyi heads back to back + bezel + cabochon -------------------------------------
-    F = kit.Folded(X, Y)
-    rl, rl_e = MO.ruyi(F, CX - 7.2, KY, 8.0, rot=-90.0)    # point towards +x (the centre)
-    rr, rr_e = MO.ruyi(F, CX + 7.2, KY, 8.0, rot=90.0)
-    knot = np.minimum(rl, rr)
-    eng = np.minimum(np.where(rl < -0.25, rl_e, 9.0), np.where(rr < -0.25, rr_e, 9.0))
-    bez = np.hypot(X - CX, Y - KY) - 3.5
-    gem = np.hypot(X - CX, Y - KY) - 2.4
-    knot = S.smooth_union(knot, bez, 0.6)
-    zk = MO.dome(knot, 1.2, 0.75) + S.groove(eng, 0.3, 0.2) * (knot < -0.3)
-
-    # ---- cloud curls beside the knot (above and below, both sides) ----------------------------
-    curls = []
-    for sx in (-1, 1):
-        for sy in (-1, 1):
-            p0 = (CX + sx * 15.0, CY + sy * 1.5)
-            stem = S.bezier(p0, (CX + sx * 19.0, CY + sy * 1.6), (CX + sx * 24.0, CY + sy * 3.6),
-                            (CX + sx * 27.5, CY + sy * 4.6), n=26)
-            cc = S.spiral(CX + sx * 27.6, CY + sy * 2.6, 2.0, 0.35, 1.0,
-                          90.0 if sy > 0 else -90.0, cw=(sx * sy < 0), n=48)
-            path = np.concatenate([stem, cc[1:]], 0)
-            curls.append((path, S.taper(len(path), 0.62, 0.22, power=0.9)))
-    sc = MO.strokes_sd(G, curls, pad=2.0)
-    zc = MO.dome(sc, 0.5, 0.45)
-
-    shape = np.minimum(np.minimum(dw, knot), sc)
-    a = S.aa_mask(shape, G)
-    z = np.maximum(np.maximum(zw * wire, zk), zc) + LIFT
-    gemm = S.aa_mask(gem, G)
-    z = z + MO.dome(gem, 1.6, 0.6) * gemm
-    m.paint(a, "gold")
-    m.tint(a, kit.recess_shade(z, G.ss, radius=0.8, k=1.4, floor=0.6))
-    m.paint(wire, rough=0.2 + 0.1 * (1 - cut))
-    m.paint(gemm, dict(base=L("#8E1A12"), metal=0.0, rough=0.12, coat=1.0, spec=0.5))
-    # ends fade: the last 40 px of each wire become translucent
-    fade = 1.0 - kit.smoothstep(206.0, 246.0, ax)
-    m.alpha = (a * np.maximum(fade, 1.0 - wire * (1 - fade))).astype(np.float32)
-    m.height = z.astype(np.float32)
-    return m
+def curls():
+    """Mud-gold cloud curls on both sides of the knot: [(pts, radii)]."""
+    out = []
+    for side in (1, -1):
+        r0 = 3.1
+        cx, cy = CX + side * 13.6, CY - 0.6
+        # spiral starting at its bottom, turning up and back towards the knot
+        a0 = 90.0
+        pts = S.spiral(cx, cy, r0, r0 * 0.24, 1.1, a0, cw=(side < 0), n=70)
+        # lead-in from the ruyi's side lobe
+        lead = S.bezier((CX + side * 6.4, CY + 1.4), (CX + side * 8.5, CY + 3.4),
+                        (cx - side * 1.5, cy + r0 + 0.2), (cx, cy + r0), n=18)
+        path = np.concatenate([lead, pts[1:]])
+        rad = P.brush_radii(len(path), 1.05, start=0.55, end=0.42, press=1.12)
+        out.append((path, rad))
+    return out
 
 
-def extras(variant, G):
-    """Shadow catcher under the floating filigree."""
-    import bpy
-    from ironart.ui_chrome_render import MM
-    me = bpy.data.meshes.new("Catcher")
-    hw, hh = (W / 2) * MM, (H / 2) * MM
-    me.from_pydata([(-hw, -hh, 0.0), (hw, -hh, 0.0), (hw, hh, 0.0), (-hw, hh, 0.0)], [],
-                   [(0, 1, 2, 3)])
-    ob = bpy.data.objects.new("Catcher", me)
-    bpy.context.scene.collection.objects.link(ob)
-    ob.is_shadow_catcher = True
-    return ob
+def line_strokes():
+    out = []
+    for side in (1, -1):
+        x0, x1 = CX + side * 15.0, CX + side * 244.0
+        n = 260
+        xs = np.linspace(x0, x1, n)
+        ys = CY + 2.45 + 0.0 * xs
+        # the line leaves the curl's base tangentially and settles on y = 8 + 0.4
+        ys = CY + 0.4 + 2.05 * np.exp(-np.abs(xs - x0) / 6.0)
+        pts = np.stack([xs, ys], 1).astype(np.float32)
+        t = np.linspace(0, 1, n)
+        rad = 0.75 * (1.0 - 0.82 * P.smoothstep(0.05, 1.0, t) ** 0.8) * \
+            (0.85 + 0.15 * P.smoothstep(0.0, 0.05, t))
+        out.append((pts, rad.astype(np.float32)))
+    return out
+
+
+def gold_under():
+    """A mud-gold hairline beside the ink line along its whole length: the double rule reads
+    as ink on light silk and as gold on the ink-dark panels."""
+    out = []
+    for side in (1, -1):
+        xs = np.linspace(CX + side * 19.0, CX + side * 236.0, 260)
+        ys = np.full_like(xs, CY + 2.55)
+        t = np.linspace(0, 1, len(xs))
+        rad = 0.42 * (1.0 - 0.8 * P.smoothstep(0.05, 1.0, t) ** 0.8) * P.smoothstep(0.0, 0.04, t)
+        out.append((np.stack([xs, ys], 1).astype(np.float32), rad.astype(np.float32)))
+    return out
+
+
+def paint(G, variant=None, seed=None):
+    seed = SPEC["seed"] if seed is None else seed
+    C = P.Canvas(G)
+    gold = P.gold_field(G, seed, flecks=0.0)
+
+    # ---- line + under-line --------------------------------------------------------------------
+    C.over(P.aa(P.strokes_sd(G, gold_under()), G), gold, 0.95)
+    C.over(P.aa(P.strokes_sd(G, line_strokes()), G), "ink")
+
+    # ---- cloud curls (ink-outlined mud-gold strokes) ---------------------------------------------
+    sd_c = P.strokes_sd(G, curls())
+    C.over(P.aa(sd_c - 0.42, G), "ink")
+    C.over(P.aa(sd_c, G), gold)
+
+    # ---- ruyi knot ------------------------------------------------------------------------------
+    shape, eng = MO.ruyi(G, CX, CY - 0.4, 8.0, 0.0)
+    C.over(P.aa(shape - 0.45, G), "ink")
+    sh = P.smoothstep(0.0, 1.8, -shape)
+    C.over(P.aa(shape, G), P.mix("#7E2219", "cinnabar", sh))
+    C.over(P.aa(eng - 0.24, G) * P.aa(shape + 0.35, G), gold)
+    # a lead-white highlight dot in the top lobe (the jewel of the ruyi)
+    dot = G.empty()
+    S.sd_circle(G, CX, CY - 3.0, 0.7, out=dot)
+    C.over(P.aa(dot, G), "gold_light", 0.9)
+    return C.rgba()

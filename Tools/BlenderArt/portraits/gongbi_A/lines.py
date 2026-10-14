@@ -84,7 +84,7 @@ def style(name, color, thickness, ss, alpha=1.0, head=0.12, tail=0.2, tip=0.25, 
 
 
 def lineset(fs, name, st, col, silhouette=True, border=False, crease=False, contour=False,
-            external=True, face_marks=False, material_boundary=False):
+            external=True, face_marks=False, material_boundary=False, suggestive=False):
     ls = fs.linesets.new(name)
     ls.linestyle = st
     ls.select_by_visibility = True
@@ -96,7 +96,7 @@ def lineset(fs, name, st, col, silhouette=True, border=False, crease=False, cont
     ls.select_contour = contour
     ls.select_external_contour = external
     ls.select_material_boundary = material_boundary
-    ls.select_suggestive_contour = False
+    ls.select_suggestive_contour = suggestive
     ls.select_ridge_valley = False
     ls.select_by_collection = True
     ls.collection = col
@@ -124,6 +124,8 @@ def enable(cols, ss, cfg=None, crease_deg=128.0):
     fs.crease_angle = math.radians(crease_deg)
     fs.use_culling = False
     fs.use_smoothness = True
+    fs.sphere_radius = cfg.get("sphere_radius", 1.0)
+    fs.kr_derivative_epsilon = cfg.get("kr_eps", 0.0)
     while len(fs.linesets) > 0:
         fs.linesets.remove(fs.linesets[0])
     sets = {}
@@ -133,7 +135,24 @@ def enable(cols, ss, cfg=None, crease_deg=128.0):
         c.update(cfg.get("skin", {}))
         st = style("Face", ss=ss, **c)
         sets["skin"] = lineset(fs, "Face", st, cols["skin"], silhouette=True, border=False,
-                               external=True, face_marks=True)
+                               external=True, face_marks=True,
+                               suggestive=cfg.get("skin_suggestive", False))
+        c2 = dict(c)
+        c2.update(dict(head=0.3, tail=0.3, tip=0.1, smooth=4.0, min_len=6.0))
+        c2.update(cfg.get("jaw", {}))
+        st2 = style("Jaw", ss=ss, **c2)
+        js = fs.linesets.new("Jaw")
+        js.linestyle = st2
+        js.select_by_visibility = True
+        js.visibility = "VISIBLE"
+        js.select_by_edge_types = True
+        for k in ("silhouette", "border", "crease", "contour", "external_contour",
+                  "suggestive_contour", "ridge_valley", "material_boundary"):
+            setattr(js, "select_" + k, False)
+        js.select_edge_mark = True
+        js.select_by_collection = True
+        js.collection = cols["skin"]
+        sets["jaw"] = js
     if "robe" in cols:
         c = dict(color="ink", thickness=1.55, head=0.1, tail=0.22, tip=0.2, swell=0.25,
                  calligraphy=0.45, noise=0.2, smooth=2.0, min_len=3.0)

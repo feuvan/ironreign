@@ -40,8 +40,10 @@ struct FIronBoardHighlights
 
 /**
  * Where one rules event landed on the board's animation timeline (AIronBattleBoard3D::PlayEvent). Seconds from the
- * moment of the call, on the board clock: it advances with the world's frame time (each frame clamped to 0.1 s), so
- * at normal frame rates it runs with the wall clock; add the values to FPlatformTime::Seconds() taken at the call.
+ * moment of the call, on the board clock (AIronBattleBoard3D::GetAnimationClock): it advances with the world's frame
+ * time, each frame clamped to 0.1 s, so at normal frame rates it runs with the wall clock. Exact under hitches: due at
+ * GetAnimationClock() (taken at the call) + ImpactSeconds, compared against GetAnimationClock(). Simpler, and exact
+ * above 10 fps: FPlatformTime::Seconds() at the call + ImpactSeconds.
  */
 struct FIronBoardEventTiming
 {
@@ -231,8 +233,10 @@ struct FIronBoardLight
  * gate hexes as separate tiles that shake and turn into SM_Hex_Rubble, a ring of decorative hexes around the board that
  * continues its rivers, roads, sea, city wall and town, and a large season-tinted ground of slabs below. Lighting is the
  * world's shared AIronEnvironment (sun, sky atmosphere, sky light, clouds, height + volumetric fog, post-process); the
- * board only turns its sun from dawn (day 1) to dusk (the last day) and restores it when deactivated. The battle camera
- * is an ACameraActor framing the whole board at about 50 degrees pitch, with its own tilt-shift depth of field.
+ * board only turns its sun from dawn (day 1) to dusk (the last day; in the painted look a gentle swing around the
+ * top-left) and restores it when deactivated, and tints the ground with the season and look (silk-toned plains when
+ * painted). The battle camera is an ACameraActor framing the whole board at about 50 degrees pitch, with its own
+ * tilt-shift depth of field.
  *
  * Units: per IronSim::FBattleUnit a SM_Unit_<Type> squad on a SM_Unit_Base plinth (both tinted with the side colour
  * through M_IronTint's "Tint"), commanders carry a small SM_Flag. Highlights are batched M_IronHighlight hex rings.
@@ -244,15 +248,16 @@ struct FIronBoardLight
  *       Board->Build(*Battle); Board->SetSeason(Month); Board->SetFramingInsets(...);
  *       StrategyMap3D->SetActive(false); Board->SetActive(true);   // either order works
  *   }
- *   ConsumeEvents:  per event T = Board->PlayEvent(Event) (texts / sounds at now + T.ImpactSeconds);
- *                   Board->SyncFromBattle(*Battle); Battle->ClearEvents();
+ *   ConsumeEvents:  per event T = Board->PlayEvent(Event) (texts / sounds when GetAnimationClock() reaches its value
+ *                   at the call + T.ImpactSeconds); Board->SyncFromBattle(*Battle); Battle->ClearEvents();
  *   Driver tick:    bAnimating = Board->IsAnimating();  (instead of SIronHexView::GetBusyUntil)
  *   Fast-forward:   Board->FinishAnimations(); Board->SyncFromBattle(*Battle);
  *   Selection:      Board->SetHighlights(...) whenever the highlights change; SetHoveredHex on mouse move.
  *   Input:          PickHex (click / hover), Pan (drag), Zoom (wheel), ResetView (key), FocusHex (AI acting off screen).
  *   Overlay:        GetViewProjection() once per paint, then ProjectUnitToViewport (troop bars, names follow the
  *                   animation), ProjectGateToViewport (gate HP bars), ProjectToViewport (hex numbers) - all share it.
- *   Graphics:       SetQuality; the tilt-shift follows AIronEnvironment::SetTiltShiftStrength by itself.
+ *   Graphics:       SetQuality; the tilt-shift follows AIronEnvironment::SetTiltShiftStrength by itself, the look
+ *                   (AIronEnvironment::SetLook: painted by default) follows the shared environment.
  *   Leaving:        Board->SetActive(false); StrategyMap3D->SetActive(true) (either order; the map cuts back).
  *                   Destroy() (or any EndPlay) also deactivates and hands a held view target back to the controller.
  *
@@ -342,6 +347,11 @@ public:
 	/** True while queued or running animations should hold back the next AI step / the result dialog. */
 	bool IsAnimating() const;
 	float GetRemainingAnimationSeconds() const;
+	/**
+	 * The board's animation clock in seconds: it advances only while the board is active, by the frame time clamped
+	 * to 0.1 s, and FinishAnimations does not move it. The base of FIronBoardEventTiming's offsets.
+	 */
+	double GetAnimationClock() const { return Clock; }
 	/** Completes every queued animation at once (fast-forward, delegate, leaving the screen). */
 	void FinishAnimations();
 
@@ -497,7 +507,10 @@ private:
 	void UpdateSun(float DeltaSeconds);
 	void RestoreSun();
 	double DayAlphaFor(int32 Day) const;
+	/** Season and look colour of the ground around the board (blends with the environment). */
 	FLinearColor GroundColorForSeason() const;
+	/** Applies GroundColorForSeason when it changed. */
+	void UpdateGroundColor();
 	APlayerController* GetLocalController() const;
 
 	UPROPERTY(VisibleAnywhere, Category = "Iron Reign")
@@ -620,11 +633,13 @@ private:
 	float InsetBottom = 0.0f;
 	bool bUserMovedCamera = false;
 
+	/** Ground colour last applied (A = -1: never). */
+	FLinearColor AppliedGroundColor = FLinearColor(0.0f, 0.0f, 0.0f, -1.0f);
+
 	// ----- Sun -----
 	double DayAlpha = 0.0;
 	double GoalDayAlpha = 0.0;
 	double DayAlphaVelocity = 0.0;
-	FRotator SavedSunRotation = FRotator::ZeroRotator;
 	bool bSunOverridden = false;
 
 	int32 SeasonMonth = 4;

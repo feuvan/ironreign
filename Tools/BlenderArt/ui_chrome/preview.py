@@ -24,8 +24,8 @@ from PIL import Image, ImageDraw, ImageFont  # noqa: E402
 
 from ironart import REPO_DIR, post  # noqa: E402
 
-ART = os.path.join(REPO_DIR, "Content", "Data", "Art", "UI")
-SRC = os.path.join(REPO_DIR, "ArtSource", "UI")
+ART = os.environ.get("IRONART_UI_ART") or os.path.join(REPO_DIR, "Content", "Data", "Art", "UI")
+SRC = os.environ.get("IRONART_UI_SRC") or os.path.join(REPO_DIR, "ArtSource", "UI")
 FONTS = os.path.join(REPO_DIR, "Content", "Data", "Fonts")
 INK = (42, 33, 25)
 TEXT_LIGHT = (243, 232, 207)
@@ -163,11 +163,11 @@ def nineslice_sheet(out):
                 p = Image.fromarray(a.astype(np.uint8), "RGBA")
             bg.alpha_composite(p, (x, y))
             dr.text((x + w // 2, y + h // 2), lab, font=f13b if k == active else f13,
-                    fill=GOLD if k == active else TEXT_LIGHT, anchor="mm")
+                    fill=LACQUER if k == active else INK, anchor="mm")
             x += w + 2
-        # the panel the tabs sit on
-        pd = nine(load("PanelDark"), ms["PanelDark"], (5 * (w + 2), 60))
-        bg.alpha_composite(pd.crop((0, 0, pd.width, 12)), (40, y + h))
+        # the page below the tabs (the tab bar sits inside a light Panel in the Slate code)
+        pd = nine(load("Panel"), ms["Panel"], (5 * (w + 2), 60))
+        bg.alpha_composite(pd.crop((0, 30, pd.width, 46)), (40, y + h))
         y += h + 40
     bg.save(os.path.join(out, "nineslice_Tab.png"))
     sheets["Tab"] = bg

@@ -113,7 +113,8 @@ public:
 /**
  * Facade of the real-time 3D campaign map for the strategy screen (docs/DESIGN.md section 12).
  *
- * Owns the terrain (AIronTerrain), the camera rig (AIronCameraRig) and uses the world's shared AIronEnvironment.
+ * Owns the terrain (AIronTerrain), the camera rig (AIronCameraRig) and uses the world's shared AIronEnvironment
+ * (lighting, season and look: painted by default, see AIronEnvironment::SetLook and docs/DESIGN.md 12.6).
  * Mirrors the rules engine each tick: city models with faction pennants, sect temples, armies marching along their
  * roads (SM_Unit_<type> x6 + tinted SM_Banner), selection / hover / march-target rings, and the season of the month.
  *

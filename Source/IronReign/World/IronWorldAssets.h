@@ -27,7 +27,7 @@ DECLARE_LOG_CATEGORY_EXTERN(LogIronWorld, Log, All);
  * Paths (docs/DESIGN.md 12.3 / 12.5):
  *   /Game/IronReign/Models/SM_<Name>        imported models (City_1..3, Sect, Banner, Flag, Tree_*, Unit_*, Hex_*)
  *   /Game/IronReign/Materials/<Name>        M_IronTerrain / MI_IronTerrain, M_IronWater / MI_IronWater, M_IronTint,
- *                                           M_IronHighlight, M_IronInk, MI_IronClouds, MPC_IronSeason
+ *                                           M_IronHighlight, M_IronInk, M_IronSilk, MI_IronClouds, MPC_IronSeason
  *   (all created by Content/Python/ironreign_import.py)
  *   Content/Data/Art3D/                     runtime JSON + heightmap (read with FFileHelper)
  */

@@ -4,6 +4,7 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "Sim/IronJson.h"
+#include "World/IronEnvironment.h"
 #include "World/IronTerrain.h"
 #include "World/IronWorldAssets.h"
 #include "World/IronWorldMath.h"
@@ -203,6 +204,43 @@ bool FIronWorldTerrainDataTest::RunTest(const FString& /*Parameters*/)
 			}
 		}
 	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FIronWorldLookTest, "IronReign.World.Look", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::ProductFilter)
+
+bool FIronWorldLookTest::RunTest(const FString& /*Parameters*/)
+{
+	using IronWorldTestDetail::Near;
+
+	// Painted and realistic month looks (docs/DESIGN.md 12.6): same season, different style.
+	for (int32 Month = 1; Month <= 12; ++Month)
+	{
+		const FIronSeasonLook Real = FIronSeasonLook::ForMonth(Month, EIronLook::Realistic);
+		const FIronSeasonLook Painted = FIronSeasonLook::ForMonth(Month, EIronLook::Painted);
+		const FIronSeasonLook Plain = FIronSeasonLook::ForMonth(Month);
+		TestTrue(FString::Printf(TEXT("Month %d: ForMonth(Month) is the realistic look"), Month), Near(Plain.Painted, 0.0) && Near(Plain.SunBearingDegrees, Real.SunBearingDegrees));
+		TestTrue(FString::Printf(TEXT("Month %d: painted amounts"), Month), Near(Real.Painted, 0.0) && Near(Painted.Painted, 1.0));
+		TestTrue(FString::Printf(TEXT("Month %d: the season is the same in both looks"), Month), Near(Real.Snow, Painted.Snow) && Near(Real.Autumn, Painted.Autumn) && Near(Real.Wetness, Painted.Wetness));
+		TestTrue(FString::Printf(TEXT("Month %d: painted light is soft, filled and unbloomed"), Month),
+			Painted.SunIntensityLux < Real.SunIntensityLux && Painted.SkyLightIntensity > Real.SkyLightIntensity && Painted.SunSourceAngleDegrees > Real.SunSourceAngleDegrees && Near(Painted.BloomIntensity, 0.0));
+		TestTrue(FString::Printf(TEXT("Month %d: painted key light from the north-west, high"), Month), Painted.SunBearingDegrees > 270.0f && Painted.SunBearingDegrees < 360.0f && Painted.SunElevationDegrees >= 40.0f);
+		TestTrue(FString::Printf(TEXT("Month %d: painted sky is less blue"), Month), Painted.RayleighScatteringScale < Real.RayleighScatteringScale);
+	}
+	const FIronSeasonLook Half = FIronSeasonLook::Blend(FIronSeasonLook::ForMonth(4, EIronLook::Realistic), FIronSeasonLook::ForMonth(4, EIronLook::Painted), 0.5f);
+	TestTrue(TEXT("A look switch blends the painted amount"), Near(Half.Painted, 0.5));
+
+	// AreAssetsAvailable's cache: positives stick, negatives are re-probed after RetrySeconds.
+	IronWorld::FAssetCheckCache Cache;
+	TestFalse(TEXT("An empty cache is not fresh"), Cache.IsFresh(0.0));
+	TestTrue(TEXT("The first missing asset is reported"), Cache.Store(TEXT("SM_City_1"), 100.0));
+	TestTrue(TEXT("A negative answer is reused for a while"), Cache.IsFresh(100.0 + IronWorld::FAssetCheckCache::RetrySeconds - 1.0) && !Cache.bAvailable);
+	TestFalse(TEXT("A negative answer is probed again later"), Cache.IsFresh(100.0 + IronWorld::FAssetCheckCache::RetrySeconds + 1.0));
+	TestFalse(TEXT("The same missing asset is not reported twice"), Cache.Store(TEXT("SM_City_1"), 140.0));
+	TestTrue(TEXT("Becoming available is reported"), Cache.Store(FString(), 200.0));
+	TestTrue(TEXT("A positive answer sticks"), Cache.IsFresh(1.0e9) && Cache.bAvailable);
+	Cache.Invalidate();
+	TestFalse(TEXT("Invalidate forces a new probe"), Cache.IsFresh(201.0));
 	return true;
 }
 

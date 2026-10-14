@@ -6,7 +6,7 @@ The names follow the traditional pigment names so a spec reads like a painter's 
 
 P = {
     # grounds
-    "silk": "#E2CDA2",          # aged warm silk
+    "silk": "#DCCAA4",          # aged warm silk
     "silk_dark": "#C9AE7E",
     "silk_light": "#ECDDBB",
     # inks

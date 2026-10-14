@@ -1,11 +1,13 @@
-"""Sect / Banner / Flag -> ArtSource/Models/{Sect,Banner,Flag}.glb (DESIGN.md 12.3).
+"""Sect / Banner / Flag -> ArtSource/Models/{Sect,Banner,Flag}.glb (DESIGN.md 12.3), gongbi paint.
 
-    Tools/BlenderArt/render.sh Tools/BlenderArt/world_models/props.py [Sect Banner Flag] [--preview]
+    Tools/BlenderArt/render.sh Tools/BlenderArt/world_models/props.py [Sect Banner Flag] [--preview] [--no-render]
 
-Sect: heightfield outcrop + temple prototypes in one baked atlas, pines with the Tree_* textures.
-Banner / Flag: pole, finial, trim etc. baked into a small atlas; the cloth is the pure white
-``Tint`` material (no texture), double sided.  Writes the banner glyph field corners to
-``<scratch>/banner_glyph_world.json`` for the 2D sprite step.
+Sect: heightfield outcrop (blue-green landscape rock: ochre faces, malachite / azurite tops, ink
+texture strokes) + temple prototypes in one baked gongbi atlas, pines and broadleaves with the
+Tree_* gongbi textures.  Banner / Flag: cinnabar-lacquer pole, mud-gold finial and fittings,
+ink-dark trim baked into a small atlas; the cloth is the pure white ``Tint`` material (no
+texture), double sided.  Writes the banner glyph field corners to
+``<scratch>/banner_glyph_world.json`` for the 2D sprite step.  No baked AO anywhere.
 """
 
 import json
@@ -24,8 +26,8 @@ import bpy  # noqa: E402
 import numpy as np  # noqa: E402
 from mathutils import Matrix, Vector  # noqa: E402
 
-from ironart import scene, world_bake as WB, world_city as WC, world_kit as K, world_mats as WM  # noqa: E402
-from ironart import world_props as WP, world_render as WR  # noqa: E402
+from ironart import scene, world_bake as WB, world_city as WC, world_kit as K, world_gongbi as WG  # noqa: E402
+from ironart import world_gongbi_render as GR, world_props as WP  # noqa: E402
 from ironart.geometry import MeshBuilder  # noqa: E402
 
 
@@ -43,10 +45,10 @@ def _finish(name, obj, footprint=None, height=None, tint=None, max_tris=150000, 
         print("[ironart] PROBLEM %s: %s" % (name, p))
     t1 = time.time()
     if render:
-        v = dict(pitch=45.0, yaw=-20.0, fill=0.85)
+        v = dict(res=(960, 720), pitch=45.0, yaw=-20.0, fill=0.85)
         v.update(view or {})
-        WR.beauty([info["obj"]], os.path.join(common.out("previews"), "%s_beauty.png" % name), res=(960, 720),
-                  samples=24 if preview else 40, **v)
+        GR.preview([info["obj"]], os.path.join(common.out("previews"), "%s_gongbi.png" % name),
+                   samples=12 if preview else 24, ink_px=1.1, **v)
     return path, info, probs, time.time() - t1
 
 
@@ -62,8 +64,8 @@ def _tint_uvs(obj, mat_prefix, scale):
 def build_sect(preview=False, render=True):
     t0 = time.time()
     scene.reset(77)
-    tex_dir = common.out("textures")
-    mats = WM.library()
+    tex_dir = TR.tex_dir()
+    mats = WG.library()
     protos = {}
     mb = MeshBuilder()
     WP.sect_rock(mb)
@@ -87,8 +89,9 @@ def build_sect(preview=False, render=True):
     protos["stairs"] = WB.build(smb, "P_stairs", mats)
     plist = list(protos.values())
     size = 1024 if preview else 2048
-    WB.atlas_bake(plist, size, tex_dir, "Sect_Atlas", preview=preview, angle_deg=50.0, ao_distance=2.5,
-                  weights={"P_rock": 1.15})
+    WB.atlas_bake(plist, size, tex_dir, "Sect_Atlas", preview=preview, angle_deg=50.0, weights={"P_rock": 1.15},
+                  ao=False, cavity=0.0, samples=4, const={"rough": WG.ROUGH, "metal": 0.0}, jpeg=False,
+                  on_unwrapped=lambda p: WG.relibrary(p, size))
     tp = CI.tree_protos(tex_dir)
     place = [(protos["rock"], Matrix.Identity(4)), (protos["stairs"], Matrix.Identity(4))]
     for (pn, x, y, z, rz) in WP.sect_layout():
@@ -102,15 +105,15 @@ def build_sect(preview=False, render=True):
     for o in list(protos.values()) + list(tp.values()):
         bpy.data.objects.remove(o, do_unlink=True)
     path, info, probs, tr = _finish("Sect", obj, footprint=(35.0, 35.0), tint=False, render=render, preview=preview,
-                                    view=dict(pitch=45.0, yaw=-20.0, fill=0.9))
+                                    view=dict(res=(960, 800), pitch=38.0, yaw=-25.0, fill=0.92))
     return "Sect", path, info, probs, time.time() - t0, tr
 
 
 def build_banner(kind="Banner", preview=False, render=True):
     t0 = time.time()
     scene.reset(88)
-    tex_dir = common.out("textures")
-    mats = WM.library()
+    tex_dir = TR.tex_dir()
+    mats = WG.library()
     mats["Tint"] = WB.tint_material("Tint")
     mb = MeshBuilder()
     if kind == "Banner":
@@ -121,13 +124,16 @@ def build_banner(kind="Banner", preview=False, render=True):
         H = 10.0
     obj = WB.build(mb, "P_" + kind, mats)
     size = 512 if (preview or kind == "Flag") else 1024
-    WB.atlas_bake([obj], size, tex_dir, "%s_Atlas" % kind, preview=preview, angle_deg=55.0, ao_distance=0.6,
-                  jpeg=False)
+    WB.atlas_bake([obj], size, tex_dir, "%s_Atlas" % kind, preview=preview, angle_deg=55.0, ao=False, cavity=0.0,
+                  samples=4, const={"rough": WG.ROUGH, "metal": 0.0}, jpeg=False,
+                  on_unwrapped=lambda p: WG.relibrary(p, size))
     _tint_uvs(obj, "Tint", 1.0 / (9.0 if kind == "Banner" else 5.5))
     with open(os.path.join(common.out(), "%s_glyph_world.json" % kind.lower()), "w") as f:
         json.dump([list(v) for v in glyph], f)
     path, info, probs, tr = _finish(kind, obj, height=H, tint=True, max_tris=40000, render=render, preview=preview,
-                                    view=dict(pitch=20.0, yaw=-25.0, fill=0.8))
+                                    view=dict(res=(640, 800), pitch=12.0, yaw=-30.0,
+                                              target=(2.0, 0.0, 11.8) if kind == "Banner" else (1.4, 0.0, 5.3),
+                                              dist=44.0 if kind == "Banner" else 21.0))
     return kind, path, info, probs, time.time() - t0, tr
 
 

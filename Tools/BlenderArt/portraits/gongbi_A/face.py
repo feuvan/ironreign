@@ -63,6 +63,18 @@ def upper_lid_stroke(e, up):
 
 
 # ------------------------------------------------------------------------------- materials
+SKIN_SHADE = dict(ao=0.7, edge=0.5, tint="#B97B62")
+
+
+def _skin_out(nb, color, a, ink=0.0):
+    """Output for decals painted on skin: where the decal is transparent (a < 1) it carries
+    the skin's own 晕染 (edge darkening + AO strength) so no patch shows."""
+    st = shade.shade_term(nb, SKIN_SHADE["ao"], 0.025, SKIN_SHADE["edge"], 0.42)
+    inv = nb.math("SUBTRACT", 1.0, a)
+    nb.out(color, shade.rgb(SKIN_SHADE["tint"]), nb.math("MULTIPLY", st, inv), ink, 2.0,
+           aok=nb.math("MULTIPLY", inv, SKIN_SHADE["ao"]))
+
+
 def eye_material(name, e, iris_c, skin_cfg):
     """Sclera + iris + pupil + highlight in eye-local cm UV space."""
     m = shade._mat(name)
@@ -73,14 +85,14 @@ def eye_material(name, e, iris_c, skin_cfg):
     r = e["iris_r"]
     ic = (iris_c[0], iris_c[1], 0.0)
     d = nb.math("DIVIDE", nb.vmath("DISTANCE", uv, ic), r)
-    white = shade.rgb("eye_white")
+    white = shade.rgb(e.get("white", "#EFE7D8"))
     shadow = nb.math("MULTIPLY", nb.smooth(v, e["Hu"] * 0.15, e["Hu"] * 0.95), 0.42)
     col_w = nb.mix(shadow, white, shade.rgb("#B5A898"))
     caruncle = nb.blob(nb.comb(u, v, 0.0), (-e["W"] / 2 + 0.22, 0.0, 0.0), (0.26, 0.2, 1.0))
     col_w = nb.mix(nb.math("MULTIPLY", caruncle, 0.8), col_w, shade.rgb("#D99A8C"))
     # iris: warm dark-brown ring, darker limbal edge, black pupil, lid shadow on top
     ring = nb.smooth(d, 0.55, 0.97)
-    col_i = nb.mix(ring, shade.rgb(e.get("iris_col", "#5A3E2C")), shade.rgb("#1A1310"))
+    col_i = nb.mix(ring, shade.rgb(e.get("iris_col", "#3E2B20")), shade.rgb("#15100D"))
     col_i = nb.mix(nb.math("SUBTRACT", 1.0, nb.smooth(d, 0.36, 0.46)), col_i,
                    shade.rgb("#0B0908"))
     top = nb.smooth(nb.math("SUBTRACT", v, iris_c[1]), 0.0, r * 0.9)
@@ -111,15 +123,16 @@ def stroke_material(name, color, soft=0.0, skin_cfg=None, dry=0.0):
                                              nb.math("MULTIPLY", uv[1], 3.0), 0.0), 4.0), dry)))
         sk = shade.skin_paint(nb, **skin_cfg)
         c = nb.mix(a, sk, c)
-        nb.out(c, shade.rgb("#B97B62"), nb.math("MULTIPLY", nb.math("SUBTRACT", 1.0, a), 0.15),
-               a, 2.0)
+        _skin_out(nb, c, a, ink=a)
     else:
         nb.out(c, c, 0.0, 1.0, 2.0)
     return m
 
 
-def brow_material(name, color, length_cm, skin_cfg, head_soft=0.3, hair=0.55, sharp=0.18):
-    """Brow: an ink wash in the brow shape, hair streaks along it, a soft head and crisp tail."""
+def brow_material(name, color, length_cm, skin_cfg, head_soft=0.3, hair=0.55, sharp=0.18,
+                  streak=None):
+    """Brow: an ink wash in the brow shape, hair streaks along it, a soft head and crisp tail.
+    ``streak``: a second colour for the hair strokes (white brows: grey wash + white hairs)."""
     m = shade._mat(name)
     nb = shade.NB(m)
     uv = nb.sep(nb.uv())
@@ -133,9 +146,29 @@ def brow_material(name, color, length_cm, skin_cfg, head_soft=0.3, hair=0.55, sh
     st = nb.smooth(nb.noise(q, 3.0, 3.0, 0.6), 0.35, 0.7)
     a = nb.math("MULTIPLY", a, nb.math("ADD", 1.0 - hair, nb.math("MULTIPLY", st, hair)))
     sk = shade.skin_paint(nb, **skin_cfg)
-    c = nb.mix(nb.math("MINIMUM", nb.math("MULTIPLY", a, 1.15), 1.0), sk, shade.rgb(color))
-    nb.out(c, shade.rgb("#B97B62"), nb.math("MULTIPLY", nb.math("SUBTRACT", 1.0, a), 0.25),
-           nb.math("MULTIPLY", a, 0.6), 2.0)
+    if streak is not None:
+        a0 = nb.math("MULTIPLY", nb.math("MULTIPLY", nb.smooth(v, 0.0, sharp), nb.smooth(
+            nb.math("SUBTRACT", 1.0, v), 0.0, sharp)), nb.maprange(nb.smooth(u, 0.0, head_soft),
+                                                                  0, 1, 0.35, 1.0))
+        base = nb.mix(nb.math("MULTIPLY", a0, 0.85), sk, shade.rgb(color))
+        c = nb.mix(nb.math("MULTIPLY", nb.math("MULTIPLY", st, a0), 1.0), base, shade.rgb(streak))
+        _skin_out(nb, c, a0)
+        return m
+    a2 = nb.math("MINIMUM", nb.math("MULTIPLY", a, 1.15), 1.0)
+    c = nb.mix(a2, sk, shade.rgb(color))
+    _skin_out(nb, c, a2, ink=nb.math("MULTIPLY", a, 0.6))
+    return m
+
+
+def wash_material(name, color, alpha, skin_cfg, soft0=0.35):
+    """A soft-edged ink / colour wash decal on the skin (beard shadow, stubble, tattoo...)."""
+    m = shade._mat(name)
+    nb = shade.NB(m)
+    ring = nb.attr("ring")
+    a = nb.math("MULTIPLY", nb.math("SUBTRACT", 1.0, nb.smooth(ring, soft0, 1.0)), alpha)
+    sk = shade.skin_paint(nb, **skin_cfg)
+    c = nb.mix(a, sk, shade.rgb(color))
+    _skin_out(nb, c, a)
     return m
 
 
@@ -157,8 +190,7 @@ def lip_material(name, color, skin_cfg, upper=True):
     a = nb.math("SUBTRACT", 1.0, nb.smooth(ring, 0.55, 1.0))
     sk = shade.skin_paint(nb, **skin_cfg)
     c = nb.mix(a, sk, c)
-    nb.out(c, shade.rgb("#B97B62"), nb.math("MULTIPLY", nb.math("SUBTRACT", 1.0, a), 0.2), 0.0,
-           2.0)
+    _skin_out(nb, c, a)
     return m
 
 
@@ -222,8 +254,8 @@ class Face:
         lp = geo.resample(lp, 30)
         w = geo.brush_profile(len(lp), head=0.35, tail=0.35, start=0.1, end=0.2)
         self.strip("LidLo%+d" % side, _local_to_face(side, o, lp),
-                   w * e.get("lower_w", 0.06) * CM,
-                   stroke_material("LidLoInk", e.get("lower_col", "ink_ochre"), soft=0.45,
+                   w * e.get("lower_w", 0.075) * CM,
+                   stroke_material("LidLoInk", e.get("lower_col", "ink_ochre"), soft=0.3,
                                    skin_cfg=self.skin_cfg))
         # double-lid crease (optional): parallel to the upper lid, thin and light
         if e.get("crease", 0.0) > 0:
@@ -272,35 +304,49 @@ class Face:
         w = w * kind["w"] * b.get("thick", 1.0) * CM
         L = float(np.sum(np.linalg.norm(np.diff(path, axis=0), axis=1)))
         mat = brow_material("Brow", b.get("color", "ink_dense"), L, self.skin_cfg,
-                            hair=b.get("hair", 0.5), sharp=b.get("sharp", 0.2))
+                            hair=b.get("hair", 0.5), sharp=b.get("sharp", 0.2),
+                            streak=b.get("streak"))
         self.strip("Brow%+d" % side, _local_to_face(side, o, path), w, mat, offset=0.0006)
 
     # --------------------------------------------------------------------------- nose
     def nose(self):
+        """3/4 canon nose: a fine far-side line from the brow down the bridge into the far
+        wing, the near alar groove as one soft C, and two small dark nostril commas."""
         lm = self.H.lm
         n = self.s.get("nose", {})
         nt = lm["nose_tip"]
-        sn = lm["subnasale"]
-        ink = "ink_ochre"
-        mat = stroke_material("NoseInk", ink, soft=0.35, skin_cfg=self.skin_cfg)
+        tz = nt[2] / CM
+        nz = lm["nasion"][2] / CM
+        far = self.s.get("far", 1)
+        near = -far
         wing = n.get("wing", 1.0)
-        for side in (1, -1):
-            # alar wing: from the side of the tip, round the wing, into the nostril
-            pts = np.array([(0.62, 0.35), (1.15, 0.12), (1.3, -0.35), (1.05, -0.72),
-                            (0.6, -0.82)], np.float64)
-            pts[:, 0] *= wing
-            p = geo.catmull(pts, per=8)
-            p = np.stack([side * p[:, 0] * CM, nt[2] + p[:, 1] * CM], 1)
-            w = geo.brush_profile(len(p), head=0.3, tail=0.3, start=0.15, end=0.3, swell=0.2)
-            self.strip("Wing%+d" % side, p, w * n.get("w", 0.075) * CM, mat, 0.0006)
-            # nostril: a short dark comma under the tip
-            q = np.array([(0.55, -0.8), (0.32, -0.88), (0.12, -0.78)], np.float64)
-            q = geo.catmull(q, per=6)
-            q = np.stack([side * q[:, 0] * CM * wing, nt[2] + q[:, 1] * CM], 1)
-            w = geo.brush_profile(len(q), head=0.4, tail=0.4, start=0.4, end=0.3, swell=0.3)
-            self.strip("Nostril%+d" % side, q, w * 0.1 * CM,
-                       stroke_material("NostrilInk", "#5A3226", soft=0.3,
-                                       skin_cfg=self.skin_cfg), 0.0006)
+        soft = stroke_material("NoseInk", "ink_ochre", soft=0.4, skin_cfg=self.skin_cfg)
+        # far bridge line (faded at the top)
+        bl = n.get("bridge", 1.0)
+        if bl > 0:
+            pts = np.array([(0.42, nz - 0.6), (0.5, (nz + tz) / 2), (0.62, tz + 0.75),
+                            (0.86, tz + 0.05), (1.05 * wing, tz - 0.4)], np.float64)
+            p = geo.resample(geo.catmull(pts, per=10), 40)
+            p = np.stack([far * p[:, 0] * CM, p[:, 1] * CM], 1)
+            w = geo.brush_profile(len(p), head=0.6, tail=0.25, start=0.05, end=0.3, swell=0.1)
+            self.strip("Bridge", p, w * n.get("bridge_w", 0.055) * CM * bl, soft, 0.0006)
+        # near alar groove
+        pts = np.array([(0.92, tz + 0.3), (1.22, tz - 0.05), (1.22, tz - 0.45),
+                        (0.95, tz - 0.72)], np.float64)
+        pts[:, 0] *= wing
+        p = geo.resample(geo.catmull(pts, per=8), 30)
+        p = np.stack([near * p[:, 0] * CM, p[:, 1] * CM], 1)
+        w = geo.brush_profile(len(p), head=0.35, tail=0.35, start=0.1, end=0.25, swell=0.2)
+        self.strip("Wing", p, w * n.get("w", 0.07) * CM, soft, 0.0006)
+        # nostrils
+        dark = stroke_material("NostrilInk", "#4A2A20", soft=0.3, skin_cfg=self.skin_cfg)
+        for side, L in ((near, 1.0), (far, 0.75)):
+            q = np.array([(0.68, tz - 0.66), (0.45, tz - 0.8), (0.22, tz - 0.74)], np.float64)
+            q[:, 0] *= wing
+            q = geo.resample(geo.catmull(q, per=6), 16)
+            q = np.stack([side * q[:, 0] * CM, q[:, 1] * CM], 1)
+            w = geo.brush_profile(len(q), head=0.4, tail=0.45, start=0.4, end=0.2, swell=0.35)
+            self.strip("Nostril", q, w * 0.1 * CM * L, dark, 0.0006)
 
     # -------------------------------------------------------------------------- mouth
     def mouth(self):
@@ -330,8 +376,8 @@ class Face:
                                 parent=self.parent, local=local)
             self.objs.append(ob)
         # parting line stroke
-        pp = np.stack([x * CM * 1.04, z0 + part * CM], 1)
-        w = geo.brush_profile(len(pp), head=0.2, tail=0.2, start=0.2, end=0.2, swell=0.25)
+        pp = np.stack([x * CM * mo.get("line_len", 0.9), z0 + part * CM], 1)
+        w = geo.brush_profile(len(pp), head=0.25, tail=0.25, start=0.1, end=0.1, swell=0.3)
         self.strip("LipLine", pp, w * mo.get("line_w", 0.075) * CM,
                    stroke_material("LipInk", mo.get("line", "ink_rouge")), 0.0006)
 
@@ -404,7 +450,7 @@ def skin_config(H, spec):
         return tuple(s.hit(x, z)[0])
     ck = sk.get("cheek", 0.3)
     for side in (1, -1):
-        blobs.append((at(side * 0.040, ez - 0.032), (0.024, 0.03, 0.026), ck))
+        blobs.append((at(side * 0.043, ez - 0.026), (0.03, 0.035, 0.03), ck))
         if sk.get("eyelid", 0.0) > 0:
             ex = (H.eye_l if side > 0 else H.eye_r)[0]
             blobs.append((at(ex, ez + 0.002), (0.022, 0.03, 0.012), sk["eyelid"]))

@@ -1,16 +1,16 @@
-"""UI chrome family: numpy signed-distance toolkit for relief ornaments (no bpy, no scipy).
+"""UI chrome family: numpy signed-distance toolkit for painted ornaments (no bpy, no scipy).
 
-Every UI chrome piece is a *relief plate*: a height field plus PBR material layers, sampled on the
-render grid (``ss`` x the target size) and turned into a real displaced mesh by
-:mod:`ironart.ui_chrome_render`.  Shapes are authored as signed distance fields in **target
-pixels** (1 px = 1 mm, image convention: origin top-left, +y down), so a 9-slice moulding is just a
-1D profile of the distance to the outer edge, and an ornament is a union of variable-width strokes
-(spirals, S-curves, ruyi heads) whose bevelled cross-section comes from the distance itself.
+Shapes are authored as signed distance fields in **target pixels** (1 px = 1 mm, image
+convention: origin top-left, +y down) on the render grid (``ss`` x the target size): a 9-slice
+mount is a set of rings at constant distance from the outer edge, an ornament a union of
+variable-width brush strokes (spirals, S-curves, ruyi heads).  :mod:`ironart.ui_chrome_paint`
+turns them into gongbi washes, ink lines and mud-gold; :mod:`ironart.ui_chrome_flat` renders the
+result through Cycles.
 
 Conventions
     sd < 0 inside a shape, > 0 outside (exact for strokes/circles/boxes; bounded elsewhere)
     ``G`` = :class:`Grid` (pixel-centre sample coordinates of one piece at ``ss`` x)
-    heights in mm (= target px), materials as weight arrays 0..1
+    the relief helpers (Profile, round_relief, groove, dome) remain for height-field work
 """
 
 import math

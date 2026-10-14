@@ -118,7 +118,8 @@ class Canvas:
         P = g.A(P)
         if len(P) < 2 or g.length(P) < 1e-3:
             return None
-        P = g.resample(P, step=step)
+        Ltot = g.length(P)
+        P = g.resample(P, step=max(step, min(0.9, Ltot / 60.0)))
         n = len(P)
         if n < 3:
             P = g.resample(P, 3)
@@ -224,7 +225,7 @@ class Canvas:
         return self._push(Prim(V, al, pal.lin(color), mode, np.array(tris, np.int32), C=C))
 
     def radial(self, boundary, center, color, alpha, mode="glaze", rings=10, n=None,
-               colors=None):
+               colors=None, alpha_xy=None):
         """Region from ``center`` out to closed ``boundary`` with opacity ``alpha(r, u)``
         (r: 0 centre .. 1 boundary, u: 0..1 around).  Boundary must be star-shaped."""
         B = g.A(boundary)
@@ -242,6 +243,8 @@ class Canvas:
                                  np.asarray(alpha(R, U), float).reshape(-1)])
         else:
             al = np.full(len(V), float(alpha))
+        if alpha_xy is not None:
+            al = al * np.asarray(alpha_xy(V), float)
         k = np.arange(K)
         k2 = (k + 1) % K
         tl = [np.stack([np.zeros(K, int), 1 + k, 1 + k2], 1)]

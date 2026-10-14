@@ -6,6 +6,8 @@
 #include "UI/IronStyle.h"
 #include "UI/IronUI.h"
 #include "World/IronBattleBoard3D.h"
+#include "World/IronViewProjection.h"
+#include "World/IronWorldMath.h"
 
 #include "Engine/GameViewportClient.h"
 #include "Engine/World.h"
@@ -31,17 +33,11 @@ namespace IronHexViewDetail
 	constexpr float BannerSeconds = 1.6f;
 
 	// 3D board overlay.
-	/** Impact moments (seconds after an event's animation starts) of the board's lunge, volley, gate and tactic animations. */
-	constexpr double BoardMeleeImpactSeconds = 0.15;
-	constexpr double BoardVolleyImpactSeconds = 0.42;
-	constexpr double BoardGateBreakSeconds = 0.3;
-	constexpr double BoardTacticImpactSeconds = 0.4;
-	/** A melee hit flash outlasts its lunge by this much; the board starts a counter as soon as the lunge ends. */
-	constexpr double BoardHitOverhangSeconds = 0.21;
-	/** Heights (metres above the board) where floating texts and gate bars are anchored. */
+	/** Floating texts rise from this height above the board (metres), or this far above a gate's top. */
 	constexpr float BoardFloatHeightM = 4.0f;
-	constexpr float BoardGateBarHeightM = 6.0f;
-	/** Unit plates sit this far above the unit model's top (metres). */
+	constexpr float BoardFloatAboveGateM = 1.0f;
+	/** Gate bars float this far above the drawn gatehouse (or its rubble), unit plates above the unit model (metres). */
+	constexpr float BoardGateBarAboveTopM = 0.8f;
 	constexpr float BoardPlateAboveModelM = 0.5f;
 	/** On-screen hex size (corner to corner, Slate units) at which plates are drawn at their nominal size. */
 	constexpr float BoardNominalHexSize = 110.0f;
@@ -183,6 +179,8 @@ void SIronHexView::Construct(const FArguments& InArgs)
 	Battle = InArgs._Battle;
 	Session = InArgs._Session;
 	Board = InArgs._Board;
+	// Fixed for the view's life: the battle screen builds a new view when it falls back to the 2D board.
+	bBoardTimeline = Board.IsValid();
 	OnHexClickedDelegate = InArgs._OnHexClicked;
 	OnCancelDelegate = InArgs._OnCancel;
 
@@ -371,10 +369,25 @@ void SIronHexView::SetHighlights(const FIronHexHighlights& InHighlights)
 	Invalidate(EInvalidateWidgetReason::Paint);
 }
 
+double SIronHexView::TimelineNow() const
+{
+	if (!bBoardTimeline)
+	{
+		return FPlatformTime::Seconds();
+	}
+	// The board's own clock (it advances only while the board is active). Kept when the board goes away, so queued
+	// texts and sounds simply wait until the screen rebuilds this view for the 2D board.
+	if (const AIronBattleBoard3D* BoardActor = Board.Get())
+	{
+		LastBoardClock = BoardActor->GetAnimationClock();
+	}
+	return LastBoardClock;
+}
+
 void SIronHexView::ShowBanner(const FText& Text)
 {
 	BannerText = Text;
-	BannerStart = FMath::Max(FPlatformTime::Seconds(), GetBusyUntil());
+	BannerStart = FMath::Max(TimelineNow(), GetBusyUntil());
 	Invalidate(EInvalidateWidgetReason::Paint);
 }
 
@@ -396,7 +409,7 @@ double SIronHexView::GetBusyUntil() const
 {
 	if (const AIronBattleBoard3D* ActiveBoard = GetActiveBoard())
 	{
-		return FPlatformTime::Seconds() + static_cast<double>(ActiveBoard->GetRemainingAnimationSeconds());
+		return TimelineNow() + static_cast<double>(ActiveBoard->GetRemainingAnimationSeconds());
 	}
 	return AnimCursor;
 }
@@ -407,7 +420,7 @@ bool SIronHexView::IsAnimating() const
 	{
 		return ActiveBoard->IsAnimating();
 	}
-	return FPlatformTime::Seconds() < AnimCursor;
+	return TimelineNow() < AnimCursor;
 }
 
 void SIronHexView::SyncBoard(bool bFinishAnimations)
@@ -479,7 +492,7 @@ void SIronHexView::AddFloat(IronSim::FHex Hex, const FString& Text, const FLinea
 
 void SIronHexView::AddSound(const TCHAR* SfxName, double Start)
 {
-	if (Start <= FPlatformTime::Seconds())
+	if (Start <= TimelineNow())
 	{
 		FIronAudio::Get().PlaySfx(SfxName);
 		return;
@@ -514,15 +527,19 @@ void SIronHexView::PlayEvent(const IronSim::FBattleEvent& Event)
 		return;
 	}
 	using EEvent = IronSim::EBattleEventType;
-	const double Now = FPlatformTime::Seconds();
 	AIronBattleBoard3D* ActiveBoard = GetActiveBoard();
 	const bool bOnBoard = ActiveBoard != nullptr;
-	// 2D: effects start once the queued moves finished. 3D: the board starts this event's animation once what it already
-	// queued is over; texts and sounds follow that timeline.
-	const double EventTime = bOnBoard ? Now + static_cast<double>(ActiveBoard->GetRemainingAnimationSeconds()) : FMath::Max(Now, AnimCursor);
+	// Timeline seconds (TimelineNow) where the event's animation starts and where its result shows (the blow lands,
+	// the gate falls, the tactic strikes). 2D: effects start once the queued moves finished, with the event. 3D: the
+	// board queues the event after its running animations and reports both moments on its animation clock.
+	const double Now = TimelineNow();
+	double EventTime = FMath::Max(Now, AnimCursor);
+	double ImpactTime = EventTime;
 	if (bOnBoard)
 	{
-		ActiveBoard->PlayEvent(Event);
+		const FIronBoardEventTiming Timing = ActiveBoard->PlayEvent(Event);
+		EventTime = Now + static_cast<double>(Timing.StartSeconds);
+		ImpactTime = Now + static_cast<double>(Timing.ImpactSeconds);
 		// Action the player cannot see (the camera is zoomed in elsewhere): the camera glides there.
 		const bool bFollow = Event.Type == EEvent::Move || Event.Type == EEvent::Attack || Event.Type == EEvent::GateHit || Event.Type == EEvent::Tactic;
 		if (bFollow && Battle->InBounds(Event.To))
@@ -534,8 +551,6 @@ void SIronHexView::PlayEvent(const IronSim::FBattleEvent& Event)
 	const FLinearColor GoodColor(0.45f, 0.95f, 0.55f, 1.0f);
 	const FLinearColor MutedColor(0.8f, 0.78f, 0.72f, 1.0f);
 	const FLinearColor TacticColor(0.8f, 0.55f, 1.0f, 1.0f);
-	// Moment of impact: on the 2D board effects start with the event; the 3D animations strike a little later.
-	const double TacticTime = EventTime + (bOnBoard ? IronHexViewDetail::BoardTacticImpactSeconds : 0.0);
 
 	switch (Event.Type)
 	{
@@ -560,16 +575,8 @@ void SIronHexView::PlayEvent(const IronSim::FBattleEvent& Event)
 	case EEvent::Attack:
 	case EEvent::Counter:
 	{
-		double HitTime = EventTime + (Event.Type == EEvent::Counter ? 0.2 : 0.0);
-		if (bOnBoard)
-		{
-			// Distance 2 is an archer volley, everything else a melee lunge.
-			HitTime = EventTime + (IronSim::HexMath::Distance(Event.From, Event.To) >= 2 ? IronHexViewDetail::BoardVolleyImpactSeconds : IronHexViewDetail::BoardMeleeImpactSeconds);
-			if (Event.Type == EEvent::Counter)
-			{
-				HitTime = FMath::Max(Now, HitTime - IronHexViewDetail::BoardHitOverhangSeconds);
-			}
-		}
+		// 3D: the lunge or volley lands (a counter follows its attack on the board's timeline). 2D: a counter a beat later.
+		const double HitTime = bOnBoard ? ImpactTime : EventTime + (Event.Type == EEvent::Counter ? 0.2 : 0.0);
 		const IronSim::FHex TargetHex = UnitHexOr(Event.Target, Event.To);
 		AddFx(EFxKind::Hit, TargetHex, HitTime, IronHexViewDetail::FxSeconds);
 		if (Event.Value > 0)
@@ -584,21 +591,20 @@ void SIronHexView::PlayEvent(const IronSim::FBattleEvent& Event)
 	case EEvent::GateHit:
 	{
 		// To is the gate that was hit: great cities have two gates.
-		const double GateHitTime = EventTime + (bOnBoard ? IronHexViewDetail::BoardMeleeImpactSeconds : 0.0);
-		AddFx(EFxKind::Hit, Event.To, GateHitTime, IronHexViewDetail::FxSeconds);
+		AddFx(EFxKind::Hit, Event.To, ImpactTime, IronHexViewDetail::FxSeconds);
 		if (Event.Value > 0)
 		{
-			AddFloat(Event.To, FString::Printf(TEXT("-%d"), Event.Value), DamageColor, GateHitTime);
+			AddFloat(Event.To, FString::Printf(TEXT("-%d"), Event.Value), DamageColor, ImpactTime);
 		}
-		AddSound(TEXT("GateHit"), GateHitTime);
+		AddSound(TEXT("GateHit"), ImpactTime);
 		break;
 	}
 	case EEvent::GateBroken:
 	{
-		const double BreakTime = EventTime + (bOnBoard ? IronHexViewDetail::BoardGateBreakSeconds : 0.0);
-		AddFx(EFxKind::Hit, Event.To, BreakTime, 1.0f);
-		AddFloat(Event.To, IronUI::Loc("ui.battle.fx.gateBroken", "The gate is broken!").ToString(), IronStyle::Gold(), BreakTime, 22.0f);
-		AddSound(TEXT("GateHit"), BreakTime);
+		// 3D: the moment the gatehouse collapses into rubble.
+		AddFx(EFxKind::Hit, Event.To, ImpactTime, 1.0f);
+		AddFloat(Event.To, IronUI::Loc("ui.battle.fx.gateBroken", "The gate is broken!").ToString(), IronStyle::Gold(), ImpactTime, 22.0f);
+		AddSound(TEXT("GateHit"), ImpactTime);
 		break;
 	}
 	case EEvent::Tactic:
@@ -606,73 +612,73 @@ void SIronHexView::PlayEvent(const IronSim::FBattleEvent& Event)
 		const IronSim::FHex TargetHex = UnitHexOr(Event.Target, Event.To);
 		if (Event.Tactic == static_cast<int32>(IronSim::ETactic::Fire))
 		{
-			AddFx(EFxKind::Fire, TargetHex, TacticTime, 0.9f);
+			AddFx(EFxKind::Fire, TargetHex, ImpactTime, 0.9f);
 			if (Event.Value > 0)
 			{
-				AddFloat(TargetHex, FString::Printf(TEXT("-%d"), Event.Value), DamageColor, TacticTime);
+				AddFloat(TargetHex, FString::Printf(TEXT("-%d"), Event.Value), DamageColor, ImpactTime);
 			}
-			AddSound(TEXT("Fire"), TacticTime);
+			AddSound(TEXT("Fire"), ImpactTime);
 		}
 		else if (Event.Tactic == static_cast<int32>(IronSim::ETactic::Confuse))
 		{
-			AddFx(EFxKind::Confuse, TargetHex, TacticTime, 0.9f);
-			AddFloat(TargetHex, IronUI::Loc("ui.battle.fx.confused", "Confused!").ToString(), TacticColor, TacticTime);
-			AddSound(TEXT("Confuse"), TacticTime);
+			AddFx(EFxKind::Confuse, TargetHex, ImpactTime, 0.9f);
+			AddFloat(TargetHex, IronUI::Loc("ui.battle.fx.confused", "Confused!").ToString(), TacticColor, ImpactTime);
+			AddSound(TEXT("Confuse"), ImpactTime);
 		}
 		else if (Event.Tactic == static_cast<int32>(IronSim::ETactic::Rally))
 		{
-			AddFx(EFxKind::Rally, TargetHex, TacticTime, 0.9f);
+			AddFx(EFxKind::Rally, TargetHex, ImpactTime, 0.9f);
 			if (Event.Value > 0)
 			{
-				AddFloat(TargetHex, FString::Printf(TEXT("+%d"), Event.Value), GoodColor, TacticTime);
+				AddFloat(TargetHex, FString::Printf(TEXT("+%d"), Event.Value), GoodColor, ImpactTime);
 			}
-			AddSound(TEXT("Rally"), TacticTime);
+			AddSound(TEXT("Rally"), ImpactTime);
 		}
 		break;
 	}
 	case EEvent::TacticFailed:
-		AddFloat(UnitHexOr(Event.Target, Event.To), IronUI::Loc("ui.battle.fx.failed", "Failed").ToString(), MutedColor, TacticTime);
+		AddFloat(UnitHexOr(Event.Target, Event.To), IronUI::Loc("ui.battle.fx.failed", "Failed").ToString(), MutedColor, ImpactTime);
 		break;
 	case EEvent::Burn:
 	{
 		const IronSim::FHex BurnHex = UnitHexOr(Event.Unit, Event.To);
-		AddFx(EFxKind::Fire, BurnHex, EventTime, 0.8f);
+		AddFx(EFxKind::Fire, BurnHex, ImpactTime, 0.8f);
 		if (Event.Value > 0)
 		{
-			AddFloat(BurnHex, FString::Printf(TEXT("-%d"), Event.Value), DamageColor, EventTime);
+			AddFloat(BurnHex, FString::Printf(TEXT("-%d"), Event.Value), DamageColor, ImpactTime);
 		}
-		AddSound(TEXT("Fire"), EventTime);
+		AddSound(TEXT("Fire"), ImpactTime);
 		break;
 	}
 	case EEvent::DuelChallenge:
-		AddFloat(UnitHexOr(Event.Unit, Event.From), IronUI::Loc("ui.battle.fx.challenge", "Duel!").ToString(), IronStyle::Gold(), EventTime, 20.0f);
+		AddFloat(UnitHexOr(Event.Unit, Event.From), IronUI::Loc("ui.battle.fx.challenge", "Duel!").ToString(), IronStyle::Gold(), ImpactTime, 20.0f);
 		break;
 	case EEvent::DuelDeclined:
-		AddFloat(UnitHexOr(Event.Target, Event.To), IronUI::Loc("ui.battle.fx.declined", "Declined").ToString(), MutedColor, EventTime);
+		AddFloat(UnitHexOr(Event.Target, Event.To), IronUI::Loc("ui.battle.fx.declined", "Declined").ToString(), MutedColor, ImpactTime);
 		break;
 	case EEvent::DuelResult:
 		// Value is the winning unit id (-1 for a draw).
 		if (IsValidUnit(Event.Value) && (Event.Value == Event.Unit || Event.Value == Event.Target))
 		{
 			const int32 LoserId = Event.Value == Event.Unit ? Event.Target : Event.Unit;
-			AddFx(EFxKind::Hit, UnitHexOr(LoserId, Event.To), EventTime, IronHexViewDetail::FxSeconds);
-			AddFloat(UnitHexOr(Event.Value, Event.From), IronUI::Loc("ui.battle.fx.duelWon", "Victorious!").ToString(), IronStyle::Gold(), EventTime, 20.0f);
+			AddFx(EFxKind::Hit, UnitHexOr(LoserId, Event.To), ImpactTime, IronHexViewDetail::FxSeconds);
+			AddFloat(UnitHexOr(Event.Value, Event.From), IronUI::Loc("ui.battle.fx.duelWon", "Victorious!").ToString(), IronStyle::Gold(), ImpactTime, 20.0f);
 		}
 		break;
 	case EEvent::Routed:
-		AddFloat(UnitHexOr(Event.Unit, Event.To), IronUI::Loc("ui.battle.fx.routed", "Routed!").ToString(), FLinearColor(1.0f, 0.6f, 0.2f, 1.0f), EventTime, 20.0f);
+		AddFloat(UnitHexOr(Event.Unit, Event.To), IronUI::Loc("ui.battle.fx.routed", "Routed!").ToString(), FLinearColor(1.0f, 0.6f, 0.2f, 1.0f), ImpactTime, 20.0f);
 		break;
 	case EEvent::Destroyed:
-		AddFloat(UnitHexOr(Event.Unit, Event.To), IronUI::Loc("ui.battle.fx.destroyed", "Destroyed!").ToString(), DamageColor, EventTime, 20.0f);
+		AddFloat(UnitHexOr(Event.Unit, Event.To), IronUI::Loc("ui.battle.fx.destroyed", "Destroyed!").ToString(), DamageColor, ImpactTime, 20.0f);
 		break;
 	case EEvent::Captured:
-		AddFloat(UnitHexOr(Event.Unit, Event.To), IronUI::Loc("ui.battle.fx.captured", "Captured!").ToString(), DamageColor, EventTime, 20.0f);
+		AddFloat(UnitHexOr(Event.Unit, Event.To), IronUI::Loc("ui.battle.fx.captured", "Captured!").ToString(), DamageColor, ImpactTime, 20.0f);
 		break;
 	case EEvent::Message:
 		// Narration. An officer slain names the unit on its own hex (From == To); a challenge accepted names two hexes.
 		if (IsValidUnit(Event.Unit) && Event.From == Event.To && Battle->Unit(Event.Unit).Status == IronSim::EUnitStatus::Killed)
 		{
-			AddFloat(Event.To, IronUI::Loc("ui.battle.fx.slain", "Slain!").ToString(), DamageColor, EventTime, 20.0f);
+			AddFloat(Event.To, IronUI::Loc("ui.battle.fx.slain", "Slain!").ToString(), DamageColor, ImpactTime, 20.0f);
 		}
 		break;
 	case EEvent::Victory:
@@ -684,7 +690,7 @@ void SIronHexView::PlayEvent(const IronSim::FBattleEvent& Event)
 
 EActiveTimerReturnType SIronHexView::OnAnimationTick(double /*InCurrentTime*/, float /*InDeltaTime*/)
 {
-	const double Now = FPlatformTime::Seconds();
+	const double Now = TimelineNow();
 	PlayDueSounds(Now);
 	MoveAnims.RemoveAll([Now](const FMoveAnim& Anim) { return Now > Anim.Start + IronHexViewDetail::MoveSeconds; });
 	ActiveFx.RemoveAll([Now](const FHexFx& Effect) { return Now > Effect.Start + Effect.Duration; });
@@ -1188,7 +1194,7 @@ int32 SIronHexView::DrawTooltip(FSlateWindowElementList& OutDrawElements, int32 
 int32 SIronHexView::OnPaint(const FPaintArgs& /*Args*/, const FGeometry& AllottedGeometry, const FSlateRect& /*MyCullingRect*/, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& /*InWidgetStyle*/, bool /*bParentEnabled*/) const
 {
 	namespace Detail = IronHexViewDetail;
-	const double Now = FPlatformTime::Seconds();
+	const double Now = TimelineNow();
 	if (const AIronBattleBoard3D* ActiveBoard = GetActiveBoard())
 	{
 		// The 3D board draws the terrain, highlights, units and effects: this widget only adds the overlay.
@@ -1490,7 +1496,8 @@ int32 SIronHexView::PaintBoardOverlay(const AIronBattleBoard3D& ActiveBoard, FSl
 		return LayerId;
 	}
 
-	// The board projects into game viewport pixels.
+	// Every anchor is projected with the board's view of this frame (one snapshot, game viewport pixels).
+	const FIronViewProjection& View = ActiveBoard.GetViewProjection();
 	const FVector2f PixelsPerLocal = ViewportPixelsPerLocal(LocalSize);
 	const auto ViewportToLocal = [&PixelsPerLocal](const FVector2D& ViewportPixel)
 	{
@@ -1503,13 +1510,15 @@ int32 SIronHexView::PaintBoardOverlay(const AIronBattleBoard3D& ActiveBoard, FSl
 	}
 	const float PlateScale = FMath::Clamp(HexSize / Detail::BoardNominalHexSize, 0.6f, 1.4f);
 
-	// Gate hit points (great cities have two gates).
+	// Gate hit points (great cities have two gates), just above the gatehouse as drawn (it shakes with the blows).
 	for (int32 GateIndex = 0; GateIndex < Battle->GateCount() && Battle->GateMaxHp() > 0; ++GateIndex)
 	{
 		const IronSim::FHex GatePos = Battle->GateHexAt(GateIndex);
 		const int32 GateHitPoints = Battle->GateHpAt(GateIndex);
+		FVector GateTopCm = FVector::ZeroVector;
 		FVector2D GatePixel = FVector2D::ZeroVector;
-		if (GateHitPoints <= 0 || !Battle->InBounds(GatePos) || !ActiveBoard.ProjectToViewport(GatePos, Detail::BoardGateBarHeightM, GatePixel))
+		if (GateHitPoints <= 0 || !Battle->InBounds(GatePos) || !ActiveBoard.GetGateTopWorldLocation(GatePos, GateTopCm)
+			|| !View.Project(GateTopCm + FVector(0.0, 0.0, static_cast<double>(Detail::BoardGateBarAboveTopM) * IronWorld::CmPerMetre), GatePixel))
 		{
 			continue;
 		}
@@ -1518,7 +1527,8 @@ int32 SIronHexView::PaintBoardOverlay(const AIronBattleBoard3D& ActiveBoard, FSl
 		DrawBar(OutDrawElements, PlateLayer + 1, Geometry, ViewportToLocal(GatePixel), GateBarSize, GateFraction, GateFraction > 0.3f ? IronStyle::Gold() : IronStyle::Danger());
 	}
 
-	// Unit plates above the animated models: name, troop bar on a side-coloured rim, troop count, commander star.
+	// Unit plates above the animated models (ProjectUnitToViewport uses the same view snapshot): name, troop bar on a
+	// side-coloured rim, troop count, commander star.
 	const IronSim::FBattleSetup& BattleSetup = Battle->GetSetup();
 	const float NameSize = FMath::Clamp(12.0f * PlateScale, 9.0f, 15.0f);
 	const FSlateFontInfo NameFont = IronStyle::BodyBold(NameSize);
@@ -1568,12 +1578,17 @@ int32 SIronHexView::PaintBoardOverlay(const AIronBattleBoard3D& ActiveBoard, FSl
 		}
 	}
 
-	// Floating numbers and words, rising over their hexes.
+	// Floating numbers and words, rising over their hexes (over a gate: from above the gatehouse or its rubble).
 	for (const FFloatText& Floating : FloatingTexts)
 	{
 		const float Alpha = static_cast<float>((Now - Floating.Start) / FMath::Max(0.05f, Floating.Duration));
+		if (Alpha < 0.0f || Alpha > 1.0f || !Battle->InBounds(Floating.Hex))
+		{
+			continue;
+		}
+		const float FloatHeightM = FMath::Max(Detail::BoardFloatHeightM, ActiveBoard.GetGateTopHeightM(Floating.Hex) + Detail::BoardFloatAboveGateM);
 		FVector2D FloatPixel = FVector2D::ZeroVector;
-		if (Alpha < 0.0f || Alpha > 1.0f || !Battle->InBounds(Floating.Hex) || !ActiveBoard.ProjectToViewport(Floating.Hex, Detail::BoardFloatHeightM, FloatPixel))
+		if (!View.Project(ActiveBoard.HexToWorldLocation(Floating.Hex, FloatHeightM), FloatPixel))
 		{
 			continue;
 		}

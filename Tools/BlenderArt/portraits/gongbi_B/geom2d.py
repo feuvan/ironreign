@@ -222,3 +222,20 @@ def poly_contains(poly, pts):
         inside ^= cond
         j = i
     return inside
+
+
+def vnoise(P, scale=40.0, seed=0, octaves=3):
+    """Smooth 2D noise in ~[-1, 1] at points P (px), feature size ~scale px."""
+    P = np.asarray(P, float).reshape(-1, 2)
+    rng = np.random.default_rng(seed)
+    out = np.zeros(len(P))
+    amp, tot = 1.0, 0.0
+    for o in range(octaves):
+        for k in range(4):
+            a = rng.uniform(0, 2 * math.pi)
+            f = 2 * math.pi / (scale / (2 ** o)) * rng.uniform(0.8, 1.25)
+            ph = rng.uniform(0, 2 * math.pi)
+            out += amp * np.sin(f * (P[:, 0] * math.cos(a) + P[:, 1] * math.sin(a)) + ph)
+            tot += amp
+        amp *= 0.5
+    return out / tot * 2.2

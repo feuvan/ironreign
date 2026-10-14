@@ -8,6 +8,7 @@
 #include "UI/IronUI.h"
 #include "UI/SIronStrategyCommon.h"
 #include "World/IronTerrain.h"
+#include "World/IronViewProjection.h"
 #include "World/IronWorldMap3D.h"
 #include "World/IronWorldMath.h"
 
@@ -78,17 +79,24 @@ namespace IronMapViewDetail
 	/** The gold frame drawn around the overlay (the 2D map's gold border is transparent over the scene). */
 	constexpr float WorldFrameThickness = 2.0f;
 
-	/** A city plaque or army tag to paint over the 3D map: the city / army index and its anchor (local space). */
+	/** Largest framing inset the map camera takes (AIronWorldMap3D::SetFramingInsets). */
+	constexpr double WorldMaxFramingInset = 0.45;
+
+	/**
+	 * A city plaque or army tag to paint over the 3D map: the city / army index, its anchor (local space) and the
+	 * anchor's depth along the view direction (cm).
+	 */
 	struct FWorldAnchor
 	{
 		int32 Index = -1;
 		FVector2f Anchor = FVector2f(0.0f, 0.0f);
+		float DepthCm = 0.0f;
 	};
 
-	/** Painted far to near (top to bottom of the view) so nearer plaques and tags cover farther ones. */
+	/** Painted far to near so nearer plaques and tags cover farther ones (also with the camera turned). */
 	void SortFarToNear(TArray<FWorldAnchor>& Anchors)
 	{
-		Anchors.Sort([](const FWorldAnchor& Lhs, const FWorldAnchor& Rhs) { return Lhs.Anchor.Y < Rhs.Anchor.Y; });
+		Anchors.Sort([](const FWorldAnchor& Lhs, const FWorldAnchor& Rhs) { return Lhs.DepthCm > Rhs.DepthCm; });
 	}
 
 	/** Plaque and tag text scale for a camera distance: 1.2 close up (250 m) .. 0.75 zoomed out (2600 m). */
@@ -326,6 +334,39 @@ namespace IronMapViewDetail
 		}
 	}
 
+	/**
+	 * Starts a 3D march route (BuildMarchPath with bFollowCurrentRoad) at the army's model as drawn: the model walks
+	 * between the gates and camps beside the walls, the rules position runs between the city centres. Samples of the
+	 * current road the model has already passed are dropped, so the route does not double back.
+	 */
+	void StartRouteAtModel(TArray<FVector2f>& InOutMapPath, const FVector2f& ModelM, bool bOnRoad)
+	{
+		if (InOutMapPath.Num() == 0)
+		{
+			return;
+		}
+		int32 FirstKept = 1;
+		if (bOnRoad)
+		{
+			float BestDistSq = (InOutMapPath[0] - ModelM).SizeSquared();
+			const int32 LastSample = FMath::Min(WorldCurrentRoadSamples - 1, InOutMapPath.Num() - 2);
+			for (int32 Index = 1; Index <= LastSample; ++Index)
+			{
+				const float DistSq = (InOutMapPath[Index] - ModelM).SizeSquared();
+				if (DistSq < BestDistSq)
+				{
+					BestDistSq = DistSq;
+					FirstKept = Index + 1;
+				}
+			}
+		}
+		InOutMapPath[FirstKept - 1] = ModelM;
+		if (FirstKept > 1)
+		{
+			InOutMapPath.RemoveAt(0, FirstKept - 1);
+		}
+	}
+
 	FLinearColor MarchRouteColor(const IronSim::FArmy& Army)
 	{
 		const bool bReturning = Army.State == IronSim::EArmyState::Returning;
@@ -507,12 +548,34 @@ void SIronMapView::SetWorldMap(AIronWorldMap3D* InWorldMap)
 	// 2D and 3D hit tests differ: the hover starts afresh (a running drag simply continues in the other mode).
 	HoverCity = -1;
 	HoverArmyId = -1;
+	bHoverHasGround = false;
 	OverlayHits.Reset();
 }
 
 bool SIronMapView::IsShowingWorldMap() const
 {
 	return GetActiveWorldMap() != nullptr;
+}
+
+bool SIronMapView::ComputeFramingInsets(const AIronWorldMap3D& Map, FMargin& OutInsets) const
+{
+	const FGeometry& MyGeometry = GetTickSpaceGeometry();
+	const FVector2f LocalSize = IronMapViewDetail::ToVec2f(MyGeometry.GetLocalSize());
+	FViewportMapping Mapping;
+	if (LocalSize.X < 2.0f || LocalSize.Y < 2.0f || !MakeViewportMapping(Map, Mapping))
+	{
+		return false;
+	}
+	// This widget's corners in viewport fractions: everything outside it is covered by the screen's panels.
+	const FVector2D TopLeft = LocalToViewportPixel(Mapping, MyGeometry, FVector2f(0.0f, 0.0f)) / Mapping.ViewportPixels;
+	const FVector2D BottomRight = LocalToViewportPixel(Mapping, MyGeometry, LocalSize) / Mapping.ViewportPixels;
+	const double MaxInset = IronMapViewDetail::WorldMaxFramingInset;
+	OutInsets = FMargin(
+		static_cast<float>(FMath::Clamp(TopLeft.X, 0.0, MaxInset)),
+		static_cast<float>(FMath::Clamp(TopLeft.Y, 0.0, MaxInset)),
+		static_cast<float>(FMath::Clamp(1.0 - BottomRight.X, 0.0, MaxInset)),
+		static_cast<float>(FMath::Clamp(1.0 - BottomRight.Y, 0.0, MaxInset)));
+	return true;
 }
 
 AIronWorldMap3D* SIronMapView::GetActiveWorldMap() const
@@ -1181,13 +1244,10 @@ FReply SIronMapView::OnMouseButtonDoubleClick(const FGeometry& InMyGeometry, con
 	const FVector2f Local = IronMapViewDetail::ToVec2f(InMyGeometry.AbsoluteToLocal(InMouseEvent.GetScreenSpacePosition()));
 	UpdateWorldHover(InMyGeometry, Local);
 	const float CloseUpM = FMath::Min(Map->GetCameraDistanceM(), IronMapViewDetail::WorldFocusDistanceM);
-	const IronSim::FGameState& GameState = Session->State();
 	if (HoverArmyId >= 0)
 	{
-		if (const IronSim::FArmy* Army = GameState.FindArmy(HoverArmyId))
-		{
-			Map->FocusMapPoint(IronWorld::FromSim(GameState.ArmyPosition(*Army, FMath::Clamp(FractionalDayAttr.Get(), 0.0f, 1.0f))), CloseUpM);
-		}
+		// Where the army's model is drawn (on its road between the gates, or in its camp).
+		Map->FocusArmy(HoverArmyId, CloseUpM);
 		return FReply::Handled();
 	}
 	if (HoverCity >= 0)
@@ -1196,11 +1256,9 @@ FReply SIronMapView::OnMouseButtonDoubleClick(const FGeometry& InMyGeometry, con
 		return FReply::Handled();
 	}
 	// Open ground: centre the view there, keeping the zoom.
-	FViewportMapping Mapping;
-	FVector2D GroundM = FVector2D::ZeroVector;
-	if (MakeViewportMapping(*Map, Mapping) && Map->PickMapPoint(LocalToViewportPixel(Mapping, InMyGeometry, Local), GroundM))
+	if (bHoverHasGround)
 	{
-		Map->FocusMapPoint(GroundM, Map->GetCameraDistanceM());
+		Map->FocusMapPoint(HoverGroundM, Map->GetCameraDistanceM());
 	}
 	return FReply::Handled();
 }
@@ -1442,12 +1500,12 @@ FVector2f SIronMapView::ViewportPixelToLocal(const FViewportMapping& Mapping, co
 	return IronMapViewDetail::ToVec2f(Geometry.AbsoluteToLocal(Absolute));
 }
 
-bool SIronMapView::ProjectToLocal(const AIronWorldMap3D& Map, const FViewportMapping& Mapping, const FGeometry& Geometry, const FVector2D& MapPointM, float HeightAboveSurfaceM, FVector2f& OutLocal)
+bool SIronMapView::ProjectToLocal(const AIronWorldMap3D& Map, const FIronViewProjection& View, const FViewportMapping& Mapping, const FGeometry& Geometry, const FVector2D& MapPointM, float HeightAboveSurfaceM, FVector2f& OutLocal)
 {
 	const AIronTerrain* Terrain = Map.GetTerrain();
 	const float SurfaceM = Terrain != nullptr ? Terrain->SampleSurface(MapPointM) : 0.0f;
 	FVector2D Pixel = FVector2D::ZeroVector;
-	if (!Map.ProjectToViewport(MapPointM, SurfaceM + HeightAboveSurfaceM, Pixel))
+	if (!View.Project(IronWorld::MapToWorld(MapPointM, static_cast<double>(SurfaceM + HeightAboveSurfaceM)), Pixel))
 	{
 		return false;
 	}
@@ -1460,6 +1518,7 @@ void SIronMapView::UpdateWorldHover(const FGeometry& Geometry, const FVector2f& 
 	HoverLocal = LocalPos;
 	HoverCity = -1;
 	HoverArmyId = -1;
+	bHoverHasGround = false;
 	AIronWorldMap3D* Map = GetActiveWorldMap();
 	if (Map == nullptr || !Session.IsValid() || !Session->HasGame())
 	{
@@ -1476,17 +1535,23 @@ void SIronMapView::UpdateWorldHover(const FGeometry& Geometry, const FVector2f& 
 			return;
 		}
 	}
-	// Then the scene: cities before armies (an army camps right beside its city; its tag selects it).
+	// Then the scene: the city or army model the cursor is most centred on (an army camped beside its town wins where
+	// it stands), plus the ground under the cursor, with one trace.
 	FViewportMapping Mapping;
 	if (!MakeViewportMapping(*Map, Mapping))
 	{
 		return;
 	}
-	const FVector2D Pixel = LocalToViewportPixel(Mapping, Geometry, LocalPos);
-	HoverCity = Map->PickCity(Pixel);
-	if (HoverCity < 0)
+	const FIronMapPick Pick = Map->PickAt(LocalToViewportPixel(Mapping, Geometry, LocalPos));
+	HoverGroundM = Pick.GroundPointM;
+	bHoverHasGround = Pick.bHasGround;
+	if (Pick.IsCity())
 	{
-		HoverArmyId = Map->PickArmy(Pixel);
+		HoverCity = Pick.Id;
+	}
+	else if (Pick.IsArmy())
+	{
+		HoverArmyId = Pick.Id;
 	}
 }
 
@@ -1499,15 +1564,21 @@ void SIronMapView::PushWorldHighlights(AIronWorldMap3D& Map) const
 
 FReply SIronMapView::HandleWorldKey(AIronWorldMap3D& Map, const FGeometry& Geometry, const FKey& Key)
 {
-	FViewportMapping Mapping;
-	if (!MakeViewportMapping(Map, Mapping))
-	{
-		return FReply::Unhandled();
-	}
 	if (Key == EKeys::Q || Key == EKeys::E)
 	{
 		Map.Rotate(Key == EKeys::Q ? -IronMapViewDetail::WorldRotateKeyDegrees : IronMapViewDetail::WorldRotateKeyDegrees);
 		return FReply::Handled();
+	}
+	if (Key == EKeys::Home || Key == EKeys::R)
+	{
+		// Back to looking north (the battle board's Home / R resets its view the same way).
+		Map.ResetCameraRotation();
+		return FReply::Handled();
+	}
+	FViewportMapping Mapping;
+	if (!MakeViewportMapping(Map, Mapping))
+	{
+		return FReply::Unhandled();
 	}
 	if (Key == EKeys::Add || Key == EKeys::Equals || Key == EKeys::Subtract || Key == EKeys::Hyphen)
 	{
@@ -1547,14 +1618,16 @@ int32 SIronMapView::PaintWorldOverlay(const AIronWorldMap3D& Map, const FGeometr
 {
 	OverlayHits.Reset();
 	int32 Layer = LayerId;
+	// One view snapshot for every anchor of this frame (game viewport pixels), mapped onto the paint geometry.
+	const FIronViewProjection& View = Map.GetViewProjection();
 	FViewportMapping Mapping;
-	if (Session.IsValid() && Session->HasGame() && MakeViewportMapping(Map, Mapping, true))
+	if (Session.IsValid() && Session->HasGame() && View.IsValid() && MakeViewportMapping(Map, Mapping, true))
 	{
 		const float Fraction = FMath::Clamp(FractionalDayAttr.Get(), 0.0f, 1.0f);
-		Layer = PaintWorldLabels(Map, Mapping, Geo, OutDrawElements, Layer + 1);
-		Layer = PaintWorldRoutes(Map, Mapping, Geo, OutDrawElements, Layer + 1, Fraction);
-		Layer = PaintWorldCities(Map, Mapping, Geo, OutDrawElements, Layer + 1);
-		Layer = PaintWorldArmies(Map, Mapping, Geo, OutDrawElements, Layer + 1);
+		Layer = PaintWorldLabels(Map, View, Mapping, Geo, OutDrawElements, Layer + 1);
+		Layer = PaintWorldRoutes(Map, View, Mapping, Geo, OutDrawElements, Layer + 1, Fraction);
+		Layer = PaintWorldCities(Map, View, Mapping, Geo, OutDrawElements, Layer + 1);
+		Layer = PaintWorldArmies(Map, View, Mapping, Geo, OutDrawElements, Layer + 1);
 		Layer = PaintTooltip(LastViewSize, Geo, OutDrawElements, Layer + 1);
 	}
 
@@ -1570,7 +1643,7 @@ int32 SIronMapView::PaintWorldOverlay(const AIronWorldMap3D& Map, const FGeometr
 	return Layer;
 }
 
-int32 SIronMapView::PaintWorldLabels(const AIronWorldMap3D& Map, const FViewportMapping& Mapping, const FGeometry& Geo, FSlateWindowElementList& OutDrawElements, int32 Layer) const
+int32 SIronMapView::PaintWorldLabels(const AIronWorldMap3D& Map, const FIronViewProjection& View, const FViewportMapping& Mapping, const FGeometry& Geo, FSlateWindowElementList& OutDrawElements, int32 Layer) const
 {
 	// Region names help when zoomed out; close up the terrain speaks for itself.
 	const float DistanceM = Map.GetCameraDistanceM();
@@ -1587,7 +1660,7 @@ int32 SIronMapView::PaintWorldLabels(const AIronWorldMap3D& Map, const FViewport
 	{
 		const IronSim::FMapLabel& Label = GameState.Map.Labels[static_cast<size_t>(Index)];
 		FVector2f LabelCenter(0.0f, 0.0f);
-		if (!ProjectToLocal(Map, Mapping, Geo, IronWorld::FromSim(Label.Position), IronMapViewDetail::WorldLabelLiftM, LabelCenter))
+		if (!ProjectToLocal(Map, View, Mapping, Geo, IronWorld::FromSim(Label.Position), IronMapViewDetail::WorldLabelLiftM, LabelCenter))
 		{
 			continue;
 		}
@@ -1606,7 +1679,7 @@ int32 SIronMapView::PaintWorldLabels(const AIronWorldMap3D& Map, const FViewport
 	return Layer + 1;
 }
 
-int32 SIronMapView::PaintWorldRoutes(const AIronWorldMap3D& Map, const FViewportMapping& Mapping, const FGeometry& Geo, FSlateWindowElementList& OutDrawElements, int32 Layer, float Fraction) const
+int32 SIronMapView::PaintWorldRoutes(const AIronWorldMap3D& Map, const FIronViewProjection& View, const FViewportMapping& Mapping, const FGeometry& Geo, FSlateWindowElementList& OutDrawElements, int32 Layer, float Fraction) const
 {
 	const IronSim::FGameState& GameState = Session->State();
 	if (GameState.PlayerFaction < 0)
@@ -1626,6 +1699,12 @@ int32 SIronMapView::PaintWorldRoutes(const AIronWorldMap3D& Map, const FViewport
 		if (MapPath.Num() < 2)
 		{
 			continue;
+		}
+		// The route leaves from the army's model as drawn, not from the rules engine's city-centre position.
+		FVector2D DrawnM = FVector2D::ZeroVector;
+		if (Map.GetArmyMapPoint(Army.Id, DrawnM))
+		{
+			IronMapViewDetail::StartRouteAtModel(MapPath, IronMapViewDetail::ToVec2f(DrawnM), Army.Next >= 0 && Army.Road >= 0);
 		}
 		const FLinearColor RouteColor = IronMapViewDetail::MarchRouteColor(Army);
 		const auto EmitRun = [&]()
@@ -1652,7 +1731,7 @@ int32 SIronMapView::PaintWorldRoutes(const AIronWorldMap3D& Map, const FViewport
 			{
 				const FVector2D RoutePoint = FMath::Lerp(SegmentStart, SegmentEnd, static_cast<double>(Step) / static_cast<double>(Steps));
 				FVector2f RouteLocal(0.0f, 0.0f);
-				bTipShown = ProjectToLocal(Map, Mapping, Geo, RoutePoint, IronMapViewDetail::WorldRouteLiftM, RouteLocal);
+				bTipShown = ProjectToLocal(Map, View, Mapping, Geo, RoutePoint, IronMapViewDetail::WorldRouteLiftM, RouteLocal);
 				if (bTipShown)
 				{
 					Run.Add(RouteLocal);
@@ -1673,7 +1752,7 @@ int32 SIronMapView::PaintWorldRoutes(const AIronWorldMap3D& Map, const FViewport
 	return Layer;
 }
 
-int32 SIronMapView::PaintWorldCities(const AIronWorldMap3D& Map, const FViewportMapping& Mapping, const FGeometry& Geo, FSlateWindowElementList& OutDrawElements, int32 Layer) const
+int32 SIronMapView::PaintWorldCities(const AIronWorldMap3D& Map, const FIronViewProjection& View, const FViewportMapping& Mapping, const FGeometry& Geo, FSlateWindowElementList& OutDrawElements, int32 Layer) const
 {
 	const IronSim::FGameState& GameState = Session->State();
 	FIronAssets& Assets = FIronAssets::Get();
@@ -1691,8 +1770,10 @@ int32 SIronMapView::PaintWorldCities(const AIronWorldMap3D& Map, const FViewport
 	TArray<IronMapViewDetail::FWorldAnchor> Anchors;
 	for (int32 Index = 0; Index < static_cast<int32>(GameState.Cities.size()); ++Index)
 	{
+		FVector AnchorCm = FVector::ZeroVector;
 		FVector2D Pixel = FVector2D::ZeroVector;
-		if (!Map.ProjectCityLabel(Index, Pixel))
+		float DepthCm = 0.0f;
+		if (!Map.GetCityLabelWorldLocation(Index, AnchorCm) || !View.Project(AnchorCm, Pixel, DepthCm))
 		{
 			continue;
 		}
@@ -1701,7 +1782,7 @@ int32 SIronMapView::PaintWorldCities(const AIronWorldMap3D& Map, const FViewport
 		{
 			continue;
 		}
-		Anchors.Add(IronMapViewDetail::FWorldAnchor{Index, Anchor});
+		Anchors.Add(IronMapViewDetail::FWorldAnchor{Index, Anchor, DepthCm});
 	}
 	IronMapViewDetail::SortFarToNear(Anchors);
 
@@ -1771,7 +1852,7 @@ int32 SIronMapView::PaintWorldCities(const AIronWorldMap3D& Map, const FViewport
 	return CityLayer;
 }
 
-int32 SIronMapView::PaintWorldArmies(const AIronWorldMap3D& Map, const FViewportMapping& Mapping, const FGeometry& Geo, FSlateWindowElementList& OutDrawElements, int32 Layer) const
+int32 SIronMapView::PaintWorldArmies(const AIronWorldMap3D& Map, const FIronViewProjection& View, const FViewportMapping& Mapping, const FGeometry& Geo, FSlateWindowElementList& OutDrawElements, int32 Layer) const
 {
 	const IronSim::FGameState& GameState = Session->State();
 	const int32 SelectedArmy = SelectedArmyAttr.Get();
@@ -1779,13 +1860,15 @@ int32 SIronMapView::PaintWorldArmies(const AIronWorldMap3D& Map, const FViewport
 	const FSlateFontInfo GlyphFont = IronStyle::Brush(14.0f * TextScale);
 	const FSlateFontInfo CountFont = IronStyle::BodyBold(11.0f * TextScale);
 
-	// Tags just above the banners (the 3D banner cloth has no glyph).
+	// Tags just above the banners of the drawn models (the 3D banner cloth has no glyph).
 	TArray<IronMapViewDetail::FWorldAnchor> Anchors;
 	for (int32 Index = 0; Index < static_cast<int32>(GameState.Armies.size()); ++Index)
 	{
 		const IronSim::FArmy& Army = GameState.Armies[static_cast<size_t>(Index)];
+		FVector AnchorCm = FVector::ZeroVector;
 		FVector2D Pixel = FVector2D::ZeroVector;
-		if (Army.Units.empty() || !Map.ProjectArmyLabel(Army.Id, Pixel))
+		float DepthCm = 0.0f;
+		if (Army.Units.empty() || !Map.GetArmyLabelWorldLocation(Army.Id, AnchorCm) || !View.Project(AnchorCm, Pixel, DepthCm))
 		{
 			continue;
 		}
@@ -1794,7 +1877,7 @@ int32 SIronMapView::PaintWorldArmies(const AIronWorldMap3D& Map, const FViewport
 		{
 			continue;
 		}
-		Anchors.Add(IronMapViewDetail::FWorldAnchor{Index, Anchor});
+		Anchors.Add(IronMapViewDetail::FWorldAnchor{Index, Anchor, DepthCm});
 	}
 	IronMapViewDetail::SortFarToNear(Anchors);
 

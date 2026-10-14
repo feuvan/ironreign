@@ -14,7 +14,7 @@ import bpy
 from palette import hex_rgb
 
 AOVS = (("paint", "COLOR"), ("tint", "COLOR"), ("shade", "VALUE"), ("ink", "VALUE"),
-        ("mask", "VALUE"))
+        ("mask", "VALUE"), ("aok", "VALUE"), ("veil", "VALUE"))
 
 
 def register_aovs(vl=None):
@@ -146,10 +146,14 @@ class NB:
         l2 = self.vmath("DOT_PRODUCT", d, d)
         return self.math("EXPONENT", self.math("MULTIPLY", l2, -1.0))
 
-    def out(self, paint, tint=None, shade=0.0, ink=0.0, mask=0.0):
-        """Write the AOVs + emission surface."""
+    def out(self, paint, tint=None, shade=0.0, ink=0.0, mask=0.0, aok=None, veil=0.0):
+        """Write the AOVs + emission surface.  ``aok``: how strongly the render's AO pass
+        (folds, contact) adds to 晕染 for this material (default: set by shade_term)."""
+        if aok is None:
+            aok = getattr(self, "_aok", 0.0)
         for name, v in (("paint", paint), ("tint", tint if tint is not None else paint),
-                        ("shade", shade), ("ink", ink), ("mask", mask)):
+                        ("shade", shade), ("ink", ink), ("mask", mask), ("aok", aok),
+                        ("veil", veil)):
             a = self.n("ShaderNodeOutputAOV")
             if hasattr(a, "aov_name"):
                 a.aov_name = name
@@ -166,9 +170,7 @@ class NB:
 
 
 def _mat(name):
-    m = bpy.data.materials.get(name)
-    if m is not None:
-        bpy.data.materials.remove(m)
+    """Always a fresh material (Blender suffixes duplicate names)."""
     return bpy.data.materials.new(name)
 
 
@@ -176,9 +178,9 @@ def shade_term(nb, ao=0.6, ao_dist=0.03, edge=0.35, edge0=0.45, base=0.0, local=
                samples=6):
     """晕染 amount: occlusion in folds + darkening toward the contours."""
     s = base
-    if ao > 0:
-        s = nb.math("ADD", s, nb.math("MULTIPLY", nb.math("SUBTRACT", 1.0,
-                                                          nb.ao(ao_dist, local, samples)), ao))
+    # occlusion comes from the render's AO pass (one ray per sample, far cheaper than AO
+    # nodes); the material only says how strongly it applies
+    nb._aok = ao
     if edge > 0:
         s = nb.math("ADD", s, nb.math("MULTIPLY", nb.smooth(nb.facing(0.5), edge0, 1.0), edge))
     return nb.math("MINIMUM", s, 1.0)

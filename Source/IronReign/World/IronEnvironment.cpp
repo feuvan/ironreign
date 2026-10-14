@@ -54,6 +54,22 @@ namespace IronEnvironmentDetail
 		{{0.96f, 0.91f, 0.85f}, {0.36f, 0.38f, 0.42f}, {0.98f, 1.0f, 1.03f}, 0.9f, 1.0f, 6200.0f, 1.1f},
 	};
 
+	/**
+	 * Height-fog colour of the painted look per season (linear): the pale silk haze of a blue-green landscape
+	 * painting, where bare silk serves as mist and distance (docs/DESIGN.md sections 8 and 12.6).
+	 */
+	constexpr float PaintedFog[4][3] = {
+		{0.48f, 0.45f, 0.35f},
+		{0.47f, 0.45f, 0.36f},
+		{0.52f, 0.45f, 0.31f},
+		{0.50f, 0.48f, 0.42f},
+	};
+	/** Painted key light: from the top-left of the north-facing view, high and warm. */
+	constexpr float PaintedSunBearingDegrees = 305.0f;
+	constexpr float PaintedSunColor[3] = {1.0f, 0.95f, 0.87f};
+	/** Realistic key light (the bearing of the first 3D version). */
+	constexpr float RealisticSunBearingDegrees = 235.0f;
+
 	constexpr float SeasonBlendSeconds = 2.5f;
 	/** Target circle of confusion at infinity, as a fraction of the image width, at tilt-shift strength 1. */
 	constexpr double TiltShiftInfinityCoc = 0.022;
@@ -69,10 +85,61 @@ namespace IronEnvironmentDetail
 		return FVector4(Value, Value, Value, 1.0f);
 	}
 
-	/** Scalar of M_IronInk that scales the outlines (Content/Python/ironreign_import.py). */
-	FName InkStrengthParameter()
+	/** Scalar of M_IronInk / M_IronSilk that scales the pass (Content/Python/ironreign_import.py). */
+	FName PassStrengthParameter()
 	{
 		return FName(TEXT("Strength"));
+	}
+
+	/** MPC_IronSeason scalar of the look (1 painted .. 0 realistic) read by every imported material. */
+	FName PaintedParameter()
+	{
+		return FName(TEXT("Painted"));
+	}
+
+	/** The painted version of a realistic month look (SeasonIndex 0 spring .. 3 winter). */
+	FIronSeasonLook ToPainted(const FIronSeasonLook& Real, int32 SeasonIndex)
+	{
+		FIronSeasonLook Look = Real;
+		// A gentle key from the top-left, high in the sky: short, soft shadows that model the forms without drama.
+		Look.SunBearingDegrees = PaintedSunBearingDegrees;
+		Look.SunElevationDegrees = FMath::Clamp(Real.SunElevationDegrees + 16.0f, 40.0f, 56.0f);
+		Look.SunIntensityLux = Real.SunIntensityLux * 0.6f;
+		Look.SunColor = FMath::Lerp(Real.SunColor, ColorOf(PaintedSunColor), 0.6f);
+		Look.SunSourceAngleDegrees = 8.0f;
+		// A high sky-light fill keeps the shading low in contrast, like a flat mineral wash.
+		Look.SkyLightIntensity = Real.SkyLightIntensity * 2.4f;
+		// A pale silk haze instead of a saturated blue sky: little Rayleigh, more Mie, a warm sky; silk mist in valleys.
+		Look.RayleighScatteringScale = 0.012f;
+		Look.MieScatteringScale = Real.MieScatteringScale * 2.2f;
+		Look.SkyLuminance = FLinearColor(1.12f, 1.02f, 0.82f, 1.0f);
+		Look.FogDensity = Real.FogDensity * 1.5f;
+		Look.FogColor = ColorOf(PaintedFog[FMath::Clamp(SeasonIndex, 0, 3)]);
+		Look.FogMaxOpacity = 0.92f;
+		// Grading toward the mineral palette; M_IronSilk adds the silk itself after tonemapping.
+		Look.Saturation = Real.Saturation * 0.84f;
+		Look.Contrast = 0.9f;
+		Look.Gain = FLinearColor(Real.Gain.R * 1.02f, Real.Gain.G, Real.Gain.B * 0.94f, 1.0f);
+		Look.WhiteTemp = Real.WhiteTemp + 300.0f;
+		Look.BloomIntensity = 0.0f;
+		Look.VignetteIntensity = 0.15f;
+		Look.DepthOfFieldScale = 0.6f;
+		Look.Painted = 1.0f;
+		return Look;
+	}
+
+	/**
+	 * Writes Value to a component property when it differs by more than Tolerance; true when it changed (the caller
+	 * then marks the component's render state dirty once).
+	 */
+	bool ChangeFloat(float& Property, float Value, float Tolerance)
+	{
+		if (FMath::IsNearlyEqual(Property, Value, Tolerance))
+		{
+			return false;
+		}
+		Property = Value;
+		return true;
 	}
 
 	/** Cloud coverage under the parameter names the cloud materials may use (unknown names are ignored). */
@@ -94,6 +161,7 @@ FIronSeasonLook FIronSeasonLook::ForMonth(int32 Month)
 
 	FIronSeasonLook Look;
 	Look.SunElevationDegrees = MonthSunElevation[Index];
+	Look.SunBearingDegrees = RealisticSunBearingDegrees;
 	Look.SunIntensityLux = MonthSunLux[Index];
 	Look.SunColor = ColorOf(Palette.Sun);
 	Look.SkyLightIntensity = Palette.SkyLight;
@@ -111,18 +179,34 @@ FIronSeasonLook FIronSeasonLook::ForMonth(int32 Month)
 	return Look;
 }
 
+FIronSeasonLook FIronSeasonLook::ForMonth(int32 Month, EIronLook Look)
+{
+	const FIronSeasonLook Realistic = ForMonth(Month);
+	if (Look == EIronLook::Realistic)
+	{
+		return Realistic;
+	}
+	return IronEnvironmentDetail::ToPainted(Realistic, (FMath::Clamp(Month, 1, 12) - 1) / 3);
+}
+
 FIronSeasonLook FIronSeasonLook::Blend(const FIronSeasonLook& From, const FIronSeasonLook& To, float Alpha)
 {
 	const float T = FMath::Clamp(Alpha, 0.0f, 1.0f);
 	FIronSeasonLook Look;
 	Look.SunElevationDegrees = FMath::Lerp(From.SunElevationDegrees, To.SunElevationDegrees, T);
+	// Bearings stay within 0..360 and the looks' bearings are 70 degrees apart: a plain lerp takes the short way.
+	Look.SunBearingDegrees = FMath::Lerp(From.SunBearingDegrees, To.SunBearingDegrees, T);
 	Look.SunIntensityLux = FMath::Lerp(From.SunIntensityLux, To.SunIntensityLux, T);
 	Look.SunColor = FMath::Lerp(From.SunColor, To.SunColor, T);
+	Look.SunSourceAngleDegrees = FMath::Lerp(From.SunSourceAngleDegrees, To.SunSourceAngleDegrees, T);
 	Look.SkyLightIntensity = FMath::Lerp(From.SkyLightIntensity, To.SkyLightIntensity, T);
 	Look.FogDensity = FMath::Lerp(From.FogDensity, To.FogDensity, T);
 	Look.FogColor = FMath::Lerp(From.FogColor, To.FogColor, T);
+	Look.FogMaxOpacity = FMath::Lerp(From.FogMaxOpacity, To.FogMaxOpacity, T);
 	Look.CloudCoverage = FMath::Lerp(From.CloudCoverage, To.CloudCoverage, T);
 	Look.MieScatteringScale = FMath::Lerp(From.MieScatteringScale, To.MieScatteringScale, T);
+	Look.RayleighScatteringScale = FMath::Lerp(From.RayleighScatteringScale, To.RayleighScatteringScale, T);
+	Look.SkyLuminance = FMath::Lerp(From.SkyLuminance, To.SkyLuminance, T);
 	Look.Snow = FMath::Lerp(From.Snow, To.Snow, T);
 	Look.Autumn = FMath::Lerp(From.Autumn, To.Autumn, T);
 	Look.Wetness = FMath::Lerp(From.Wetness, To.Wetness, T);
@@ -130,6 +214,10 @@ FIronSeasonLook FIronSeasonLook::Blend(const FIronSeasonLook& From, const FIronS
 	Look.Contrast = FMath::Lerp(From.Contrast, To.Contrast, T);
 	Look.Gain = FMath::Lerp(From.Gain, To.Gain, T);
 	Look.WhiteTemp = FMath::Lerp(From.WhiteTemp, To.WhiteTemp, T);
+	Look.BloomIntensity = FMath::Lerp(From.BloomIntensity, To.BloomIntensity, T);
+	Look.VignetteIntensity = FMath::Lerp(From.VignetteIntensity, To.VignetteIntensity, T);
+	Look.DepthOfFieldScale = FMath::Lerp(From.DepthOfFieldScale, To.DepthOfFieldScale, T);
+	Look.Painted = FMath::Lerp(From.Painted, To.Painted, T);
 	return Look;
 }
 
@@ -192,7 +280,7 @@ AIronEnvironment::AIronEnvironment()
 	PostProcess->Priority = 0.0f;
 	InitPostProcess();
 
-	CurrentLook = FIronSeasonLook::ForMonth(SeasonMonth);
+	CurrentLook = FIronSeasonLook::ForMonth(SeasonMonth, LookStyle);
 	FromLook = CurrentLook;
 	TargetLook = CurrentLook;
 }
@@ -297,29 +385,60 @@ void AIronEnvironment::BeginPlay()
 	}
 	if (CloudBaseMaterial == nullptr)
 	{
-		UE_LOG(LogIronWorld, Log, TEXT("No volumetric cloud material (MI_IronClouds); the sky stays clear."));
+		UE_LOG(LogIronWorld, Log, TEXT("No volumetric cloud material (MI_IronClouds); the realistic sky stays clear."));
 	}
 
 	SeasonCollection = IronWorld::LoadSeasonCollection();
 	InkMaterial = IronWorld::LoadMaterial(TEXT("M_IronInk"));
 	if (InkMaterial != nullptr)
 	{
-		InkInstance = UMaterialInstanceDynamic::Create(InkMaterial.Get(), this);
+		InkInstance = AddBlendable(InkMaterial.Get());
 		if (InkInstance != nullptr)
 		{
-			const float MaterialStrength = InkInstance->K2_GetScalarParameterValue(IronEnvironmentDetail::InkStrengthParameter());
+			const float MaterialStrength = InkInstance->K2_GetScalarParameterValue(IronEnvironmentDetail::PassStrengthParameter());
 			if (MaterialStrength > 0.0f)
 			{
 				InkBaseStrength = MaterialStrength;
 			}
 		}
-		UObject* Blendable = InkInstance != nullptr ? static_cast<UObject*>(InkInstance.Get()) : static_cast<UObject*>(InkMaterial.Get());
-		PostProcess->Settings.WeightedBlendables.Array.Add(FWeightedBlendable(0.0f, Blendable));
 		ApplyInk();
+	}
+	SilkMaterial = IronWorld::LoadMaterial(TEXT("M_IronSilk"));
+	if (SilkMaterial != nullptr)
+	{
+		SilkInstance = AddBlendable(SilkMaterial.Get());
+	}
+	else
+	{
+		UE_LOG(LogIronWorld, Log, TEXT("M_IronSilk was not imported (run the asset import): the painted look has no silk grade."));
 	}
 
 	ApplyQuality();
 	SetSeason(SeasonMonth, true);
+}
+
+UMaterialInstanceDynamic* AIronEnvironment::AddBlendable(UMaterialInterface* Material)
+{
+	if (Material == nullptr)
+	{
+		return nullptr;
+	}
+	UMaterialInstanceDynamic* Instance = UMaterialInstanceDynamic::Create(Material, this);
+	UObject* Blendable = Instance != nullptr ? static_cast<UObject*>(Instance) : static_cast<UObject*>(Material);
+	PostProcess->Settings.WeightedBlendables.Array.Add(FWeightedBlendable(0.0f, Blendable));
+	return Instance;
+}
+
+void AIronEnvironment::SetBlendableWeight(const UObject* Blendable, float Weight)
+{
+	for (FWeightedBlendable& Entry : PostProcess->Settings.WeightedBlendables.Array)
+	{
+		const UObject* EntryObject = Entry.Object;
+		if (EntryObject == Blendable)
+		{
+			Entry.Weight = Weight;
+		}
+	}
 }
 
 void AIronEnvironment::Tick(float DeltaSeconds)
@@ -342,7 +461,27 @@ void AIronEnvironment::SetSeason(int32 Month, bool bInstant)
 		return;
 	}
 	SeasonMonth = NewMonth;
-	TargetLook = FIronSeasonLook::ForMonth(SeasonMonth);
+	StartLookTransition(bInstant);
+}
+
+void AIronEnvironment::SetLook(EIronLook InLook, bool bInstant)
+{
+	if (InLook == LookStyle && !bInstant)
+	{
+		return;
+	}
+	LookStyle = InLook;
+	// Clouds and volumetric fog belong to the realistic look only: switch them now, the rest blends.
+	if (HasActorBegunPlay())
+	{
+		ApplyQuality();
+	}
+	StartLookTransition(bInstant);
+}
+
+void AIronEnvironment::StartLookTransition(bool bInstant)
+{
+	TargetLook = FIronSeasonLook::ForMonth(SeasonMonth, LookStyle);
 	if (bInstant || !bLookApplied)
 	{
 		CurrentLook = TargetLook;
@@ -358,16 +497,28 @@ void AIronEnvironment::SetSeason(int32 Month, bool bInstant)
 
 void AIronEnvironment::ApplyLook(const FIronSeasonLook& Look)
 {
-	UpdateSunRotation(Look.SunElevationDegrees);
+	using IronEnvironmentDetail::ChangeFloat;
+	UpdateSunRotation(Look.SunElevationDegrees, Look.SunBearingDegrees);
 	Sun->SetIntensity(Look.SunIntensityLux);
 	Sun->SetLightColor(Look.SunColor, false);
+	if (ChangeFloat(Sun->LightSourceAngle, Look.SunSourceAngleDegrees, 0.01f))
+	{
+		Sun->MarkRenderStateDirty();
+	}
 	SkyLight->SetIntensity(Look.SkyLightIntensity);
 	HeightFog->SetFogDensity(Look.FogDensity);
 	HeightFog->SetFogInscatteringColor(Look.FogColor);
+	HeightFog->SetFogMaxOpacity(Look.FogMaxOpacity);
 
-	if (!FMath::IsNearlyEqual(SkyAtmosphere->MieScatteringScale, Look.MieScatteringScale, 1.0e-5f))
+	bool bSkyChanged = ChangeFloat(SkyAtmosphere->MieScatteringScale, Look.MieScatteringScale, 1.0e-5f);
+	bSkyChanged |= ChangeFloat(SkyAtmosphere->RayleighScatteringScale, Look.RayleighScatteringScale, 1.0e-5f);
+	if (!SkyAtmosphere->SkyLuminanceFactor.Equals(Look.SkyLuminance, 1.0e-3f))
 	{
-		SkyAtmosphere->MieScatteringScale = Look.MieScatteringScale;
+		SkyAtmosphere->SkyLuminanceFactor = Look.SkyLuminance;
+		bSkyChanged = true;
+	}
+	if (bSkyChanged)
+	{
 		SkyAtmosphere->MarkRenderStateDirty();
 	}
 
@@ -381,6 +532,8 @@ void AIronEnvironment::ApplyLook(const FIronSeasonLook& Look)
 			Season->SetScalarParameterValue(FName(TEXT("Snow")), Look.Snow);
 			Season->SetScalarParameterValue(FName(TEXT("Autumn")), Look.Autumn);
 			Season->SetScalarParameterValue(FName(TEXT("Wetness")), Look.Wetness);
+			// Collections imported before the painted look have no "Painted": their materials stay realistic.
+			Season->SetScalarParameterValue(IronEnvironmentDetail::PaintedParameter(), Look.Painted);
 		}
 	}
 
@@ -402,12 +555,19 @@ void AIronEnvironment::ApplyLook(const FIronSeasonLook& Look)
 	Settings.ColorContrast = IronEnvironmentDetail::Uniform4(Look.Contrast);
 	Settings.ColorGain = FVector4(Look.Gain.R, Look.Gain.G, Look.Gain.B, 1.0f);
 	Settings.WhiteTemp = Look.WhiteTemp;
+	Settings.BloomIntensity = Look.BloomIntensity;
+	Settings.VignetteIntensity = Look.VignetteIntensity;
+
+	ApplySilk(Look.Painted);
+	// The look scales the tilt-shift (CurrentLook is what the depth of field reads).
+	ApplyDepthOfField();
 }
 
-void AIronEnvironment::UpdateSunRotation(float ElevationDegrees)
+void AIronEnvironment::UpdateSunRotation(float ElevationDegrees, float LookBearingDegrees)
 {
 	// Bearing B is where the light comes from (0 = north = -Y, 90 = east = +X); the light travels the other way.
-	const double BearingRadians = FMath::DegreesToRadians(static_cast<double>(SunBearingDegrees));
+	const float Bearing = SunBearingOverride >= 0.0f ? SunBearingOverride : LookBearingDegrees;
+	const double BearingRadians = FMath::DegreesToRadians(static_cast<double>(Bearing));
 	const double TowardSunX = FMath::Sin(BearingRadians);
 	const double TowardSunY = -FMath::Cos(BearingRadians);
 	const double LightYaw = FMath::RadiansToDegrees(FMath::Atan2(-TowardSunY, -TowardSunX));
@@ -426,6 +586,7 @@ void AIronEnvironment::SetQuality(int32 Level)
 void AIronEnvironment::ApplyQuality()
 {
 	const bool bLumen = QualityLevel >= 1;
+	const bool bRealistic = LookStyle == EIronLook::Realistic;
 	FPostProcessSettings& Settings = PostProcess->Settings;
 	Settings.DynamicGlobalIlluminationMethod = bLumen ? EDynamicGlobalIlluminationMethod::Lumen : EDynamicGlobalIlluminationMethod::None;
 	Settings.ReflectionMethod = bLumen ? EReflectionMethod::Lumen : EReflectionMethod::ScreenSpace;
@@ -433,7 +594,8 @@ void AIronEnvironment::ApplyQuality()
 	Settings.LumenSceneLightingQuality = QualityLevel >= 3 ? 2.0f : 1.0f;
 	Settings.LumenReflectionQuality = QualityLevel >= 3 ? 2.0f : 1.0f;
 
-	if (QualityLevel >= 1)
+	// The painted sky is bare silk: no clouds (nor their shadows) and no volumetric light shafts, at any quality.
+	if (QualityLevel >= 1 && bRealistic)
 	{
 		EnsureClouds();
 	}
@@ -441,7 +603,7 @@ void AIronEnvironment::ApplyQuality()
 	{
 		RemoveClouds();
 	}
-	HeightFog->SetVolumetricFog(QualityLevel >= 2);
+	HeightFog->SetVolumetricFog(QualityLevel >= 2 && bRealistic);
 	ApplyDepthOfField();
 }
 
@@ -494,10 +656,16 @@ void AIronEnvironment::SetTiltShiftStrength(float Strength)
 	ApplyDepthOfField();
 }
 
+float AIronEnvironment::GetEffectiveTiltShiftStrength() const
+{
+	return TiltShiftStrength * FMath::Max(0.0f, CurrentLook.DepthOfFieldScale);
+}
+
 void AIronEnvironment::ApplyDepthOfField()
 {
 	FPostProcessSettings& Settings = PostProcess->Settings;
-	const bool bEnabled = QualityLevel >= 1 && TiltShiftStrength > 0.001f && FocusDistanceCm > 100.0f;
+	const float Strength = GetEffectiveTiltShiftStrength();
+	const bool bEnabled = QualityLevel >= 1 && Strength > 0.001f && FocusDistanceCm > 100.0f;
 	if (!bEnabled)
 	{
 		// A focal distance of 0 turns depth of field off.
@@ -512,7 +680,7 @@ void AIronEnvironment::ApplyDepthOfField()
 	const double HalfFovRadians = FMath::DegreesToRadians(static_cast<double>(FocusFovDegrees) * 0.5);
 	const double FocalLengthMm = 0.5 * SensorMm / FMath::Tan(HalfFovRadians);
 	const double FocusMm = static_cast<double>(FocusDistanceCm) * 10.0;
-	const double CocFraction = IronEnvironmentDetail::TiltShiftInfinityCoc * static_cast<double>(TiltShiftStrength);
+	const double CocFraction = IronEnvironmentDetail::TiltShiftInfinityCoc * static_cast<double>(Strength);
 	const double Fstop = 0.5 * FocalLengthMm * FocalLengthMm / (FMath::Max(1.0, FocusMm - FocalLengthMm) * SensorMm * CocFraction);
 
 	Settings.DepthOfFieldFocalDistance = FocusDistanceCm;
@@ -539,17 +707,35 @@ void AIronEnvironment::ApplyInk()
 	const bool bInkOn = InkStrength > 0.001f;
 	if (InkInstance != nullptr)
 	{
-		InkInstance->SetScalarParameterValue(IronEnvironmentDetail::InkStrengthParameter(), InkBaseStrength * InkStrength);
+		InkInstance->SetScalarParameterValue(IronEnvironmentDetail::PassStrengthParameter(), InkBaseStrength * InkStrength);
 	}
 	const UObject* InkObject = InkInstance != nullptr ? static_cast<const UObject*>(InkInstance.Get()) : static_cast<const UObject*>(InkMaterial.Get());
-	for (FWeightedBlendable& Entry : PostProcess->Settings.WeightedBlendables.Array)
+	SetBlendableWeight(InkObject, bInkOn ? 1.0f : 0.0f);
+}
+
+void AIronEnvironment::ApplySilk(float Strength)
+{
+	if (SilkMaterial == nullptr)
 	{
-		const UObject* EntryObject = Entry.Object;
-		if (EntryObject == InkObject)
-		{
-			Entry.Weight = bInkOn ? 1.0f : 0.0f;
-		}
+		return;
 	}
+	const float Clamped = FMath::Clamp(Strength, 0.0f, 1.0f);
+	if (FMath::IsNearlyEqual(Clamped, AppliedSilkStrength, 1.0e-3f))
+	{
+		return;
+	}
+	AppliedSilkStrength = Clamped;
+	if (SilkInstance != nullptr)
+	{
+		SilkInstance->SetScalarParameterValue(IronEnvironmentDetail::PassStrengthParameter(), Clamped);
+	}
+	else if (Clamped < 0.999f && Clamped > 0.001f)
+	{
+		// Without a dynamic instance the pass can only be fully on or off.
+		return;
+	}
+	const UObject* SilkObject = SilkInstance != nullptr ? static_cast<const UObject*>(SilkInstance.Get()) : static_cast<const UObject*>(SilkMaterial.Get());
+	SetBlendableWeight(SilkObject, Clamped > 0.001f ? 1.0f : 0.0f);
 }
 
 void AIronEnvironment::SetExposureBias(float Bias)
@@ -560,8 +746,13 @@ void AIronEnvironment::SetExposureBias(float Bias)
 
 void AIronEnvironment::SetSunBearing(float BearingDegrees)
 {
-	SunBearingDegrees = BearingDegrees;
-	UpdateSunRotation(CurrentLook.SunElevationDegrees);
+	SunBearingOverride = BearingDegrees >= 0.0f ? FMath::Fmod(BearingDegrees, 360.0f) : -1.0f;
+	RefreshSun();
+}
+
+void AIronEnvironment::RefreshSun()
+{
+	UpdateSunRotation(CurrentLook.SunElevationDegrees, CurrentLook.SunBearingDegrees);
 }
 
 void AIronEnvironment::RegisterSeasonMaterial(UMaterialInstanceDynamic* Material)

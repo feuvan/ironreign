@@ -11,10 +11,6 @@
 #include "World/IronEnvironment.h"
 #include "World/IronWorldMap3D.h"
 
-#include "Camera/CameraActor.h"
-#include "Camera/CameraComponent.h"
-#include "Engine/Engine.h"
-#include "Engine/GameViewportClient.h"
 #include "Engine/World.h"
 #include "Framework/Application/SlateApplication.h"
 #include "HAL/PlatformTime.h"
@@ -51,21 +47,14 @@ namespace IronBattleScreenDetail
 	/** Month shown on the board when no campaign is running. */
 	constexpr int32 DefaultBoardMonth = 4;
 
-	/** The world the 3D scenes live in (the session's presentation world, else the game viewport's), or null. */
+	/**
+	 * The world the 3D scenes live in: the session's presentation world (set for the session's whole life by
+	 * UIronReignWorldStateSubsystem), or null, which keeps the 2D board. Never GEngine->GameViewport: with several PIE
+	 * instances that is another instance's world.
+	 */
 	UWorld* FindBattleWorld(const FIronSession* InSession)
 	{
-		if (InSession != nullptr)
-		{
-			if (UWorld* PresentationWorld = InSession->GetPresentationWorld())
-			{
-				return PresentationWorld;
-			}
-		}
-		if (GEngine == nullptr || GEngine->GameViewport == nullptr)
-		{
-			return nullptr;
-		}
-		return GEngine->GameViewport->GetWorld();
+		return InSession != nullptr ? InSession->GetPresentationWorld() : nullptr;
 	}
 
 	/** Converts any Slate 2D vector type (FVector2D, FVector2f, deprecation wrappers) to FVector2f. */
@@ -813,25 +802,6 @@ TSharedRef<SWidget> SIronBattleScreen::MakeModalFrame(const TSharedRef<SWidget>&
 // 3D board
 // -------------------------------------------------------------------------------------------------
 
-void SIronBattleScreen::ApplyBoardGraphicsOptions(AIronBattleBoard3D& InBoard, const FIronSession& InSession)
-{
-	const bool bTiltShift = InSession.IsTiltShiftEnabled();
-	if (AIronEnvironment* BoardEnvironment = InBoard.GetEnvironment())
-	{
-		BoardEnvironment->SetTiltShiftStrength(bTiltShift ? 1.0f : 0.0f);
-		BoardEnvironment->SetInkStrength(InSession.IsInkOutlinesEnabled() ? 1.0f : 0.0f);
-	}
-	// The board rewrites its camera's focal distance every tick (gated only on the quality), and the camera's post
-	// process is blended over the environment volume. Without the override the volume's focal distance applies, which
-	// SetTiltShiftStrength(0) set to 0: no depth of field.
-	ACameraActor* BoardCameraActor = InBoard.GetCamera();
-	UCameraComponent* BoardCameraComponent = BoardCameraActor != nullptr ? BoardCameraActor->GetCameraComponent() : nullptr;
-	if (BoardCameraComponent != nullptr)
-	{
-		BoardCameraComponent->PostProcessSettings.bOverride_DepthOfFieldFocalDistance = bTiltShift;
-	}
-}
-
 bool SIronBattleScreen::StartBoard3D()
 {
 	// Presentation mode Auto / 3D with the board's imported assets available (FIronSession::Uses3DBattle).
@@ -852,9 +822,13 @@ bool SIronBattleScreen::StartBoard3D()
 	}
 	NewBoard->SetSeason(Session->HasGame() ? Session->State().Month : IronBattleScreenDetail::DefaultBoardMonth);
 	NewBoard->SetQuality(Session->GetGraphicsQuality());
-	// The other graphics options at once: without a 3D map the player controller's poll would apply them up to half a
-	// second later (ink outlines popping in). The controller keeps applying them on every settings change.
-	ApplyBoardGraphicsOptions(*NewBoard, *Session);
+	// The look and the other graphics options at once: without a 3D map the player controller's poll would apply them
+	// up to half a second later (ink outlines popping in). The controller keeps applying them on every settings change;
+	// the board's camera follows the environment's tilt-shift strength by itself.
+	if (AIronEnvironment* BoardEnvironment = NewBoard->GetEnvironment())
+	{
+		Session->ApplyEnvironmentOptions(*BoardEnvironment);
+	}
 	// Frame for the usual panel sizes at once; UpdateBoardFraming refines it from the real layout.
 	NewBoard->SetFramingInsets(0.0f, IronBattleScreenDetail::EstimatedTopInset, IronBattleScreenDetail::EstimatedRightInset, IronBattleScreenDetail::EstimatedBottomInset);
 	NewBoard->ResetView(true);

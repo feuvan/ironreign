@@ -48,6 +48,8 @@ namespace IronStrategyScreenDetail
 
 	/** Seconds of the camera blend when the 3D map comes back on screen from a nearby view (it cuts otherwise). */
 	constexpr float WorldMapBlendSeconds = 0.5f;
+	/** Smallest change of a measured framing inset (viewport fraction) that reframes the 3D map. */
+	constexpr float WorldMapInsetTolerance = 0.004f;
 
 	/**
 	 * Night backdrop behind a part of the screen. The screen's own backdrop turns transparent over the 3D map; these keep
@@ -81,6 +83,7 @@ void SIronStrategyScreen::Construct(const FArguments& InArgs)
 
 	if (Session.IsValid())
 	{
+		BuiltCampaignSerial = Session->GetCampaignSerial();
 		StateChangedHandle = Session->OnStateChanged.AddSP(this, &SIronStrategyScreen::HandleStateChanged);
 		CultureChangedHandle = Session->OnCultureChanged.AddSP(this, &SIronStrategyScreen::HandleCultureChanged);
 		if (Session->HasGame())
@@ -642,7 +645,8 @@ void SIronStrategyScreen::RebuildLog()
 
 void SIronStrategyScreen::HandleStateChanged()
 {
-	if (!Session.IsValid() || !Session->HasGame())
+	// Another campaign (a load or a new game notifies before SIronRoot replaces this screen): nothing here shows it.
+	if (!Session.IsValid() || !Session->HasGame() || Session->GetCampaignSerial() != BuiltCampaignSerial)
 	{
 		return;
 	}
@@ -1330,6 +1334,8 @@ void SIronStrategyScreen::ShowGameOver()
 			{
 				SessionRef->EndGame();
 			}
+			// Like "Return to Title": the next campaign gets a fresh strategy screen (this one stays subscribed otherwise).
+			Pinned->ResetStrategy();
 		}), nullptr);
 }
 
@@ -1472,6 +1478,11 @@ AIronWorldMap3D* SIronStrategyScreen::FindWorldMap()
 void SIronStrategyScreen::UpdateWorldMap()
 {
 	AIronWorldMap3D* Map = FindWorldMap();
+	if (Map != nullptr)
+	{
+		// Before activation too: the first shown frame is already centred in the map area.
+		UpdateWorldMapFraming(*Map);
+	}
 	bool bJustActivated = false;
 	if (Map != nullptr && !Map->IsMapActive() && !Map->HasFailed() && Map->IsSceneReady())
 	{
@@ -1534,6 +1545,27 @@ void SIronStrategyScreen::UpdateWorldMap()
 		WorldMapTargets = Targets;
 		Map->SetTargetCities(WorldMapTargets);
 	}
+}
+
+void SIronStrategyScreen::UpdateWorldMapFraming(AIronWorldMap3D& Map)
+{
+	FMargin Insets;
+	if (!MapView.IsValid() || !MapView->ComputeFramingInsets(Map, Insets))
+	{
+		// Not laid out yet: the map keeps its framing (a map kept across a load already has this layout's).
+		return;
+	}
+	const float Tolerance = IronStrategyScreenDetail::WorldMapInsetTolerance;
+	const bool bChanged = FMath::Abs(Insets.Left - WorldMapInsets.Left) > Tolerance || FMath::Abs(Insets.Top - WorldMapInsets.Top) > Tolerance
+		|| FMath::Abs(Insets.Right - WorldMapInsets.Right) > Tolerance || FMath::Abs(Insets.Bottom - WorldMapInsets.Bottom) > Tolerance;
+	if (!bChanged && FramedWorldMap.Get() == &Map)
+	{
+		return;
+	}
+	WorldMapInsets = Insets;
+	FramedWorldMap = &Map;
+	// Glides while the map shows, applies at once while it is hidden.
+	Map.SetFramingInsets(Insets.Left, Insets.Top, Insets.Right, Insets.Bottom);
 }
 
 void SIronStrategyScreen::HideWorldMap()

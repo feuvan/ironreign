@@ -1,10 +1,18 @@
-"""Shared plumbing of the UI chrome family scripts (Tools/BlenderArt/ui_chrome/).
+"""Shared plumbing of the UI chrome family scripts (Tools/BlenderArt/ui_chrome/), gongbi style.
 
-Every piece module exposes ``SPEC`` (size, supersample, samples, 9-slice margins) and
-``build(G, variant) -> Maps`` (numpy only) plus optional ``extras(variant)`` (extra bpy objects:
-text, cylinders...).  :func:`render_piece` turns that into a Cycles render at ``ss`` x the target
-size and returns the finished @1x and @2x images (premultiplied Lanczos downsample of the same
-render, so both resolutions are identical art).
+Every piece module exposes
+
+    NAME, SPEC            name, dict(size=(w, h), ss=4, spp=1, margins=..., seed=...)
+    VARIANTS, FILE        optional state variants and their file names
+    paint(G, variant)     -> straight sRGB RGBA float array on grid G (numpy only: the painted
+                             layers of :mod:`ironart.ui_chrome_paint`)
+    extras(variant, G)    optional bpy: toon-shaded 3D parts + Freestyle ink (scroll rollers)
+
+:func:`render_piece` renders ``paint`` through Cycles as a flat emission plate at ``ss`` x the
+target size (plus the extras) and returns the finished @1x and @2x images (premultiplied
+Lanczos downsample of the same render, so both resolutions are the same art).  With
+``numpy_only=True`` (look-dev, system python3) the plate is used directly without Blender; for
+pieces without extras that gives the identical image.
 """
 
 import os
@@ -15,6 +23,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 TOOLS = os.path.dirname(HERE)
 if TOOLS not in sys.path:
     sys.path.insert(0, TOOLS)
+
+import numpy as np  # noqa: E402
 
 from ironart import REPO_DIR, post  # noqa: E402
 from ironart import ui_chrome_sdf as S  # noqa: E402
@@ -32,6 +42,10 @@ def out_dir(*parts):
     return p
 
 
+def font(name):
+    return os.path.join(FONTS, name)
+
+
 def finish(raw, ss, lo=0.004, hi=0.996):
     """Supersampled RGBA render -> (@1x, @2x) straight-alpha float images (premultiplied
     Lanczos; an odd ``ss`` resamples the @2x by ss/2)."""
@@ -44,53 +58,55 @@ def finish(raw, ss, lo=0.004, hi=0.996):
     x1 = post.downsample(img, ss)
     out = []
     for im in (x1, x2):
-        im = post.alpha_cleanup(im, lo=lo, hi=hi, bleed=4)
-        out.append(im)
+        out.append(post.alpha_cleanup(im, lo=lo, hi=hi, bleed=4))
     return out
 
 
-def render_piece(mod, variant=None, preview=False, tag=None):
-    """Build + render one piece module.  Returns dict(img1, img2, raw, times, maps)."""
-    import bpy
-    from ironart import scene
-    from ironart import ui_chrome_render as R
+def quantize8(rgba):
+    """What an 8-bit PNG round trip does to a float image (look-dev path parity)."""
+    return np.round(np.clip(rgba, 0, 1) * 255.0) / 255.0
+
+
+def render_piece(mod, variant=None, preview=False, tag=None, numpy_only=False):
+    """Paint + render one piece module.  Returns dict(img1, img2, raw, times, plate)."""
     spec = mod.SPEC
     w, h = spec["size"]
     ss = spec.get("ss", 4)
-    spp = spec.get("spp", 64)
+    spp = spec.get("spp", 1)
     if preview:
-        spp = max(12, spp // 3)
         ss = 2
     tag = tag or (mod.NAME + (("_" + variant) if variant else ""))
     t0 = time.time()
-    scene.reset(seed=spec.get("seed", 1))
-    R.setup(ss=ss, spp=spp, transparent=True, view=spec.get("view", "Standard"),
-            look=spec.get("look", "None"), adaptive=spec.get("adaptive", 0.01))
     G = S.Grid(w, h, ss)
-    m = mod.build(G, variant)
-    t_maps = time.time() - t0
-    R.camera(w, h, ss)
-    if m is not None:
-        R.plate(tag, m, w, h, step=spec.get("mesh_step", 1), cut=spec.get("cut", True),
-                shader_alpha=spec.get("shader_alpha", False))
-    if hasattr(mod, "extras"):
-        mod.extras(variant, G)
-    rig = getattr(mod, "rig", None)            # after extras: rigs may light-link to them
-    if rig is not None:
-        rig(variant)
-    else:
-        R.rig_chrome(**spec.get("rig", {}))
+    paint = getattr(mod, "paint_lookdev", mod.paint) if numpy_only else mod.paint
+    rgba = paint(G, variant).astype(np.float32)
+    t_paint = time.time() - t0
     raw = os.path.join(out_dir("raw"), "%s_raw_%dx.png" % (tag, ss))
-    t1 = time.time()
-    t_render = scene.render(raw)
+    if numpy_only:
+        post.save(rgba, raw)
+        t_render = 0.0
+        t1 = time.time()
+    else:
+        import bpy
+        from ironart import scene
+        from ironart import ui_chrome_flat as F
+        scene.reset(seed=spec.get("seed", 1))
+        has_3d = hasattr(mod, "extras")
+        F.setup(ss=ss, spp=spp if has_3d else 1, seed=spec.get("seed", 1))
+        F.camera(w, h, ss)
+        F.plate(tag, rgba, w, h)
+        if has_3d:
+            mod.extras(variant, G)
+        t1 = time.time()
+        t_render = scene.render(raw)
+        bpy.ops.wm.read_factory_settings(use_empty=True)
     img1, img2 = finish(raw, ss)
     if hasattr(mod, "post"):
         img1, img2 = mod.post(img1, img2, variant)
-    times = {"maps": round(t_maps, 2), "build": round(t1 - t0 - t_maps, 2),
+    times = {"paint": round(t_paint, 2), "build": round(t1 - t0 - t_paint, 2),
              "render": round(t_render, 2), "total": round(time.time() - t0, 2)}
     print("[ui_chrome] %s times %s" % (tag, times))
-    bpy.ops.wm.read_factory_settings(use_empty=True)
-    return {"img1": img1, "img2": img2, "raw": raw, "times": times, "maps": m}
+    return {"img1": img1, "img2": img2, "raw": raw, "times": times, "plate": rgba}
 
 
 def save_pair(res, name, rel=None):

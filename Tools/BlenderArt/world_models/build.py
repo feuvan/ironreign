@@ -1,19 +1,23 @@
-"""World Models family - ONE entry point that regenerates every output deterministically.
+"""World Models family - ONE entry point that regenerates every output deterministically (gongbi look).
 
     Tools/BlenderArt/render.sh Tools/BlenderArt/world_models/build.py [--preview] [--no-render] [--skip-sprites]
                                [--reuse-leaves]
                                [only: trees cities props sprites | Tree_Pine City_2 Banner ...]
 
 Order (each step uses the previous one's files):
-    trees.py    Tree_Pine / Tree_Broad / Tree_Bamboo .glb (+ leaf atlases and bark tiles the cities reuse)
+    trees.py    Tree_Pine / Tree_Broad / Tree_Bamboo .glb (+ gongbi leaf atlases and bark tiles the
+                cities and the sect reuse)
     cities.py   City_1 / City_2 / City_3 .glb
     props.py    Banner / Flag / Sect .glb (Sect reuses the tree textures)
     sprites.py  Content/Data/Art/Map/City_1..3.png, Sect.png, Banner.png (+ BannerGlyphArea.txt), Flag.png
-then adds the GLBs to ArtSource/manifest.json (locked read-modify-write, version bumped).
+                as jiehua paintings rendered from the GLBs
+then writes Content/Data/Art3D/Models.json, adds the GLBs to ArtSource/manifest.json (locked
+read-modify-write, version bumped) and assembles the gongbi review sheet of the nine models.
 
-Outputs: ArtSource/Models/*.glb and Content/Data/Art/Map/* (committed); previews, textures,
-contact sheets and report.json in $WORLD_MODELS_OUT or $IRONART_OUT/world_models (scratch).
-Everything is seeded: re-running gives the same geometry and textures.
+Outputs: ArtSource/Models/*.glb, Content/Data/Art3D/Models.json and Content/Data/Art/Map/*
+(committed); previews, textures, contact sheets and report.json in $WORLD_MODELS_OUT or
+$IRONART_OUT/world_models (scratch).  Everything is seeded: re-running gives the same geometry and
+textures.
 """
 
 import os
@@ -21,8 +25,11 @@ import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import json  # noqa: E402
+
 import common  # noqa: E402
 import cities  # noqa: E402
+import review  # noqa: E402
 import props  # noqa: E402
 import sprites  # noqa: E402
 import trees  # noqa: E402
@@ -30,6 +37,26 @@ import trees  # noqa: E402
 from ironart import world_bake as WB  # noqa: E402
 
 MODELS = ["Tree_Pine", "Tree_Broad", "Tree_Bamboo", "City_1", "City_2", "City_3", "Banner", "Flag", "Sect"]
+#: Content/Data/Art3D/Models.json (DESIGN.md 12.3, IronWorldAssets.h).  frontYaw = the yaw that turns
+#: the imported model's front towards UE +Y.  Blender's front (-Y) is exported as glTF +Z
+#: (export_yup: Blender (x, y, z) -> glTF (x, z, -y)), and Unreal's glTF import converts glTF
+#: (x, y, z) -> UE (x, z, y) (GLTFCore ConvertVec3: "Y swapped with Z", the right- to left-handed
+#: swap), so the front already lands on UE +Y (map south, facing the default camera): frontYaw 0.
+#: If the editor's import ever measures a different axis map (the import's "gltfAxes" note), fix it
+#: here at runtime: 90 = front imported on +X, 180 = on -Y, -90 = on -X.  Every model is authored at
+#: its exaggerated map size (scale 1).
+FRONT_YAW = 0
+MODELS_JSON = {"frontYaw": FRONT_YAW, "models": {m: {"scale": 1.0} for m in MODELS}}
+
+
+def write_models_json():
+    from ironart import REPO_DIR
+    p = os.path.join(REPO_DIR, "Content", "Data", "Art3D", "Models.json")
+    os.makedirs(os.path.dirname(p), exist_ok=True)
+    with open(p, "w", encoding="utf-8") as f:
+        json.dump(MODELS_JSON, f, indent=2)
+        f.write("\n")
+    return p
 
 
 def main():
@@ -78,9 +105,15 @@ def main():
             rep.add(n + ".png", **sprites.render_sprite(n, common.out("sprites")))
         rep.save()
         times["sprites"] = time.time() - t
+    print("[ironart] wrote", write_models_json())
     glbs = [os.path.join(common.MODELS_DIR, m + ".glb") for m in MODELS
             if os.path.isfile(os.path.join(common.MODELS_DIR, m + ".glb"))]
     v = WB.manifest_add(glbs)
+    prev = [os.path.join(common.out("previews"), "%s_gongbi.png" % m) for m in
+            ("City_1", "City_2", "City_3", "Sect", "Banner", "Flag", "Tree_Pine", "Tree_Broad", "Tree_Bamboo")]
+    if all(os.path.isfile(p) for p in prev):
+        print("[ironart] review sheet", review.sheet(prev, os.path.join(common.out("previews"),
+                                                                          "World_Models_gongbi_sheet.png")))
     times["total"] = time.time() - t0
     print("[ironart] ArtSource/manifest.json version %d (%d World Models files)" % (v, len(glbs)))
     print("[ironart] TIMES", {k: round(x, 1) for k, x in times.items()})

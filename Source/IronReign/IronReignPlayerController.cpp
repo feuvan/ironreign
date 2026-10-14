@@ -5,10 +5,8 @@
 #include "Sim/IronState.h"
 #include "UI/IronAudio.h"
 #include "UI/IronSession.h"
-#include "UI/SIronBattleScreen.h"
 #include "UI/SIronRoot.h"
 #include "World/IronBattleBoard3D.h"
-#include "World/IronCameraRig.h"
 #include "World/IronEnvironment.h"
 #include "World/IronWorldMap3D.h"
 
@@ -220,16 +218,10 @@ void AIronReignPlayerController::DestroyWorldMap()
 	{
 		return;
 	}
-	const AActor* Rig = Map->GetCameraRig();
-	const bool bViewingMap = Rig != nullptr && GetViewTarget() == Rig;
-	// Hiding first turns world rendering off again (unless the battle board is the scene on screen).
-	Map->SetActive(false);
-	// EndPlay of the map destroys its terrain and camera rig; the shared environment stays.
+	// The map's EndPlay hides it (world rendering stays on only for an active battle board), hands the view target back
+	// to this controller when its camera rig held it, and destroys its terrain and camera rig; the shared environment
+	// stays.
 	Map->Destroy();
-	if (bViewingMap)
-	{
-		SetViewTargetWithBlend(this, 0.0f);
-	}
 }
 
 void AIronReignPlayerController::ApplyGraphicsSettings()
@@ -251,9 +243,8 @@ void AIronReignPlayerController::ApplyGraphicsSettings()
 	}
 	if (AIronBattleBoard3D* Board = AIronBattleBoard3D::FindBoard(GetWorld()))
 	{
+		// The board's camera follows the environment's tilt-shift strength by itself every frame.
 		Board->SetQuality(Quality);
-		// Its environment and its camera's own tilt-shift (the camera's depth of field overrides the environment's).
-		SIronBattleScreen::ApplyBoardGraphicsOptions(*Board, *IronSession);
 		if (Environment == nullptr)
 		{
 			Environment = Board->GetEnvironment();
@@ -263,8 +254,7 @@ void AIronReignPlayerController::ApplyGraphicsSettings()
 	if (Environment != nullptr)
 	{
 		// One environment per world, shared by the map and the board (both forwarded the quality to it above): the
-		// post-process options stick for both scenes.
-		Environment->SetTiltShiftStrength(IronSession->IsTiltShiftEnabled() ? 1.0f : 0.0f);
-		Environment->SetInkStrength(IronSession->IsInkOutlinesEnabled() ? 1.0f : 0.0f);
+		// look and the post-process options stick for both scenes.
+		IronSession->ApplyEnvironmentOptions(*Environment);
 	}
 }

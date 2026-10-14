@@ -468,12 +468,14 @@ culture, and is stored in `Saved/IronReign/Settings.json`. Switching language re
 ## 12. Real-time 3D presentation (Unreal Engine 5.8)
 
 The campaign map and tactical battles are rendered as **real-time 3D scenes** that use UE 5.8's renderer:
-Lumen global illumination and reflections, Virtual Shadow Maps, Sky Atmosphere, Volumetric Clouds,
-Exponential Height Fog with volumetric fog, TSR, and a cinematic post-process stack (tilt-shift depth of field
-for the "living diorama" look of modern Koei titles, bloom, filmic grading, an optional painterly/ink pass).
-Slate stays on top for all UI (panels, menus, dialogs, labels). Seasons follow the calendar (spring greens,
-summer, golden autumn, winter snow). If the 3D assets have not been imported, the game falls back to the
-2D painted map / 2D hex board automatically.
+Lumen global illumination and reflections, Virtual Shadow Maps, Sky Atmosphere, Exponential Height Fog, TSR
+and a post-process stack. By default both scenes are **painted**: classical Chinese ink-and-colour painting on
+aged silk like the rest of the art (section 8), with ink outlines, a silk grade, soft low-contrast light and a
+pale silk sky (12.6). The physically based "living diorama" of the first 3D version (blue sky, volumetric
+clouds and fog, bloom, filmic grading) stays available as the **realistic** look. Tilt-shift depth of field is
+a player option in both. Slate stays on top for all UI (panels, menus, dialogs, labels). Seasons follow the
+calendar (spring greens, summer, golden autumn, winter snow). If the 3D assets have not been imported, the game
+falls back to the 2D painted map / 2D hex board automatically.
 
 ### 12.1 Pipeline
 
@@ -541,5 +543,76 @@ Placed at a fixed location far from the world map (origin X = 0, Y = -100000 m) 
 
 `M_IronTerrain` (Albedo/Masks textures, season parameters `Snow`, `Autumn`, `Wetness`), `M_IronWater`,
 `M_IronTint` (Tint colour x white base, roughness parameter), `M_IronHighlight` (emissive translucent rings
-for selection/targets), `M_IronInk` (optional post-process: edge ink lines + paper grain). Project rendering
-settings live in `Config/DefaultEngine.ini` (Lumen GI + reflections, VSM, TSR, distance fields, volumetric fog).
+for selection/targets), the glTF model masters `M_IronModel*`, and two post-process materials: `M_IronInk`
+(calligraphic ink outlines + paper grain, before depth of field) and `M_IronSilk` (the painted look's aged-silk
+grade, after tonemapping, with the generated weave texture `T_IronSilk`). `MPC_IronSeason` carries the season
+(`Snow`, `Autumn`, `Wetness`, `SnowColor`, `AutumnTint`) and the look (`Painted` 1/0, `PaintedWater`); every
+material above reads it. Parameters and defaults: `Tools/Unreal/README.md`. Project rendering settings live in
+`Config/DefaultEngine.ini` (Lumen GI + reflections, VSM, TSR, distance fields, volumetric fog).
+
+### 12.6 The painted look (default) and the realistic look
+
+`AIronEnvironment` (one per world, shared by the map and the board) owns the look: `SetLook(EIronLook::Painted |
+Realistic, bInstant)`. Look and season form one `FIronSeasonLook` per month; changing either blends over
+~2.5 s, nothing is rebuilt. The painted look, as `FIronSeasonLook::ForMonth(Month, EIronLook::Painted)` derives
+it from the realistic month:
+
+| | Painted (default) | Realistic |
+|---|---|---|
+| Key light | from the top-left of the north-facing view (bearing 305, 40-56 degrees high), 0.6x the sun, warm; 8 degree source angle: soft shadows | late-afternoon sun from the south-west (bearing 235), 1 degree: crisp shadows |
+| Fill | sky light 2.4x: low-contrast shading, like a flat wash | sky light 1x |
+| Sky and distance | Rayleigh 0.012, Mie 2.2x, warm sky luminance; silk-coloured height fog (1.5x density, valley mist); `M_IronSilk` fades the far map and the sky into silk `#E6D6B0` ("bare silk serves as mist and distance") | blue sky atmosphere, grey-blue fog |
+| Clouds, volumetric fog | none at any quality (cheaper) | volumetric clouds (Medium+) with cloud shadows, volumetric fog (High+) |
+| Grading | saturation 0.84x, contrast 0.9, warm gain and white balance, no bloom, vignette 0.15 | filmic, bloom 0.45, vignette 0.35 |
+| Post-process | `M_IronInk` (ink setting) + `M_IronSilk` | `M_IronInk` only if the ink setting is on |
+| Materials (`MPC_IronSeason.Painted`) | matte (roughness 0.95, specular 0.2-0.25, no metal), model normal maps at half strength, water a matte pale-azurite wash (`PaintedWater`, sRGB `#95AFC4`) with faint ripples, rivers in the terrain share it | PBR as imported, glossy depth-tinted Single Layer Water |
+| Tilt-shift | 0.6x the player's strength (the art bible wants almost none) | 1x |
+| Battle board | silk-toned ground plains (malachite hint, ochre in autumn, lead white in snow); the day's sun swings from west-north-west to north, 36 degrees and up | green / autumn / snow ground; the sun moves from dawn in the east to dusk in the west |
+
+**Ink outlines** (`M_IronInk`, warm black `#1E1A16`; `AIronEnvironment::SetInkStrength`, the settings toggle, on
+by default) come from three cues tuned to stay quiet on smooth ground: occluding contours from the Laplacian of
+1/depth (zero on any plane, so slopes draw nothing while ridgelines, walls, crowns and model silhouettes do),
+creases where neighbouring normals turn by more than ~50 degrees (wall corners, roofs, cliffs), and coasts where
+the shading model changes (water against land). The brush is wider near the camera (1.6 px at 1080p) than far
+(0.8 px), its pressure varies along the line with world-space noise (no swimming), and lines fade out from 3 km.
+
+**Silk grade** (`M_IronSilk`, after tonemapping, so its colours are the art bible's display colours): distance
+haze to silk (from 2.5 km, sky 85 %), chroma 0.88 and a warm silk tint, the `T_IronSilk` weave (1 texel per
+1080p pixel, fixed to the screen like a canvas) with large age mottling, slightly aged corners, and warm ink
+`#1E1A16` as the darkest tone.
+
+**Cost.** Both post-process passes run at every quality level (`M_IronInk`: 16 point-sampled scene-texture
+reads and two noise evaluations per pixel; `M_IronSilk`: two scene-texture and two texture reads); the painted
+look saves the volumetric clouds and fog, so it is not more expensive than the realistic one at any level, and
+Low (no Lumen, no depth of field) stays cheap.
+Assets imported before pipeline version 3 lack `M_IronSilk` and `MPC_IronSeason.Painted`: the game then shows
+the painted lighting with realistic materials and no silk grade until the import runs again.
+
+**Settings.** `FIronSession` keeps tilt-shift and ink outlines with the painted look's defaults: ink outlines
+**on**, tilt-shift **off** (the art bible has no depth of field). `Settings.json` carries `"settingsVersion": 2`;
+older files stored the previous defaults (ink off, tilt-shift on) for every player and get the new ones. All art
+is gongbi, so the screens always show the painted look (`FIronSession::ApplyEnvironmentOptions` calls
+`SetLook(EIronLook::Painted)` with the other environment options) and the settings dialog offers no look choice;
+the realistic look stays available to code.
+
+### 12.7 Screen contract of the 3D scenes
+
+The facades `AIronWorldMap3D` and `AIronBattleBoard3D` are the only World classes the Slate screens use; their
+headers document every call. The parts that shape the UI code:
+
+- **Viewport pixels** are game viewport render pixels, origin top-left. `GetViewProjection()` returns one
+  `FIronViewProjection` per frame (captured through `ULocalPlayer::GetProjectionData`, so it matches the
+  rendered view exactly: aspect-ratio constraint, FOV, letterbox bars, view-target blends). Overlays project
+  every anchor with it (`Project`, `Deproject`) instead of `ProjectWorldLocationToScreen` per point.
+- **Framing insets.** Both scenes take the fractions of the viewport covered by opaque panels
+  (`SetFramingInsets(Left, Top, Right, Bottom)`, measured every frame) and centre their camera target, focus and
+  zoom pivot in the uncovered rectangle.
+- **Picking.** The map's `PickAt(pixel)` returns the city or army the cursor is most centred on (relative to its
+  size) plus the ground point; the board's `PickHex` prefers the nearest unit model.
+- **Anchors.** `GetArmyMapPoint` / `ProjectArmyLabel` follow the drawn army model (gate to gate, camps);
+  `ProjectGateToViewport` / `GetGateTopWorldLocation` follow the drawn gate (rubble after it fell).
+- **Animation timing.** `AIronBattleBoard3D::PlayEvent` returns `FIronBoardEventTiming` (start, impact, end
+  seconds on the board clock `GetAnimationClock()`); floating numbers and sounds are scheduled on it.
+- **Lifetime.** `SetActive` switches scenes; `EndPlay` (any reason, e.g. `Destroy()`) deactivates and hands the
+  view target back, so world rendering and the view are never left behind. `AreAssetsAvailable()` is cached
+  (a missing-assets answer is re-probed at most every 30 s or after `InvalidateAssetCheck()`).

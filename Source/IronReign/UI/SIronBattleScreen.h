@@ -72,14 +72,6 @@ public:
 	virtual bool SupportsKeyboardFocus() const override { return true; }
 	virtual FReply OnKeyDown(const FGeometry& MyGeometry, const FKeyEvent& InKeyEvent) override;
 
-	/**
-	 * Pushes the session's tilt-shift and ink-outline options to the board's environment and camera. The board camera
-	 * sets its own depth of field over the environment's; with tilt-shift off its focal-distance override is cleared
-	 * so the environment's "no depth of field" applies. Called when the board starts and by the player controller on
-	 * every settings change.
-	 */
-	static void ApplyBoardGraphicsOptions(AIronBattleBoard3D& InBoard, const FIronSession& InSession);
-
 private:
 	// Layout.
 	TSharedRef<SWidget> BuildLayout();

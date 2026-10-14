@@ -1,108 +1,92 @@
-"""Panel.png (128x128 9-slice, 24 px border): handmade xuan paper mounted in a slim dark
-rosewood moulding with an inset gold-leaf bead; gilt-bronze corner mounts.
+"""Panel.png (128x128 9-slice, 24 px margins): a gongbi painting mount (装裱).
 
-Cross-section (distance d from the outer edge, target px = mm; mitred like a picture frame):
-    0-8.4   rosewood moulding, straight grain along the rail, clear coat (crown 2.9 mm)
-    8.6-11  gold-leaf bead (round, 2.4 px)
-    11-11.8 black-lacquer reveal (shadow line)
-    11.8-24 paper, aged towards the frame -> Paper by d = 22
-Centre (24..104): Paper with xuan "formation" clouds + fine bast fibres, faded in over 8 px from
-the 9-slice boundary so the stretched strips stay uniform.  Corner mounts: Ming-style flat
-gilt-bronze L plates over the mitre with spear tips, engraved border and a domed boss, inside the
-24 px corners.
+An aged silk field mounted like an album leaf: a slim border of azurite silk brocade, a
+mud-gold rule, a ruled ink line and an ivory separating strip (隔水), with square-notched
+(委角) corners - the ruled lines step around each corner, and a mud-gold four-petal flower
+(柿蒂) with a cinnabar centre sits on the brocade in the notch.
+
+Cross-section (target px).  ``d`` = mitred distance from the outer edge, ``dw`` = Chebyshev
+distance outside the notched window (= 10.2 - d along the strips), so every ring is a function
+of the distance across its strip and the 9-slice strips stretch cleanly:
+    d  0.0-1.05  ink binding (outer corner r 2)
+    d  1.05- / dw > 3.8   azurite brocade: lengthwise threads, 晕染 deepening to both edges
+    dw 2.8-3.8   mud-gold rule
+    dw 2.2-2.8   ink rule
+    dw 0.6-2.2   ivory 隔水 strip
+    dw 0.0-0.6   ink-brown hairline
+    dw < 0       silk field (Paper): a soft ageing wash under the mount fading out by
+                 dw -7; a faint, large ageing mottle only in the 9-slice centre (no fine
+                 fibre texture: Slate stretches the centre up to ~8x)
+Corners: window notch 5.2 px; flower centred 6.3 px from both edges (radius 3.3 px).
+The Slate code pads panel content 14-18 px (10 px top in the log panel): nothing but the
+corner steps reaches past d 10.2.
 """
+
+import math
 
 import numpy as np
 
-import kit
-from ironart import ui_chrome_motifs as MO
+from ironart import ui_chrome_paint as P
 from ironart import ui_chrome_sdf as S
-from ironart.ui_chrome_maps import Maps, L
 
 NAME = "Panel"
-SPEC = dict(size=(128, 128), ss=4, spp=48, margins=(24, 24, 24, 24), seed=11)
+SPEC = dict(size=(128, 128), ss=4, margins=(24, 24, 24, 24), seed=11)
 W = H = 128
-M = 24
-#: albedo multiplier so the rendered flat field lands on Paper (measured, see build QA)
-CAL_PAPER = (1.0, 1.0, 1.0)
+
+INSET = 10.2        # window edge (the hairline's inner side) along the strips
+NOTCH = 5.2
+EDGE = 1.05
 
 
-def corner_mount(ss, T=8.4, M=24):
-    """Gilt-bronze corner mount of the top-left corner on a local M x M grid, folded about the
-    diagonal: a flat bevelled L plate over the mitre whose arms end in spear tips, a chamfered
-    inner corner, an engraved border line and a domed boss.
-    Returns (height, mask, engraving_mask, boss_mask)."""
-    G = S.Grid(M, M, ss)
-    u, v = MO.corner_fold(G)
-    k = T / 8.4
-    w = 2.9 * k
-    tip = [(11.0 * k, T / 2 - w), (15.4 * k, T / 2 - w), (20.6 * k, T / 2), (15.4 * k, T / 2 + w),
-           (11.0 * k, T / 2 + w)]
-    spear = kit.fold_poly(G, tip)
-    arm = np.minimum(S.sd_round_box_uv(u, v, 7.6 * k, T / 2, 7.6 * k, w, 0.5), spear)
-    sq = S.sd_round_box_uv(u, v, 5.4 * k, 5.4 * k, 5.4 * k, 5.4 * k, 0.6)
-    sq = np.maximum(sq, (u + v - 14.2 * k) / np.sqrt(2))
-    guard = np.minimum(arm, sq)
-    bc = 4.6 * k
-    boss = np.hypot(u - bc, v - bc) - 2.1 * k
-    z = S.round_relief(guard, 0.5, 0.42)
-    eng = np.abs(guard + 0.85)
-    eng = np.where(np.hypot(u - bc, v - bc) < 3.0 * k, 9.0, eng)
-    eng = np.minimum(eng, np.where((u > 11.0 * k) & (u < 16.6 * k), np.abs(v - T / 2), 9.0))
-    z = z + S.groove(eng, 0.32, 0.15) * (guard < -0.25)
-    z = z + MO.dome(boss, 1.0, 0.6) + S.groove(np.abs(boss + 0.7 * k), 0.26, 0.1)
-    return (z.astype(np.float32), S.aa_mask(guard, G), S.aa_mask(eng - 0.2, G),
-            S.aa_mask(boss, G))
+def brocade_color(G, d, t, seed, deep="brocade_blue_deep", blue="brocade_blue"):
+    """Azurite silk brocade: 晕染 from ``deep`` at the band edges (t = 0) to ``blue`` mid-band,
+    lengthwise threads as a function of ``d`` only."""
+    base = P.mix(deep, blue, P.smoothstep(0.0, 2.3, t))
+    n = 0.06 * P.noise1d(d, 0.30, seed, octaves=1) + 0.04 * P.noise1d(d, 1.2, seed + 1, 1)
+    return base * (1.0 + n)[..., None]
 
 
-def build(G, variant=None):
-    d = S.inset_distance(G, W, H, r=2.5)
-    m = Maps(G.shape, base="#E9DCC0")
-    # ---- cross-section --------------------------------------------------------------------
-    pts = [(-1, 0.0), (0.0, 0.3), (0.5, 1.4), (1.3, 2.35), (2.4, 2.75), (3.6, 2.9), (4.9, 2.75),
-           (5.9, 2.35), (6.35, 2.05), (6.6, 1.92), (7.5, 1.92), (8.0, 1.6), (8.4, 1.05)]
-    pts += kit.bead(9.8, 1.2, 0.95)
-    pts += [(11.05, 0.9), (11.25, 0.55), (11.75, 0.45), (12.3, 0.42), (30, 0.42)]
-    z = S.Profile(pts, round_px=0.14)(d)
+def flower(C, G, cx, cy, r, seed, gold="gold", heart="cinnabar", rot=0.0):
+    """Mud-gold four-petal flower (柿蒂) with a cinnabar heart."""
+    sd = G.empty()
+    for k in range(4):
+        a = math.radians(rot + 90.0 * k)
+        S.sd_circle(G, cx + 0.48 * r * math.cos(a), cy + 0.48 * r * math.sin(a), 0.46 * r, out=sd)
+    g = P.gold_field(G, seed, flecks=0.0)
+    C.over(P.aa(sd, G), P.mix(g * 0.8, g, P.smoothstep(0.0, 0.5, -sd)))
+    C.over(P.aa(np.abs(sd) - 0.1 * r, G), "gold_deep", 0.9)
+    dot = G.empty()
+    S.sd_circle(G, cx, cy, 0.22 * r, out=dot)
+    C.over(P.aa(dot, G), heart)
 
-    wood = S.band(d, -5, 8.45, G)
-    gold = S.band(d, 8.45, 11.05, G)
-    reveal = S.band(d, 11.05, 11.8, G)
-    paper = S.band(d, 11.8, 999, G)
 
-    # ---- rosewood ---------------------------------------------------------------------------
-    g = kit.grain1d(d, 3)
-    m.paint(wood, "rosewood", base=L("#5E2C1D"))
-    m.tint(wood, g)
-    m.tint(S.band(d, 6.3, 7.6, G), 0.72)          # fillet in shade
-    m.tint(S.band(d, 7.9, 8.45, G), 0.55)         # dark arris at the inner edge
-    m.paint(wood, rough=0.30 + 0.12 * (1 - (g - 0.5) / 0.8))
+def paint(G, variant=None, seed=None):
+    seed = SPEC["seed"] if seed is None else seed
+    d = S.inset_distance(G, W, H, r=2.0)
+    dw = P.notched_window(G, W, H, INSET, NOTCH)
+    C = P.Canvas(G)
+    shape = P.aa(-d, G)
 
-    # ---- gold-leaf bead + reveal ----------------------------------------------------------------
-    m.paint(gold, "gold")
-    m.paint(reveal, "lacquer_black", base=L("#24150F"))
+    # ---- silk field -------------------------------------------------------------------------
+    cw = P.centre_weight(G, SPEC["margins"], fade=10.0)
+    tex = P.silk_texture(G, seed, weave=0.0, slub=0.0, mottle=0.009, mottle_cell=40.0)
+    tex = 1.0 + (tex - 1.0) * cw
+    age = 1.0 - P.smoothstep(0.0, 7.0, -dw)
+    fcol = P.rgb("paper") * tex[..., None]
+    fcol = P.mix(fcol, P.mix("paper", "silk_dark", 0.55), 0.5 * age ** 1.6)
+    C.over(shape, fcol)
 
-    # ---- paper ---------------------------------------------------------------------------------
-    t = kit.smoothstep(12.0, 22.0, d)
-    base = kit.lerp3(L("#D3C29E"), L("#E9DCC0"), t) * np.array(CAL_PAPER, np.float32)
-    m.paint(paper, "paper", base=base)
-    cm = kit.centre_mask(G, W, H, (M, M, M, M))
-    tex, rel = kit.xuan(G.shape, G.ss, seed=5)
-    m.tint(paper * cm, tex)
-    z = z + rel * cm * paper
+    # ---- mount ------------------------------------------------------------------------------
+    t = np.minimum(d - EDGE, dw - 3.8)
+    C.over(P.aa(3.8 - dw, G) * P.aa(EDGE - 0.15 - d, G), brocade_color(G, d, t, seed + 10))
+    C.over(P.band(dw, 2.8, 3.8, G), P.strip_color(dw, "gold", seed + 12, amp=0.05, period=0.5))
+    C.over(P.band(dw, 2.2, 2.8, G), "ink_ui")
+    C.over(P.band(dw, 0.6, 2.2, G), P.strip_color(dw, "ivory", seed + 20, amp=0.015))
+    C.over(P.band(dw, 0.0, 0.6, G), "ink_soft", 0.9)
+    C.over(P.band(d, -5, EDGE, G) * shape, "ink")
 
-    # ---- corner mounts ---------------------------------------------------------------------------
-    gz, gm, ge, gb = (kit.stamp(G, a) for a in corner_mount(G.ss))
-    z = z * (1 - gm) + np.maximum(z, 2.95 + gz) * gm
-    m.paint(gm, "gold_satin")
-    m.tint(gm, kit.recess_shade(gz, G.ss))
-    wf, wr = kit.edge_wear(gz, G.ss)
-    m.tint(gm, wf)
-    m.rough = m.rough + wr * gm
-    m.tint(gm * ge, 0.6)
-    m.paint(gm * ge, rough=0.5)
-    m.paint(gb, rough=0.18)
-
-    m.height = z.astype(np.float32)
-    m.alpha = S.aa_mask(-d, G)
-    return m
+    # ---- corner flowers ---------------------------------------------------------------------
+    c = 6.3
+    for (x, y) in ((c, c), (W - c, c), (c, H - c), (W - c, H - c)):
+        flower(C, G, x, y, 3.3, seed + 30)
+    return C.rgba()

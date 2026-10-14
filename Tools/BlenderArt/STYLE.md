@@ -496,25 +496,31 @@ runtime). Water / Ford / Bridge use `materials.water`; Wall, Gate, Castle and To
 **Fx_* (96x96).** Recipe `fx`: emission only, straight-alpha Kuwahara, no shadow, no edge bleed
 beyond 2 px.
 
-**UI.** Build pieces with `geometry.profile_sweep(mb, w, h, r, profile, ...)` from a cross-section
-profile ((inset px, height px) pairs from the outside in) with per-segment materials. Keep every
-ornament inside the 9-slice margins (Button / Tab 20 x 16, Panel / PanelDark 24, Scroll 80) and
-make every border strip uniform along its stretch direction (`gold_leaf(uniform=True)`,
-`lacquer(vary=0)`, vertical-only gradients).
+**UI (gongbi mounting, 装裱).** The UI chrome family (`ui_chrome/build.py`) paints every piece as
+layers on an `ironart.ui_chrome_paint.Canvas` (numpy, 4x the @1x size, 1 px = 1 mm): silk grounds,
+azurite brocade, mud-gold (泥金) rules, ruled ink lines, ivory 隔水 strips and 晕染 washes. Cycles
+renders the layers as one unlit orthographic emission plate (`ironart.ui_chrome_flat.plate`: Box
+filter, texel-exact, no light, no shadow, no specular); the scroll rollers are real lathe meshes
+in a toon pass (emission graded by the facing ratio) with Freestyle ink. The @2x masters and the
+@1x art are premultiplied Lanczos downsamples of the same render.
 
-- **Panel (24 px border).** 0-9 px lacquered dark wood (`#3A2619`) rolling into a LacquerDark
-  bevel; 9-12 px a 2.5 px round gold bead lit top-left; 12-24 px aged paper PaperDark -> Paper
-  over 10 px (per-ring `edge_t` attribute, uniform along every edge); 9 x 9 px gold meander
-  ("hui") ornaments with a 1.5 px stroke in the four corners; isotropic paper fibre (no streaks)
-  calibrated so the field mean lands on Paper.
-- **Button.** 3 px LacquerDark rim (`#3A1A12`) with a top-left catchlight, 2 px bevelled gold
-  trim, 7 x 7 px gold L-bracket corner fittings with a 2.4 px boss inside the 20 x 16 corners,
-  Lacquer field with a vertical-only gradient and a soft sheen band (+15 % at 25-40 % of the
-  height).
-- **States.** Hover: Lacquer +12 % value. Pressed: LacquerDark field, content offset 1 px down
-  and right. Disabled: desaturated, 60 % value.
-- Pieces without a style frame yet (PanelDark, Tab, Frame_Portrait, Seal, Divider, Scroll,
-  Title_Logo, unknown) have one-line recipes in the generated table of section 5.
+- **9-slice rule.** Everything in a border strip is a function of the distance across the strip
+  (mitred `inset_distance` or Chebyshev `cheb_box` / `notched_window` offsets), so Slate can
+  stretch it; patterned brocade lives in the corners and in pieces that are not 9-sliced
+  (Frame_Portrait, the scroll's top/bottom borders, which the ~1040 px dialog never stretches
+  by more than 1.02x). Fine fibre texture is never put in a 9-slice centre (Slate stretches it
+  up to ~8x); only a large faint ageing mottle, faded out before the 9-slice boundary.
+- **Panel.** Paper silk field, slim mount within 10.2 px: ink binding, azurite brocade, mud-gold
+  rule, ink rule, ivory strip, hairline; square-notched (委角) corners with a mud-gold 柿蒂 flower.
+- **PanelDark.** Ink silk `#1E1A16` with a faint umber glow, umber edge silk, mud-gold rule and
+  hairline, mud-gold ruyi heads (如意云头) in the corners.
+- **Button.** Cinnabar plaque with concave corners, ink outline, 晕染 into the outline, mud-gold
+  inner rule. Hover towards vermilion with a soft gold wash, pressed deeper with an inset double
+  rule, disabled an ink-grey wash. Label contrast is asserted (TextLight >= 3:1).
+- **Tab.** Light silk with an azurite (active: cinnabar) brocade edge; labels must be dark (Ink).
+- **Ornament vocabulary.** `ui_chrome_motifs.ruyi` / `cloud`, running cloud scroll
+  (`frame_portrait.scroll_strokes`), 柿蒂 flower (`panel.flower`), seal impression
+  (`seal.impression`, also used by the logo).
 
 ## 12. QA
 

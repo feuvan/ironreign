@@ -120,6 +120,13 @@ namespace IronBattleBoard3DDetail
 	constexpr double DuskBearingDegrees = 250.0;
 	constexpr double HorizonElevationDegrees = 13.0;
 	constexpr double SunSmoothTime = 0.8;
+	// The painted look keeps the key light at the top-left of the view (north-west) and high: the days still pass,
+	// as a gentle swing from west-north-west to north and a little higher at noon, never as long dawn shadows.
+	constexpr double PaintedDawnBearingDegrees = 285.0;
+	constexpr double PaintedDuskBearingDegrees = 330.0;
+	constexpr double PaintedHorizonElevationDegrees = 36.0;
+	/** Vignette of the battle camera on top of the environment look's: the eye stays on the board. */
+	constexpr float BoardExtraVignette = 0.15f;
 
 	// Point lights in candela (illuminance = I / d^2 lux), scaled to the environment's ~8 lux sun: a hit lights the
 	// ground under it at ~2-3x the sun for a moment, a burning hex glows orange around itself.
@@ -182,6 +189,10 @@ namespace IronBattleBoard3DDetail
 	constexpr uint32 GroundGreenRgb = 0x627543;
 	constexpr uint32 GroundAutumnRgb = 0x8E7444;
 	constexpr uint32 GroundSnowRgb = 0xC4C8CC;
+	// The painted look's pale silk-toned plains (a malachite hint in spring and summer, ochre in autumn, lead white).
+	constexpr uint32 PaintedGroundGreenRgb = 0xC2BF97;
+	constexpr uint32 PaintedGroundAutumnRgb = 0xCDB284;
+	constexpr uint32 PaintedGroundSnowRgb = 0xECE6D8;
 
 	const FName& ColorParam()
 	{
@@ -1069,12 +1080,7 @@ void AIronBattleBoard3D::BuildGround()
 	const FVector2D CentreM = HexToLocalM({BoardCols / 2, BoardRows / 2});
 	Ground->SetRelativeLocation(FVector(CentreM.X * IronWorld::CmPerMetre, CentreM.Y * IronWorld::CmPerMetre, -GroundDropM * IronWorld::CmPerMetre));
 	Ground->SetVisibility(true);
-	if (GroundMaterial != nullptr)
-	{
-		const FLinearColor Color = GroundColorForSeason();
-		GroundMaterial->SetVectorParameterValue(TintParam(), Color);
-		GroundMaterial->SetVectorParameterValue(ColorParam(), Color);
-	}
+	UpdateGroundColor();
 }
 
 void AIronBattleBoard3D::BuildUnits(const IronSim::FBattle& Battle)
@@ -1332,18 +1338,8 @@ void AIronBattleBoard3D::SetSeason(int32 Month)
 	if (Environment != nullptr)
 	{
 		Environment->SetSeason(SeasonMonth, true);
-		// The environment just placed its sun for the new season: that is what the strategy map gets back later.
-		if (bSunOverridden && Environment->GetSun() != nullptr)
-		{
-			SavedSunRotation = Environment->GetSun()->GetComponentRotation();
-		}
 	}
-	if (GroundMaterial != nullptr)
-	{
-		const FLinearColor Color = GroundColorForSeason();
-		GroundMaterial->SetVectorParameterValue(IronBattleBoard3DDetail::TintParam(), Color);
-		GroundMaterial->SetVectorParameterValue(IronBattleBoard3DDetail::ColorParam(), Color);
-	}
+	UpdateGroundColor();
 }
 
 void AIronBattleBoard3D::SetQuality(int32 Level)
@@ -3504,8 +3500,11 @@ void AIronBattleBoard3D::UpdateCamera(float DeltaSeconds)
 	FPostProcessSettings& Settings = CameraComponent->PostProcessSettings;
 	Settings.bOverride_DepthOfFieldFocalDistance = true;
 	Settings.bOverride_DepthOfFieldFstop = true;
+	// The camera's vignette overrides the volume's too: follow the look (realistic 0.5, painted 0.3).
+	Settings.VignetteIntensity = (Environment != nullptr ? Environment->GetCurrentLook().VignetteIntensity : 0.35f) + BoardExtraVignette;
 	const int32 SceneQuality = Environment != nullptr ? Environment->GetQuality() : QualityLevel;
-	const double Strength = Environment != nullptr ? static_cast<double>(Environment->GetTiltShiftStrength()) : 1.0;
+	// The player's strength x the look's scale (the painted look keeps the blur gentle).
+	const double Strength = Environment != nullptr ? static_cast<double>(Environment->GetEffectiveTiltShiftStrength()) : 1.0;
 	const bool bDepthOfField = SceneQuality >= 1 && Strength > 0.001;
 	const double FocusCm = CurrentDistanceM * IronWorld::CmPerMetre;
 	if (!bDepthOfField)
@@ -3543,19 +3542,19 @@ void AIronBattleBoard3D::UpdateSun(float DeltaSeconds)
 	{
 		return;
 	}
-	if (!bSunOverridden)
-	{
-		SavedSunRotation = SunLight->GetComponentRotation();
-		bSunOverridden = true;
-	}
+	bSunOverridden = true;
 	const double Step = FMath::Clamp(static_cast<double>(DeltaSeconds), 0.0, MaxStepSeconds);
 	DayAlpha = Step > 0.0 ? IronWorld::SmoothDamp(DayAlpha, GoalDayAlpha, DayAlphaVelocity, SunSmoothTime, Step) : DayAlpha;
 
 	// Day 1 at dawn (low eastern light), noon at mid-battle (as high as the season allows), the last day at dusk. The
-	// sky atmosphere reddens the low sun by itself.
+	// sky atmosphere reddens the low sun by itself. The painted look swings gently around the top-left instead.
+	const double Painted = static_cast<double>(FMath::Clamp(Environment->GetPaintedAmount(), 0.0f, 1.0f));
 	const double Noon = FMath::Clamp(static_cast<double>(Environment->GetCurrentLook().SunElevationDegrees) + 12.0, 28.0, 56.0);
-	const double Elevation = FMath::Lerp(HorizonElevationDegrees, Noon, FMath::Sin(UE_DOUBLE_PI * DayAlpha));
-	const double BearingRadians = FMath::DegreesToRadians(FMath::Lerp(DawnBearingDegrees, DuskBearingDegrees, DayAlpha));
+	const double Horizon = FMath::Lerp(HorizonElevationDegrees, PaintedHorizonElevationDegrees, Painted);
+	const double Elevation = FMath::Lerp(Horizon, FMath::Max(Horizon, Noon), FMath::Sin(UE_DOUBLE_PI * DayAlpha));
+	const double DawnBearing = FMath::Lerp(DawnBearingDegrees, PaintedDawnBearingDegrees, Painted);
+	const double DuskBearing = FMath::Lerp(DuskBearingDegrees, PaintedDuskBearingDegrees, Painted);
+	const double BearingRadians = FMath::DegreesToRadians(FMath::Lerp(DawnBearing, DuskBearing, DayAlpha));
 	// Same convention as AIronEnvironment: bearing 0 = light from the north (-Y), 90 = from the east (+X).
 	const double TowardSunX = FMath::Sin(BearingRadians);
 	const double TowardSunY = -FMath::Cos(BearingRadians);
@@ -3574,10 +3573,11 @@ void AIronBattleBoard3D::RestoreSun()
 		return;
 	}
 	bSunOverridden = false;
-	UDirectionalLightComponent* SunLight = Environment != nullptr ? Environment->GetSun() : nullptr;
-	if (SunLight != nullptr)
+	if (Environment != nullptr)
 	{
-		SunLight->SetWorldRotation(SavedSunRotation);
+		// The environment's own sun for its season and look now (a season change or look switch during the battle
+		// included): what the strategy map gets back.
+		Environment->RefreshSun();
 	}
 }
 
@@ -3597,8 +3597,28 @@ FLinearColor AIronBattleBoard3D::GroundColorForSeason() const
 		Autumn = static_cast<double>(Look.Autumn);
 		Snow = static_cast<double>(Look.Snow);
 	}
-	const FLinearColor Leaves = FMath::Lerp(Rgb(GroundGreenRgb), Rgb(GroundAutumnRgb), static_cast<float>(FMath::Clamp(Autumn, 0.0, 1.0)));
-	return FMath::Lerp(Leaves, Rgb(GroundSnowRgb), static_cast<float>(FMath::Clamp(Snow * 0.85, 0.0, 1.0)));
+	const float AutumnAlpha = static_cast<float>(FMath::Clamp(Autumn, 0.0, 1.0));
+	const float SnowAlpha = static_cast<float>(FMath::Clamp(Snow * 0.85, 0.0, 1.0));
+	const FLinearColor Real = FMath::Lerp(FMath::Lerp(Rgb(GroundGreenRgb), Rgb(GroundAutumnRgb), AutumnAlpha), Rgb(GroundSnowRgb), SnowAlpha);
+	const FLinearColor Painted = FMath::Lerp(FMath::Lerp(Rgb(PaintedGroundGreenRgb), Rgb(PaintedGroundAutumnRgb), AutumnAlpha), Rgb(PaintedGroundSnowRgb), SnowAlpha);
+	const float PaintedAmount = Environment != nullptr ? FMath::Clamp(Environment->GetPaintedAmount(), 0.0f, 1.0f) : 1.0f;
+	return FMath::Lerp(Real, Painted, PaintedAmount);
+}
+
+void AIronBattleBoard3D::UpdateGroundColor()
+{
+	if (GroundMaterial == nullptr)
+	{
+		return;
+	}
+	const FLinearColor Color = GroundColorForSeason();
+	if (Color.Equals(AppliedGroundColor, 1.0e-3f))
+	{
+		return;
+	}
+	AppliedGroundColor = Color;
+	GroundMaterial->SetVectorParameterValue(IronBattleBoard3DDetail::TintParam(), Color);
+	GroundMaterial->SetVectorParameterValue(IronBattleBoard3DDetail::ColorParam(), Color);
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -3631,4 +3651,6 @@ void AIronBattleBoard3D::Tick(float DeltaSeconds)
 	}
 	UpdateCamera(Step);
 	UpdateSun(Step);
+	// The ground follows the environment's season and look blends (a cheap compare while nothing changes).
+	UpdateGroundColor();
 }

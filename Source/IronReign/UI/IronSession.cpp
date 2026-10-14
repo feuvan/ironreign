@@ -5,6 +5,7 @@
 #include "UI/IronStyle.h"
 #include "UI/IronUI.h"
 #include "World/IronBattleBoard3D.h"
+#include "World/IronEnvironment.h"
 #include "World/IronWorldMap3D.h"
 
 #include "Engine/GameViewportClient.h"
@@ -39,10 +40,12 @@ namespace IronSessionDetail
 	}
 
 	/**
-	 * A missing-assets answer is asked again after this many seconds: the editor may finish the asset import while a PIE
-	 * session runs. Rare on purpose (each check tries to load the marker asset synchronously).
+	 * Settings.json format. Version 2 (the painted gongbi look) turned ink outlines on and tilt-shift off by default.
+	 * Version 1 files wrote every key with the old defaults (ink off, tilt-shift on), so their saved "inkOutlines" /
+	 * "tiltShift" values are taken as the new defaults; a deliberate version 1 choice (ink on, tilt-shift off) is the
+	 * same as the new default anyway.
 	 */
-	constexpr double AssetRecheckSeconds = 30.0;
+	constexpr int32 SettingsVersion = 2;
 
 	const char* PresentationModeName(EIronPresentationMode Mode)
 	{
@@ -69,22 +72,6 @@ namespace IronSessionDetail
 			return EIronPresentationMode::TwoD;
 		}
 		return EIronPresentationMode::Auto;
-	}
-
-	/** Cached availability: a positive answer is final, a negative one is re-checked after AssetRecheckSeconds. */
-	bool CachedAvailability(bool& bInOutAvailable, double& InOutCheckedAt, bool (*Check)())
-	{
-		if (bInOutAvailable)
-		{
-			return true;
-		}
-		const double Now = FPlatformTime::Seconds();
-		if (InOutCheckedAt < 0.0 || Now - InOutCheckedAt >= AssetRecheckSeconds)
-		{
-			InOutCheckedAt = Now;
-			bInOutAvailable = Check();
-		}
-		return bInOutAvailable;
 	}
 
 	/** UTF-8 bytes (optional BOM) to a std::string for IronSim::FJson. */
@@ -561,13 +548,18 @@ void FIronSession::LoadSettings()
 	SfxVolume = FMath::Clamp(static_cast<float>(SettingsJson.GetNumber("sfxVolume", SfxVolume)), 0.0f, 1.0f);
 	PresentationMode = IronSessionDetail::ParsePresentationMode(SettingsJson.GetString("presentation", IronSessionDetail::PresentationModeName(PresentationMode)));
 	GraphicsQuality = FMath::Clamp(SettingsJson.GetInt("graphicsQuality", GraphicsQuality), 0, 3);
-	bTiltShift = SettingsJson.GetBool("tiltShift", bTiltShift);
-	bInkOutlines = SettingsJson.GetBool("inkOutlines", bInkOutlines);
+	// Older files keep the painted look's defaults (see IronSessionDetail::SettingsVersion).
+	if (SettingsJson.GetInt("settingsVersion", 1) >= IronSessionDetail::SettingsVersion)
+	{
+		bTiltShift = SettingsJson.GetBool("tiltShift", bTiltShift);
+		bInkOutlines = SettingsJson.GetBool("inkOutlines", bInkOutlines);
+	}
 }
 
 void FIronSession::SaveSettings() const
 {
 	IronSim::FJson SettingsJson = IronSim::FJson::MakeObject();
+	SettingsJson.SetInt("settingsVersion", IronSessionDetail::SettingsVersion);
 	SettingsJson.SetString("culture", IronUI::ToStd(Culture));
 	SettingsJson.SetNumber("daysPerSecond", DaysPerSecond);
 	SettingsJson.SetNumber("battleStepSeconds", BattleStepSeconds);
@@ -602,6 +594,13 @@ void FIronSession::SetPresentationMode(EIronPresentationMode Mode)
 		return;
 	}
 	PresentationMode = Mode;
+	if (Allows3D())
+	{
+		// The player asks for the 3D scenes (perhaps right after importing the assets): probe them again at once instead
+		// of waiting out the World layer's 30 s retry of a missing-assets answer.
+		AIronWorldMap3D::InvalidateAssetCheck();
+		AIronBattleBoard3D::InvalidateAssetCheck();
+	}
 	CommitGraphicsChange();
 }
 
@@ -636,14 +635,24 @@ void FIronSession::SetInkOutlinesEnabled(bool bEnabled)
 	CommitGraphicsChange();
 }
 
+void FIronSession::ApplyEnvironmentOptions(AIronEnvironment& Environment) const
+{
+	// All art is gongbi ink-and-colour painting (docs/DESIGN.md section 8): the 3D scenes always show the painted look
+	// (a no-op while it is already set; the realistic look is not offered).
+	Environment.SetLook(EIronLook::Painted);
+	Environment.SetTiltShiftStrength(bTiltShift ? 1.0f : 0.0f);
+	Environment.SetInkStrength(bInkOutlines ? 1.0f : 0.0f);
+}
+
 bool FIronSession::Is3DMapAvailable() const
 {
-	return IronSessionDetail::CachedAvailability(bMapAssetsAvailable, MapAssetsCheckedAt, &AIronWorldMap3D::AreAssetsAvailable);
+	// One source of truth: the World layer caches the answer (see the header).
+	return AIronWorldMap3D::AreAssetsAvailable();
 }
 
 bool FIronSession::Is3DBattleAvailable() const
 {
-	return IronSessionDetail::CachedAvailability(bBattleAssetsAvailable, BattleAssetsCheckedAt, &AIronBattleBoard3D::AreAssetsAvailable);
+	return AIronBattleBoard3D::AreAssetsAvailable();
 }
 
 void FIronSession::SetPresentationWorld(UWorld* InWorld)

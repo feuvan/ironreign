@@ -38,7 +38,10 @@ GRID_STEP = 2
 
 #: flat pad radius / blend ring (m) per city size; City_1..3 footprints are ~45 / 75 / 120 m
 PAD_RADIUS = {1: 38.0, 2: 52.0, 3: 68.0}
-PAD_BLEND = 70.0
+#: radius (m) kept exactly flat for the city model (half its footprint + 8 m) and the gaussian
+#: feather length (m) of the blend back into the land
+PAD_FLAT = {1: 30.0, 2: 46.0, 3: 68.0}
+PAD_FEATHER = 70.0
 #: no trees closer than this to a city point (DESIGN.md: 25 m; we keep the whole pad clear)
 TREE_CITY_CLEAR = {1: 50.0, 2: 64.0, 3: 80.0}
 
@@ -48,7 +51,7 @@ PARAMS = {
     "coast_warp": 30.0, "coast_warp_scale": 230.0, "coast_detail": 14.0,
     "shelf_depth": 2.6, "shelf_width": 24.0, "sea_floor": -40.0, "sea_slope_width": 300.0,
     # plains
-    "plain_coast": 1.4, "plain_inland": 12.5, "plain_rise": 520.0, "plain_roll": 2.4,
+    "plain_coast": 1.4, "plain_inland": 10.0, "plain_rise": 520.0, "plain_roll": 2.0,
     # hills
     "hill_height": 66.0,
     # mountains
@@ -645,6 +648,134 @@ def smax(a, b, k):
     return m + lo * np.log1p(np.exp(-k * np.abs(a - b))) / k
 
 
+def fast_blur(a, sigma):
+    """Gaussian-like blur for any sigma in O(N): three box passes per axis (cumulative sums)."""
+    a = np.asarray(a, np.float32)
+    if sigma <= 0:
+        return a
+    w = int(round(math.sqrt(4.0 * sigma * sigma + 1.0)))
+    r = max(1, w // 2)
+    out = a
+    for axis in (0, 1):
+        for _ in range(3):
+            out = _box1d(out, r, axis)
+    return out
+
+
+def _box1d(a, r, axis):
+    b = np.moveaxis(a, axis, 0)
+    n = b.shape[0]
+    p = np.concatenate([np.repeat(b[:1], r + 1, 0), b, np.repeat(b[-1:], r, 0)], 0)
+    c = np.cumsum(p, axis=0, dtype=np.float64)
+    out = (c[2 * r + 1:2 * r + 1 + n] - c[:n]) / (2 * r + 1)
+    return np.moveaxis(out.astype(np.float32), 0, axis)
+
+
+#: range shapes (metres).  ``a`` = flank fall-off length of the crest (also sets the range width:
+#: the massif reaches ~2.2 a from the crest, foothills ~3 a).  Spurs are ridged noise stretched
+#: across the crest (feature ``spur_u`` along the crest x ``spur_v`` down the flank), so they
+#: run downhill from a continuous crest and side valleys open between them.
+RANGE = {
+    "mountain": dict(peak=158.0, peak_per_w=0.2, a_per_w=1.0, a_min_per_peak=0.48, power=1.25,
+                     crest_noise=(0.80, 0.16, 0.08), summit_scale=(150.0, 50.0), spur_u=0.9,
+                     spur_v=2.0, spur_depth=0.66, crag=0.045, foot=32.0, foot_reach=2.4, meander=0.2,
+                     extend=0.55, knobs=0.22),
+    "hill": dict(peak=64.0, peak_per_w=0.0, a_per_w=0.8, a_min_per_peak=0.0, power=1.8,
+                 crest_noise=(0.70, 0.22, 0.10), summit_scale=(120.0, 46.0), spur_u=1.0,
+                 spur_v=1.8, spur_depth=0.35, crag=0.0, foot=12.0, foot_reach=1.9, meander=0.25,
+                 extend=0.5, knobs=0.15),
+}
+
+
+def range_relief(stroke, kind, seed, p=None):
+    """Relief of one hill or mountain stroke in its own window.
+
+    Returns ``(sy, sx, height, core_env[, foot_env])`` (``foot_env`` for mountains only).
+    The stroke is smoothed, meandered and extended past its ends so the range tapers into
+    foothills instead of ending in a round cap; along the crest the height varies with summits
+    and cols; across it the profile falls as ``exp(-(q / a) ** power)``; spurs and valleys
+    (anisotropic ridged multifractal in crest coordinates, domain warped) dissect the flanks
+    but never the crest line itself."""
+    rc = RANGE[kind]
+    w = float(stroke["width"])
+    peak = rc["peak"] + rc["peak_per_w"] * w
+    a = max(rc["a_per_w"] * w, rc["a_min_per_peak"] * peak)
+    pts = smooth_line(resample(stroke["points"], 4.0), 7.0)
+    pts = extend(pts, start=rc["extend"] * a, end=rc["extend"] * a)
+    pts = meander(pts, rc["meander"] * a, seed + 1, step=4.0, fade=a)
+    pts = smooth_line(pts, 3.0)
+    R = 3.4 * a + 20.0
+    sy, sx, org = window(pts, R, master_shape())
+    shp = (sy.stop - sy.start, sx.stop - sx.start)
+    d, t, side = polyline_field(pts, R, want_t=True, shape=shp, want_side=True, origin=org)
+    ok = np.isfinite(d)
+    # arc parameter blurred more the farther from the crest: on the outside of a bend the
+    # nearest point is one vertex for a whole wedge and raw t would draw straight streaks
+    t0 = np.where(ok, t, 0.0).astype(np.float32)
+    wok = ok.astype(np.float32)
+    us = []
+    for sg in (8.0, 0.5 * a, 1.2 * a):
+        num, den = fast_blur(t0, sg), fast_blur(wok, sg)
+        us.append(np.where(den > 1e-3, num / np.maximum(den, 1e-3), 0.0))
+    dd0 = np.where(ok, d, 1e5)
+    m1 = T.smoothstep(0.15 * a, 0.8 * a, dd0)
+    m2 = T.smoothstep(0.9 * a, 2.2 * a, dd0)
+    u = (us[0] * (1 - m1) + us[1] * m1) * (1 - m2) + us[2] * m2
+    u = u.astype(np.float32)
+    sv = gaussian(np.where(ok, side, 0.0), 4.0)
+    d = np.where(ok, d, 1e5).astype(np.float32)
+    v = d * np.where(sv >= 0, 1.0, -1.0).astype(np.float32)
+    L = float(arclen(pts)[-1])
+    ys, xs = np.mgrid[sy, sx].astype(np.float32)
+    # crest height: summits and cols along the range, tapering at both ends
+    c0, c1, c2 = rc["crest_noise"]
+    s1, s2 = rc["summit_scale"]
+    n1 = T.perlin_at(u / s1, np.full_like(u, 0.37), seed + 2)
+    n2 = T.perlin_at(u / s2, np.full_like(u, 0.71), seed + 3)
+    te = rc["extend"] * a + 0.9 * a
+    taper = T.smoothstep(0.0, te, u) * T.smoothstep(L, L - te, u)
+    hc = peak * (c0 + c1 * n1 + c2 * n2) * taper
+    # profile across the crest (rounded over ~4 m)
+    q = np.sqrt(v * v + 16.0) - 4.0
+    prof = np.exp(-(q / a) ** rc["power"])
+    # spurs / side valleys
+    wu = 0.32 * a * T.fbm_at(xs, ys, 1.4 * a, 3, seed=seed + 4)
+    wv = 0.25 * a * T.fbm_at(xs, ys, 1.4 * a, 3, seed=seed + 5)
+    lu, lv = rc["spur_u"] * a, rc["spur_v"] * a
+    # |noise| creases = sharp V valleys, rounded spurs between them; a second octave cuts
+    # side gullies into the spurs (branching)
+    uu, vv = u + wu, (v + wv) * (lu / lv)
+    n1_ = T.perlin_at(uu / lu, vv / lu, seed + 6)
+    n2_ = T.perlin_at(uu / (0.45 * lu) + 3.1, vv / (0.45 * lu) - 1.7, seed + 9)
+    n3_ = T.perlin_at(uu / (0.2 * lu) - 2.3, vv / (0.2 * lu) + 0.9, seed + 10)
+    s1 = np.sqrt(n1_ * n1_ + 0.004) - 0.063          # |n| with a rounded valley floor
+    s2 = np.sqrt(n2_ * n2_ + 0.004) - 0.063
+    s3 = np.sqrt(n3_ * n3_ + 0.004) - 0.063
+    spur = (np.clip(s1 / 0.5, 0, 1) ** 0.8 * (0.55 + 0.45 * np.clip(s2 / 0.5, 0, 1) ** 0.8)
+            * (0.82 + 0.18 * np.clip(s3 / 0.5, 0, 1)))
+    # knobs: the spurs rise into secondary summits on their way down
+    knob = 1.0 + rc["knobs"] * T.perlin_at(uu / (0.7 * lu) + 7.7, (v + wv) / (0.55 * a), seed + 11) \
+        * T.smoothstep(0.2 * a, 0.7 * a, np.abs(v))
+    depth = rc["spur_depth"] * T.smoothstep(0.05 * a, 0.8 * a, np.abs(v))
+    body = hc * prof * (1.0 - depth * (1.0 - spur)) * knob
+    if rc["crag"] > 0:
+        crag = T.ridged_at(xs, ys, scale=16.0, octaves=2, seed=seed + 7, sharpness=1.6) - 0.35
+        body = body * (1.0 + rc["crag"] * crag * T.smoothstep(0.25, 0.6, prof))
+    # foothill apron (billowy lumps), reaching a little past the crest taper
+    lump = 1.0 - np.abs(T.fbm_at(xs + 0.6 * wu, ys + 0.6 * wv, 0.9 * a, 3, seed=seed + 8))
+    tf = T.smoothstep(0.0, 0.8 * te, u) * T.smoothstep(L, L - 0.8 * te, u)
+    fr = rc["foot_reach"] * a
+    foot = rc["foot"] * np.exp(-(q / fr) ** 2) * (0.3 + 0.7 * lump ** 1.5) * tf
+    hgt = smax(body, foot, 0.25)
+    fade = T.smoothstep(R, 0.82 * R, d)
+    hgt = (hgt * fade).astype(np.float32)
+    core = (np.exp(-(q / (1.15 * a)) ** 2) * taper * fade).astype(np.float32)
+    if kind == "hill":
+        return sy, sx, hgt, core
+    footenv = (np.exp(-(q / (2.6 * a)) ** 2) * tf * fade).astype(np.float32)
+    return sy, sx, hgt, core, footenv
+
+
 # ---------------------------------------------------------------------------------------------
 # the world
 # ---------------------------------------------------------------------------------------------
@@ -833,7 +964,7 @@ class World:
         saddle_m = (1.0 - 0.30 * np.exp(-(road_d / 40.0) ** 2)) * (1.0 - 0.25 * np.exp(-(pass_d / 46.0) ** 2))
         saddle_h = 1.0 - 0.28 * np.exp(-(road_d / 34.0) ** 2)
         mtn *= saddle_m * keep
-        hills *= saddle_h * keep
+        hills *= saddle_h * (0.3 + 0.7 * keep)
         lift = smax(hills, mtn, 0.15) * T.smoothstep(-6.0, 40.0, self.f["sd"])
         h = self.f["base"] + lift
         # islands: a wooded central hill on each small island
@@ -863,16 +994,18 @@ class World:
         """0 at a city site -> 1 away from it: relief is eased down over a long, irregular
         (domain-warped) falloff so a city sits in an open basin of plain, never a round crater."""
         keep = np.ones(self.shape, np.float32)
-        warp = 26.0 * T.fbm_at(self.xs, self.ys, 75.0, 3, seed=self.seed + 71)
+        warp = (34.0 * T.fbm_at(self.xs, self.ys, 110.0, 3, seed=self.seed + 71)
+                + 10.0 * T.fbm_at(self.xs, self.ys, 30.0, 2, seed=self.seed + 72))
         for (_k, cx, cy, s) in self.cities:
             r_in = PAD_RADIUS[s] + 10.0
-            r_out = r_in + 190.0
-            x0, x1 = int(max(0, cx - r_out - 40)), int(min(MAP_W + 1, cx + r_out + 40))
-            y0, y1 = int(max(0, cy - r_out - 40)), int(min(MAP_H + 1, cy + r_out + 40))
+            r_out = r_in + 115.0
+            x0, x1 = int(max(0, cx - r_out - 60)), int(min(MAP_W + 1, cx + r_out + 60))
+            y0, y1 = int(max(0, cy - r_out - 60)), int(min(MAP_H + 1, cy + r_out + 60))
             sl = (slice(y0, y1), slice(x0, x1))
-            dd = np.hypot(self.xs[sl] - cx, self.ys[sl] - cy) + warp[sl]
+            dd = np.hypot(self.xs[sl] - cx, self.ys[sl] - cy)
+            dd = dd + warp[sl] * T.smoothstep(0.4 * r_in, r_in, dd)
             k = 0.03 + 0.97 * T.smoothstep(r_in, r_out, dd) ** 1.2
-            keep[sl] = np.minimum(keep[sl], k)
+            keep[sl] *= k            # a product: smooth where two keep-outs meet
         return keep
 
     def _road_corridor_distance(self):
@@ -913,10 +1046,10 @@ class World:
             # basin floor flat; the shore rises over 12 m to the bank (+1.6 m above the surface),
             # then gently (10 %) into the surrounding land
             rise = T.smoothstep(0.0, 12.0, -sd)
-            prof = basin + (level + 1.6 - basin) * rise + 0.10 * np.maximum(-sd - 12.0, 0.0)
+            prof = basin + (level + 1.6 - basin) * rise + 0.12 * np.maximum(-sd - 12.0, 0.0)
             prof = np.where(sd > 0, basin, prof)
-            win = sd > -80
-            h = np.where(win, np.minimum(h, prof), h)
+            low = np.minimum(h, prof)
+            h = h + (low - h) * T.smoothstep(-110.0, -45.0, sd)
             sdl_all = np.maximum(sdl_all, sd)
             self.log("[world] lake %d: surface %.2f m, basin %.2f m" % (k, level, basin))
         self.f["h_pre"] = h.astype(np.float32)
@@ -952,11 +1085,18 @@ class World:
 
             def clr(size, hw=hw):
                 return clear(size) + hw
-            c["pts"] = deflect(c["pts"], self.cities, clr)
+            # a source inside a city keep-out starts just outside it instead
+            pts = c["pts"]
+            while len(pts) > 8 and any(math.hypot(pts[0][0] - cx, pts[0][1] - cy) < clr(sz) + 4.0
+                                       for (_k, cx, cy, sz) in self.cities):
+                pts = pts[1:]
+            c["pts"] = deflect(pts, self.cities, clr)
             parent = ends[c["index"]]
             if parent is not None:
                 main = next(o for o in courses if o["index"] == parent)
-                c["pts"] = snap_onto(c["pts"], main["pts"], overrun=0.5 * main["width"])
+                c["pts"] = snap_onto(c["pts"], self._confluence(c["pts"], main["pts"], clr),
+                                     overrun=0.5 * main["width"])
+                c["pts"] = deflect(c["pts"], self.cities, clr)
                 c["joins"] = parent
             else:
                 c["joins"] = None
@@ -978,12 +1118,30 @@ class World:
                      % (c["index"], arclen(c["pts"])[-1], c["width"], c["joins"], c["ends_lake"],
                         c["starts_lake"]))
 
+    def _confluence(self, trib, main, clr):
+        """The part of the main river a tributary may join: its points clear of every city
+        keep-out (a confluence never lies under a city model)."""
+        ok = np.ones(len(main), bool)
+        for (_k, cx, cy, sz) in self.cities:
+            ok &= np.hypot(main[:, 0] - cx, main[:, 1] - cy) > clr(sz) + 6.0
+        if ok.all():
+            return main
+        end = np.asarray(trib[-1])
+        idx = np.nonzero(ok)[0]
+        j = int(idx[np.argmin(np.hypot(main[idx, 0] - end[0], main[idx, 1] - end[1]))])
+        lo, hi = j, j
+        while lo > 0 and ok[lo - 1]:
+            lo -= 1
+        while hi < len(main) - 1 and ok[hi + 1]:
+            hi += 1
+        return main[lo:hi + 1]
+
     def carve_rivers(self):
         """Bed profiles (monotonic to the sea / lake / parent river) and channel carving."""
         h = self.f["h_pre"].copy()
         bank = self.p["river_bank"]
         # valley half-width beyond the banks: narrow on the plains, wide gorges in the ranges
-        wv = (30.0 + 25.0 * self.f["hill_env"] + 45.0 * self.f["mtn_core"]).astype(np.float32)
+        wv = (42.0 + 6.0 * self.f["hill_env"] - 24.0 * self.f["mtn_core"]).astype(np.float32)
         hsm = gaussian(h, 3.0)
         river_d = np.full(self.shape, np.inf, np.float32)
         river_hw = np.zeros(self.shape, np.float32)
@@ -1052,8 +1210,8 @@ class World:
             chan = bed_g - dish + dep * T.smoothstep(hw_g - 0.5, hw_g + bankw, dd)
             hv = h[m]
             excess = np.maximum(hv - top, 0.0)
-            wvm = wv[m] + np.minimum(0.3 * excess, 30.0)          # higher ground -> wider
-            g = T.smoothstep(0.0, 1.0, (dd - hw_g - bankw) / wvm) ** 0.85
+            wvm = wv[m] + np.minimum(2.0 * excess, 40.0) * (1.0 - 0.7 * self.f["mtn_core"][m])
+            g = T.smoothstep(0.0, 1.0, (dd - hw_g - bankw) / wvm)
             valley = top + excess * g
             prof = np.where(dd < hw_g + bankw, chan, valley)
             hn = np.minimum(hv, prof)
@@ -1085,20 +1243,34 @@ class World:
 
     # -- 6. city pads --------------------------------------------------------------------------
     def build_pads(self):
+        """City pads: flat where the city model stands (``PAD_FLAT`` radius), then a long gaussian
+        feather (``PAD_FEATHER``) on a domain-warped distance, so neither the height nor the
+        painted ground shows a disc.  Carved river channels are left alone."""
         h = self.f["h_riv"].copy()
+        hs = fast_blur(h, 6.0)
+        warp = 9.0 * T.fbm_at(self.xs, self.ys, 40.0, 2, seed=self.seed + 73)
+        rd = np.where(np.isfinite(self.f["river_d"]), self.f["river_d"] - self.f["river_hw"], 1e4)
         self.pads = []
         for (key, cx, cy, s) in self.cities:
             R = PAD_RADIUS[s]
-            dd = np.hypot(self.xs - cx, self.ys - cy)
-            ring = (dd >= R) & (dd < R + PAD_BLEND)
-            level = 0.5 * float(np.median(h[dd < R])) + 0.5 * float(np.median(h[ring]))
-            near_r = (dd < R + 70) & (self.f["river_d"] < self.f["river_hw"] + 2.0)
+            rf, fe = PAD_FLAT[s], PAD_FEATHER
+            reach = rf + 3.0 * fe
+            x0, x1 = int(max(0, cx - reach)), int(min(MAP_W + 1, cx + reach + 1))
+            y0, y1 = int(max(0, cy - reach)), int(min(MAP_H + 1, cy + reach + 1))
+            sl = (slice(y0, y1), slice(x0, x1))
+            dd = np.hypot(self.xs[sl] - cx, self.ys[sl] - cy)
+            ring = (dd >= 0.6 * R) & (dd < R + 40.0)
+            level = float(np.median(hs[sl][ring]))
+            near_r = (dd < R + 70) & (rd[sl] < 2.0)
             if near_r.any():
-                level = max(level, float(self.f["river_bed"][near_r].max()) + 3.2)
+                level = max(level, float(self.f["river_bed"][sl][near_r].max()) + 3.2)
             level = max(level, 3.0)
-            w = T.smoothstep(R + PAD_BLEND, R, dd)
-            h = h * (1 - w) + level * w
-            self.pads.append({"key": key, "x": cx, "y": cy, "size": s, "radius": R, "level": level})
+            dw = np.maximum(dd + warp[sl] * T.smoothstep(0.5 * rf, rf + 10.0, dd), 0.0)
+            wgt = np.exp(-(np.maximum(dw - rf, 0.0) / fe) ** 2)
+            wgt *= T.smoothstep(1.0, 9.0, rd[sl])
+            h[sl] = h[sl] * (1 - wgt) + level * wgt
+            self.pads.append({"key": key, "x": cx, "y": cy, "size": s, "radius": R, "flat": rf,
+                              "level": round(level, 2)})
         self.f["h"] = np.clip(h, MIN_H, MAX_H).astype(np.float32)
         self.log("[world] pads: " + ", ".join("%s %.1f" % (p["key"], p["level"]) for p in self.pads))
 
@@ -1151,7 +1323,7 @@ class World:
         cityd = self.f["city_d"]
         copses = []
         tries = 0
-        while len(copses) < 190 and tries < 9000:
+        while len(copses) < 80 and tries < 9000:
             tries += 1
             x, y = rng.uniform(30, MAP_W - 30), rng.uniform(30, MAP_H - 30)
             ix, iy = int(x), int(y)
@@ -1159,15 +1331,28 @@ class World:
                     or self.f["river_d"][iy, ix] < 30 or self.f["desert"][iy, ix] > 0.2
                     or dens[iy, ix] > 0.1 or self.f["lake_sd"][iy, ix] > -30):
                 continue
-            if any((x - a) ** 2 + (y - b) ** 2 < 65 ** 2 for a, b, _ in copses):
+            if any((x - a) ** 2 + (y - b) ** 2 < 95 ** 2 for a, b, _ in copses):
                 continue
-            copses.append((x, y, rng.uniform(11.0, 28.0)))
+            copses.append((x, y, rng.uniform(12.0, 26.0)))
         for (x, y, r) in copses:
-            x0, x1 = int(max(0, x - r - 30)), int(min(MAP_W, x + r + 30))
-            y0, y1 = int(max(0, y - r - 30)), int(min(MAP_H, y + r + 30))
-            sub = np.hypot(wx[y0:y1 + 1, x0:x1 + 1] - x, wy[y0:y1 + 1, x0:x1 + 1] - y)
-            dens[y0:y1 + 1, x0:x1 + 1] = np.maximum(dens[y0:y1 + 1, x0:x1 + 1],
-                                                    T.smoothstep(r + 8, r - 6, sub))
+            # a grove: an elongated main clump plus 1-3 smaller lobes
+            lobes = [(x, y, r, rng.uniform(0, np.pi), rng.uniform(1.2, 1.9))]
+            for _ in range(int(rng.integers(1, 4))):
+                a = rng.uniform(0, 2 * np.pi)
+                rr = r * rng.uniform(0.4, 0.7)
+                lobes.append((x + (r + 0.3 * rr) * np.cos(a), y + (r + 0.3 * rr) * np.sin(a), rr,
+                              rng.uniform(0, np.pi), rng.uniform(1.0, 1.5)))
+            R = 2.2 * r + 30
+            x0, x1 = int(max(0, x - R)), int(min(MAP_W, x + R))
+            y0, y1 = int(max(0, y - R)), int(min(MAP_H, y + R))
+            sx_, sy_ = wx[y0:y1 + 1, x0:x1 + 1], wy[y0:y1 + 1, x0:x1 + 1]
+            for (lx, ly, lr, la, le) in lobes:
+                ca_, sa_ = np.cos(la), np.sin(la)
+                du = ((sx_ - lx) * ca_ + (sy_ - ly) * sa_) / le
+                dv = (-(sx_ - lx) * sa_ + (sy_ - ly) * ca_) * le ** 0.5
+                sub = np.hypot(du, dv)
+                dens[y0:y1 + 1, x0:x1 + 1] = np.maximum(dens[y0:y1 + 1, x0:x1 + 1],
+                                                        T.smoothstep(lr + 7, lr - 5, sub))
         self.copses = copses
         self.f["forest"] = dens.astype(np.float32)
         self.log("[world] forests: %d circles, %d copses, cover %.1f %%"

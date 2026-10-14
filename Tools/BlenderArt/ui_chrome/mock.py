@@ -15,6 +15,13 @@ import preview as P  # noqa: E402
 
 
 def map_backdrop(W, H):
+    wm = os.path.join(os.path.dirname(P.ART), "Map", "WorldMap.png")
+    if not os.path.exists(wm):
+        from ironart import REPO_DIR
+        wm = os.path.join(REPO_DIR, "Content", "Data", "Art", "Map", "WorldMap.png")
+    if os.path.exists(wm):
+        im = Image.open(wm).convert("RGBA")
+        return im.crop((200, 150, 200 + W, 150 + H)) if im.width >= W + 200 else im.resize((W, H))
     sf = os.path.join(os.environ.get("IRONART_OUT", "/tmp/ironart"), "styleframes",
                       "sf_terrain_512x320.png")
     if os.path.exists(sf):
@@ -92,29 +99,57 @@ def main(out):
 
     # ---- right: command panel (dark) with tabs ---------------------------------------------------
     rx, ry, rw, rh = W - 24 - 440, 92, 440, 700
+    bg.alpha_composite(P.nine(P.load("Panel"), ms["Panel"], (rw, rh)), (rx, ry))
+    dr.text((rx + 18, ry + 16), "Luoyang: 2 officers awaiting orders", font=f13, fill=P.INK)
     tabs = ["Domestic", "Military", "Personnel", "Diplomacy", "Town"]
-    tw = (rw - 4 * 2) // 5
+    tw = (rw - 28 - 4 * 2) // 5
+    tx0, ty0 = rx + 14, ry + 40
     for k, lab in enumerate(tabs):
         act = k == 1
-        t = P.nine(P.load("Tab_Active" if act else "Tab"), ms["Tab"], (tw, 34))
+        t = P.nine(P.load("Tab_Active" if act else "Tab"), ms["Tab"], (tw, 36))
         if not act:
             a = np.asarray(t, np.float32)
             a[..., :3] *= 0.78
             t = Image.fromarray(a.astype(np.uint8), "RGBA")
-        bg.alpha_composite(t, (rx + k * (tw + 2), ry))
-        dr.text((rx + k * (tw + 2) + tw // 2, ry + 17), lab, font=f13b if act else f13,
-                fill=P.GOLD if act else P.TEXT_LIGHT, anchor="mm")
-    bg.alpha_composite(P.nine(P.load("PanelDark"), ms["PanelDark"], (rw, rh - 34)), (rx, ry + 34))
-    dr.text((rx + 30, ry + 64), "Military", font=fh26, fill=P.GOLD)
-    bg.alpha_composite(P.load("Divider").resize((rw - 60, 12), Image.BICUBIC), (rx + 30, ry + 102))
-    yy = ry + 130
+        bg.alpha_composite(t, (tx0 + k * (tw + 2), ty0))
+        dr.text((tx0 + k * (tw + 2) + tw // 2, ty0 + 18), lab, font=f13b if act else f13,
+                fill=P.LACQUER if act else P.INK, anchor="mm")
+    dr.text((rx + 26, ty0 + 52), "Military", font=fh26, fill=P.LACQUER)
+    bg.alpha_composite(P.load("Divider").resize((rw - 52, 12), Image.BICUBIC), (rx + 26, ty0 + 88))
+    yy = ty0 + 112
     for k, lab in enumerate(("Draft", "Train", "Patrol", "Transport", "March")):
         st = "Button_Disabled" if lab == "Transport" else "Button"
-        b = P.nine(P.load(st), ms["Button"], (rw - 60, 44))
-        bg.alpha_composite(b, (rx + 30, yy))
+        b = P.nine(P.load(st), ms["Button"], (rw - 52, 44))
+        bg.alpha_composite(b, (rx + 26, yy))
         P.text_shadow(dr, (rx + rw // 2, yy + 22), lab, fb16,
                       (170, 160, 150) if st == "Button_Disabled" else P.TEXT_LIGHT)
-        yy += 56
+        yy += 54
+    bg.alpha_composite(P.load("Divider").resize((rw - 52, 10), Image.BICUBIC), (rx + 26, yy + 6))
+    b = P.nine(P.load("Button"), ms["Button"], (rw - 52, 44))
+    bg.alpha_composite(b, (rx + 26, yy + 28))
+    P.text_shadow(dr, (rx + rw // 2, yy + 50), "Delegate this city", fb16, P.TEXT_LIGHT)
+
+    # ---- bottom: message log (light panel, 16 x 10 padding) and a dark battle-style panel -----
+    lgx, lgy, lgw, lgh = 24, 812, 900, 244
+    bg.alpha_composite(P.nine(P.load("Panel"), ms["Panel"], (lgw, lgh)), (lgx, lgy))
+    for k, ln in enumerate(("Spring 184: Iron Banner troops entered Xuchang.",
+                            "Cao Ren completed the walls of Luoyang (Walls 640).",
+                            "A wandering swordsman was seen near Mount Hua.",
+                            "The Azure Court proposes a truce.",
+                            "Harvest in Ye: +8,600 food.")):
+        dr.text((lgx + 16, lgy + 10 + k * 22), ln, font=fr15, fill=P.INK)
+    dkx, dky, dkw, dkh = 944, 812, 520, 244
+    bg.alpha_composite(P.nine(P.load("PanelDark"), ms["PanelDark"], (dkw, dkh)), (dkx, dky))
+    dr.text((dkx + 22, dky + 18), "Zhang Liao", font=fh26, fill=P.GOLD)
+    for k, ln in enumerate(("Cavalry   Troops 6,400   Morale 82", "Attack 88   Defense 71",
+                            "Fire  Confuse  Rally  Duel")):
+        dr.text((dkx + 22, dky + 60 + k * 24), ln, font=fr15, fill=P.TEXT_LIGHT)
+    for k, st in enumerate(("Button", "Button_Hover", "Button_Pressed")):
+        b = P.nine(P.load(st), ms["Button"], (150, 44))
+        bg.alpha_composite(b, (dkx + 22 + k * 162, dky + 170))
+        off = 1 if st == "Button_Pressed" else 0
+        P.text_shadow(dr, (dkx + 22 + k * 162 + 75 + off, dky + 192 + off),
+                      ("Attack", "Duel", "Wait")[k], fb16, P.TEXT_LIGHT)
 
     # ---- centre: event dialog ----------------------------------------------------------------------
     dw, dh = 1040, 700

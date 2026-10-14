@@ -9,7 +9,7 @@ import numpy as np
 
 import shade
 
-PASSES = ("Image", "paint", "tint", "shade", "ink", "mask", "Freestyle")
+PASSES = ("Image", "paint", "tint", "shade", "ink", "mask", "aok", "veil", "AO", "Freestyle")
 
 
 def setup(w, h, ss, samples=12, threads=None):
@@ -53,7 +53,9 @@ def setup(w, h, ss, samples=12, threads=None):
     w0 = bpy.data.worlds.new("W")
     w0.use_nodes = True
     w0.node_tree.nodes["Background"].inputs[1].default_value = 0.0
+    w0.light_settings.distance = 0.035
     sc.world = w0
+    sc.view_layers[0].use_pass_ambient_occlusion = True
     return sc
 
 

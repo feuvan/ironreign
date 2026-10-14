@@ -7,6 +7,7 @@
 #include "UObject/WeakObjectPtr.h"
 #include "UObject/WeakObjectPtrTemplates.h"
 
+class AIronEnvironment;
 class UWorld;
 
 /**
@@ -51,7 +52,7 @@ struct FIronSaveSlot
  *   Content/Data/Scenarios/<name>.json            scenarios
  *   Content/Data/Localization/<culture>/<table>.json  string tables (Strings.json + Scenario_<key>.json)
  *   <ProjectSaved>/SaveGames/IronReign_<slot>.json save games (slot 0 = autosave)
- *   <ProjectSaved>/IronReign/Settings.json        culture + options (speeds, volumes, graphics)
+ *   <ProjectSaved>/IronReign/Settings.json        culture + options (speeds, volumes, graphics), "settingsVersion" 2
  */
 class IRONREIGN_API FIronSession : public TSharedFromThis<FIronSession>
 {
@@ -130,12 +131,21 @@ public:
 	/** 0 Low, 1 Medium, 2 High (default), 3 Epic: the quality levels of AIronWorldMap3D / AIronBattleBoard3D / AIronEnvironment. */
 	int32 GetGraphicsQuality() const { return GraphicsQuality; }
 	void SetGraphicsQuality(int32 Level);
-	/** Tilt-shift depth of field of the 3D scenes (AIronEnvironment::SetTiltShiftStrength 1 / 0). */
+	/**
+	 * Tilt-shift depth of field of the 3D scenes (AIronEnvironment::SetTiltShiftStrength 1 / 0). Default off: the
+	 * gongbi art bible has no depth of field (docs/DESIGN.md sections 8 and 12.6).
+	 */
 	bool IsTiltShiftEnabled() const { return bTiltShift; }
 	void SetTiltShiftEnabled(bool bEnabled);
-	/** Ink outline post-process of the 3D scenes (AIronEnvironment::SetInkStrength 1 / 0). */
+	/** Ink outline post-process of the 3D scenes (AIronEnvironment::SetInkStrength 1 / 0). Default on (gongbi). */
 	bool IsInkOutlinesEnabled() const { return bInkOutlines; }
 	void SetInkOutlinesEnabled(bool bEnabled);
+	/**
+	 * Pushes the graphics options that live in the shared AIronEnvironment (one per world, used by the strategy map and
+	 * the battle board): the painted (gongbi) look, which the 3D scenes always use, tilt-shift and ink outlines. Cheap
+	 * and idempotent. The quality is applied by the scenes themselves (SetQuality forwards it).
+	 */
+	void ApplyEnvironmentOptions(AIronEnvironment& Environment) const;
 	/** Broadcast after any graphics option changed. AIronReignPlayerController applies them to the 3D scenes. */
 	FSimpleMulticastDelegate OnGraphicsChanged;
 	/** Incremented by every graphics option change (cheap change detection for per-frame code). */
@@ -143,9 +153,13 @@ public:
 
 	/** False in the 2D presentation mode. */
 	bool Allows3D() const { return PresentationMode != EIronPresentationMode::TwoD; }
-	/** AIronWorldMap3D::AreAssetsAvailable(), cached (a negative answer is re-checked at most every 30 seconds). */
+	/**
+	 * AIronWorldMap3D::AreAssetsAvailable(): the World layer caches it (a positive answer is kept, a missing-assets answer
+	 * is probed again at most every 30 seconds or after InvalidateAssetCheck). Choosing a 3D presentation mode
+	 * invalidates it so a finished import is picked up at once.
+	 */
 	bool Is3DMapAvailable() const;
-	/** AIronBattleBoard3D::AreAssetsAvailable(), cached the same way. */
+	/** AIronBattleBoard3D::AreAssetsAvailable(), cached the same way by the World layer. */
 	bool Is3DBattleAvailable() const;
 	/** The strategy map is presented in 3D: Allows3D() and Is3DMapAvailable(). */
 	bool Uses3DMap() const { return Allows3D() && Is3DMapAvailable(); }
@@ -184,15 +198,10 @@ private:
 
 	EIronPresentationMode PresentationMode = EIronPresentationMode::Auto;
 	int32 GraphicsQuality = 2;
-	bool bTiltShift = true;
-	bool bInkOutlines = false;
+	/** Defaults of the painted (gongbi) look; Settings.json files older than version 2 get them too (LoadSettings). */
+	bool bTiltShift = false;
+	bool bInkOutlines = true;
 	int32 GraphicsRevision = 0;
 	int32 CampaignSerial = 0;
 	TWeakObjectPtr<UWorld> PresentationWorld;
-
-	/** Asset availability caches (see Is3DMapAvailable): answer and the time (FPlatformTime::Seconds) of the check. */
-	mutable bool bMapAssetsAvailable = false;
-	mutable bool bBattleAssetsAvailable = false;
-	mutable double MapAssetsCheckedAt = -1.0;
-	mutable double BattleAssetsCheckedAt = -1.0;
 };

@@ -13,9 +13,10 @@ What it builds (every path is a build product, regenerated deterministically; no
 
     /Game/IronReign/Textures/   T_Terrain_Albedo (sRGB), T_Terrain_Masks (linear masks), T_<Name> for
                                 ArtSource/Textures/<Name>.png (T_Water_Normal...), T_IronWhite, T_IronWhiteLinear,
-                                T_IronFlatNormal (generated defaults)
+                                T_IronFlatNormal (generated defaults), T_IronSilk (generated silk weave)
     /Game/IronReign/Materials/  MPC_IronSeason, M_IronTerrain + MI_IronTerrain, M_IronWater + MI_IronWater,
-                                M_IronTint + MI_IronTintInstanced, M_IronHighlight + MI_IronHighlightHex, M_IronInk,
+                                M_IronTint + MI_IronTintInstanced, M_IronHighlight + MI_IronHighlightHex, M_IronInk
+                                and M_IronSilk (post-process: ink outlines, aged-silk grade of the painted look),
                                 M_IronModel / M_IronModelTwoSided / M_IronModelMasked (glTF PBR masters),
                                 MI_IronClouds (wraps the engine volumetric cloud material so it is cooked)
     /Game/IronReign/Models/     SM_<Name> for ArtSource/Models/<Name>.glb (Nanite, no collision), SM_IronPlane and
@@ -34,6 +35,7 @@ the build record and reported through the return value.
 
 import datetime
 import json
+import math
 import os
 import re
 import shutil
@@ -49,7 +51,9 @@ import ironreign_terrain as terrain
 
 # Bump when this script changes what it produces: editors then rebuild on their next start.
 # 2: SM_Terrain_* chunks, SM_IronCube, Nanite usage on M_IronTerrain.
-PIPELINE_VERSION = 2
+# 3: the painted look (docs/DESIGN.md 12.6): MPC_IronSeason "Painted" / "PaintedWater", matte painted branches in the
+#    terrain, water, tint and model materials, calligraphic M_IronInk, M_IronSilk and T_IronSilk.
+PIPELINE_VERSION = 3
 
 ROOT_DIR = "/Game/IronReign"
 MODELS_DIR = ROOT_DIR + "/Models"
@@ -105,12 +109,22 @@ LUMA = (0.30, 0.59, 0.11)
 WATER_COLOR = (0.006, 0.045, 0.05, 1.0)
 WATER_SCATTERING = (0.002, 0.03, 0.035, 1.0)
 WATER_ABSORPTION = (0.40, 0.075, 0.07, 1.0)
-INK_TONE = (0.12, 0.09, 0.07, 1.0)
 HIGHLIGHT_COLOR = (0.25, 0.6, 1.0, 1.0)
+# The painted look (docs/DESIGN.md sections 8 and 12.6). Ink lines multiply the scene by INK_TONE, the linear value of
+# warm black #1E1A16, so a white surface turns exactly that colour.
+INK_TONE = (0.0130, 0.0103, 0.0080, 1.0)
+# Pale azurite wash of the sea and rivers (sRGB #95AFC4, between light azurite #7FA6C8 and the silk), linear.
+PAINTED_WATER = (0.30, 0.43, 0.55, 1.0)
+# M_IronSilk works after tonemapping, on display (sRGB-encoded) values: aged silk #E6D6B0 and the ink floor #1E1A16.
+SILK_DISPLAY = (0.902, 0.839, 0.690, 1.0)
+INK_FLOOR_DISPLAY = (0.118, 0.102, 0.086, 1.0)
+# T_IronSilk: generated, tileable silk weave (linear grey, mean 0.5), sampled 1 texel per 1080p pixel.
+SILK_TEXTURE = "T_IronSilk"
+SILK_TEXTURE_SIZE = 256
 
 EXPECTED_MATERIALS = ("M_IronTerrain", "MI_IronTerrain", "M_IronWater", "MI_IronWater", "M_IronTint",
-                      "MI_IronTintInstanced", "M_IronHighlight", "MI_IronHighlightHex", "M_IronInk", "M_IronModel",
-                      "M_IronModelTwoSided", "M_IronModelMasked", MPC_NAME)
+                      "MI_IronTintInstanced", "M_IronHighlight", "MI_IronHighlightHex", "M_IronInk", "M_IronSilk",
+                      "M_IronModel", "M_IronModelTwoSided", "M_IronModelMasked", MPC_NAME)
 DEFAULT_TEXTURES = (
     # (asset name, RGBA bytes, kind)
     ("T_IronWhite", (255, 255, 255, 255), gltf.KIND_COLOR),
@@ -275,10 +289,11 @@ def _list_files(directory, extensions):
                   if name.lower().endswith(extensions) and not name.startswith("."))
 
 
-def _write_png(path, width, height, rgba):
-    """A solid-colour 8-bit RGBA PNG (default textures; no PIL in the editor's Python)."""
-    row = b"\x00" + bytes(rgba) * width
-    raw = row * height
+def _write_png_rows(path, width, height, rows):
+    """An 8-bit RGBA PNG from `height` rows of width * 4 bytes (no PIL in the editor's Python)."""
+    raw = b"".join(b"\x00" + bytes(row) for row in rows)
+    if len(raw) != height * (1 + 4 * width):
+        raise ValueError("%s: %d rows do not make a %dx%d RGBA image" % (path, len(rows), width, height))
 
     def chunk(tag, payload):
         return (struct.pack(">I", len(payload)) + tag + payload
@@ -289,6 +304,71 @@ def _write_png(path, width, height, rgba):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "wb") as handle:
         handle.write(data)
+
+
+def _write_png(path, width, height, rgba):
+    """A solid-colour 8-bit RGBA PNG (default textures)."""
+    row = bytes(rgba) * width
+    _write_png_rows(path, width, height, [row] * height)
+
+
+def _silk_rows(size):
+    """Rows of a tileable silk texture, linear, every channel centred on about 0.5. R (and B): the weave, plain-weave
+    threads 4 px apart with slubs along them. G: soft mottling of aged silk, sampled by M_IronSilk at a much larger
+    scale. Deterministic (a fixed integer hash), so every build writes the same texture."""
+
+    def hash01(ix, iy, salt):
+        value = (ix * 374761393 + iy * 668265263 + salt * 1442695041) & 0xFFFFFFFF
+        value = ((value ^ (value >> 13)) * 1274126177) & 0xFFFFFFFF
+        return ((value ^ (value >> 16)) & 0xFFFF) / 65535.0
+
+    def value_noise(x, y, cells_x, cells_y, salt):
+        # Smooth value noise on a cells_x x cells_y lattice that wraps around the texture (tileable).
+        fx = x * cells_x / float(size)
+        fy = y * cells_y / float(size)
+        ix = int(fx)
+        iy = int(fy)
+        tx = fx - ix
+        ty = fy - iy
+        sx = tx * tx * (3.0 - 2.0 * tx)
+        sy = ty * ty * (3.0 - 2.0 * ty)
+        x0 = ix % cells_x
+        x1 = (ix + 1) % cells_x
+        y0 = iy % cells_y
+        y1 = (iy + 1) % cells_y
+        top = hash01(x0, y0, salt) + (hash01(x1, y0, salt) - hash01(x0, y0, salt)) * sx
+        bottom = hash01(x0, y1, salt) + (hash01(x1, y1, salt) - hash01(x0, y1, salt)) * sx
+        return top + (bottom - top) * sy
+
+    period = 4
+    weaves = []
+    ages = []
+    for y in range(size):
+        for x in range(size):
+            # Plain weave: warp (vertical) and weft (horizontal) threads alternate over and under.
+            over = ((x // period) + (y // period)) % 2 == 0
+            across = (x % period) if over else (y % period)
+            thread = math.sin(math.pi * (across + 0.5) / period)
+            # Slubs: thicker and thinner stretches along each thread.
+            slub = value_noise(x, y, 16, 64, 11) if over else value_noise(x, y, 64, 16, 23)
+            weaves.append(0.18 * thread + 0.24 * slub)
+            ages.append(1.2 * (0.6 * value_noise(x, y, 4, 4, 37) + 0.3 * value_noise(x, y, 8, 8, 41)
+                               + 0.1 * value_noise(x, y, 16, 16, 43)))
+    # Centre both channels on 0.5 (M_IronSilk multiplies by 1 + (value - 0.5) * strength).
+    weave_shift = 0.5 - sum(weaves) / len(weaves)
+    age_shift = 0.5 - sum(ages) / len(ages)
+
+    def byte(value):
+        return max(0, min(255, int(round(value * 255.0))))
+
+    rows = []
+    for y in range(size):
+        row = bytearray()
+        for x in range(size):
+            weave = byte(weaves[y * size + x] + weave_shift)
+            row += bytes((weave, byte(ages[y * size + x] + age_shift), weave, 255))
+        rows.append(bytes(row))
+    return rows
 
 
 # ----- asset helpers --------------------------------------------------------------------------------------------
@@ -545,6 +625,16 @@ def _build_default_textures(ctx):
         texture = _import_texture(path, TEXTURES_DIR, asset_name, kind)
         if texture is not None:
             ctx.textures[asset_name] = texture
+    # The silk weave of M_IronSilk (the painted look's aged-silk overlay).
+    path = os.path.join(generated, SILK_TEXTURE + ".png")
+    try:
+        _write_png_rows(path, SILK_TEXTURE_SIZE, SILK_TEXTURE_SIZE, _silk_rows(SILK_TEXTURE_SIZE))
+    except (OSError, ValueError) as exc:
+        _warn("cannot write %s (%s): M_IronSilk has no weave" % (path, exc))
+        return
+    texture = _import_texture(path, TEXTURES_DIR, SILK_TEXTURE, gltf.KIND_MASKS)
+    if texture is not None:
+        ctx.textures[SILK_TEXTURE] = texture
 
 
 def _build_art_textures(ctx):
@@ -852,10 +942,12 @@ def _material_instance(name, directory, parent, scalars=None, vectors=None, text
 
 
 def _build_season_collection(ctx):
-    """MPC_IronSeason: Snow / Autumn / Wetness (0..1) and the shared snow and autumn colours.
+    """MPC_IronSeason: Snow / Autumn / Wetness (0..1) and the shared snow and autumn colours, plus the look.
 
     Model materials read it (roofs whiten in winter, trees turn golden in autumn); M_IronTerrain uses
-    max(its own scalar, the collection) so the runtime can drive either.
+    max(its own scalar, the collection) so the runtime can drive either. "Painted" (1 = the default painted look,
+    0 = realistic; AIronEnvironment blends it) turns every material matte and the water into a pale azurite wash
+    ("PaintedWater"). Existing collections are updated in place (parameters are added, defaults refreshed).
     """
     mpc = _create_or_load(MPC_NAME, MATERIALS_DIR, unreal.MaterialParameterCollection,
                           unreal.MaterialParameterCollectionFactoryNew)
@@ -864,17 +956,17 @@ def _build_season_collection(ctx):
     try:
         scalars = list(mpc.get_editor_property("scalar_parameters"))
         by_name = dict((str(p.get_editor_property("parameter_name")), p) for p in scalars)
-        for name in ("Snow", "Autumn", "Wetness"):
+        for name, value in (("Snow", 0.0), ("Autumn", 0.0), ("Wetness", 0.0), ("Painted", 1.0)):
             parameter = by_name.get(name)
             if parameter is None:
                 parameter = unreal.CollectionScalarParameter()
                 parameter.set_editor_property("parameter_name", name)
                 scalars.append(parameter)
-            parameter.set_editor_property("default_value", 0.0)
+            parameter.set_editor_property("default_value", value)
         mpc.set_editor_property("scalar_parameters", scalars)
         vectors = list(mpc.get_editor_property("vector_parameters"))
         by_name = dict((str(p.get_editor_property("parameter_name")), p) for p in vectors)
-        for name, value in (("SnowColor", SNOW_COLOR), ("AutumnTint", AUTUMN_TINT)):
+        for name, value in (("SnowColor", SNOW_COLOR), ("AutumnTint", AUTUMN_TINT), ("PaintedWater", PAINTED_WATER)):
             parameter = by_name.get(name)
             if parameter is None:
                 parameter = unreal.CollectionVectorParameter()
@@ -908,6 +1000,8 @@ def _build_terrain_material(ctx):
     snow = g.max(g.scalar("Snow", 0.0, "Season"), g.collection(ctx.mpc, "Snow", 0.0))
     autumn = g.max(g.scalar("Autumn", 0.0, "Season"), g.collection(ctx.mpc, "Autumn", 0.0))
     wet = g.max(g.scalar("Wetness", 0.0, "Season"), g.collection(ctx.mpc, "Wetness", 0.0))
+    # 1 = the painted look (DESIGN.md 12.6): matte mineral washes, no wet gloss, rivers in the sea's azurite wash.
+    painted = g.collection(ctx.mpc, "Painted", 1.0)
 
     # Micro variation: world-space noise breaks up the 2 px/m texel grid when the camera is close.
     noise = g.node("MaterialExpressionNoise", scale=0.002, levels=2, output_min=-1.0, output_max=1.0,
@@ -924,12 +1018,14 @@ def _build_terrain_material(ctx):
     autumn_color = g.mul(g.dot(base, LUMA), g.mask(g.collection(ctx.mpc, "AutumnTint", AUTUMN_TINT), "rgb"))
     base = g.lerp(base, autumn_color, g.sat(g.mul(g.mul(autumn, vegetation), 0.9)))
 
-    # Wetness darkens the ground (roads most) and makes it glossier.
-    wet_ground = g.mul(g.mul(wet, land), g.add(0.7, g.mul(road, 0.3)))
+    # Wetness darkens the ground (roads most) and makes it glossier; a painting shows only a trace of it.
+    wet_ground = g.mul(g.mul(g.mul(wet, land), g.add(0.7, g.mul(road, 0.3))), g.one_minus(g.mul(painted, 0.6)))
     base = g.mul(base, g.one_minus(g.mul(wet_ground, 0.35)))
 
-    # Rivers and lakes painted in the albedo read a little deeper.
+    # Rivers and lakes painted in the albedo read a little deeper; in the painted look they share the sea's wash.
     base = g.lerp(base, g.mul(base, g.scalar("WaterDarken", 0.8, "Water")), water)
+    painted_water = g.mask(g.collection(ctx.mpc, "PaintedWater", PAINTED_WATER), "rgb")
+    base = g.lerp(base, painted_water, g.mul(g.mul(water, painted), g.scalar("PaintedWaterBlend", 0.35, "Painted")))
 
     # Snow settles on flat ground, more on high rock, less under forest; never on water.
     up = g.sat(g.mul(g.sub(g.mask(g.node("MaterialExpressionVertexNormalWS"), "b"), 0.55), 4.0))
@@ -942,6 +1038,8 @@ def _build_terrain_material(ctx):
     rough = g.lerp(rough, g.scalar("SnowRoughness", 0.6, "Season"), snow_mask)
     rough = g.lerp(rough, g.scalar("WaterRoughness", 0.08, "Water"), water)
     specular = g.lerp(0.5, g.scalar("WaterSpecular", 0.6, "Water"), water)
+    rough = g.lerp(rough, g.scalar("PaintedRoughness", 0.95, "Painted"), painted)
+    specular = g.lerp(specular, g.scalar("PaintedSpecular", 0.2, "Painted"), painted)
 
     g.output(base, "MP_BASE_COLOR")
     g.output(rough, "MP_ROUGHNESS")
@@ -968,17 +1066,24 @@ def _build_water_material(ctx):
     normal_b = (g.texture("NormalB", normal_texture, pan_b), "RGB")
     combined = g.append(g.add(g.mask(normal_a, "rg"), g.mask(normal_b, "rg")),
                         g.mul(g.mask(normal_a, "b"), g.mask(normal_b, "b")))
+    # Painted look (MPC_IronSeason "Painted", DESIGN.md 12.6): a flat, matte pale-azurite wash with faint ripples
+    # instead of glossy, depth-tinted water.
+    painted = g.collection(ctx.mpc, "Painted", 1.0)
     # Waves flatten with distance so the far sea does not shimmer.
     fade = g.sat(g.div(g.node("MaterialExpressionPixelDepth"), g.scalar("NormalFadeDistance", 250000.0, "Waves")))
     strength = g.mul(g.scalar("NormalStrength", 0.4, "Waves"), g.one_minus(g.mul(fade, 0.7)))
+    strength = g.mul(strength, g.lerp(1.0, g.scalar("PaintedNormalScale", 0.3, "Painted"), painted))
     g.output(g.lerp((0.0, 0.0, 1.0), combined, strength), "MP_NORMAL")
-    g.output(g.mask(g.vector("WaterColor", WATER_COLOR), "rgb"), "MP_BASE_COLOR")
-    g.output(g.scalar("Roughness", 0.05), "MP_ROUGHNESS")
-    g.output(g.scalar("Specular", 0.6), "MP_SPECULAR")
+    painted_color = g.mask(g.collection(ctx.mpc, "PaintedWater", PAINTED_WATER), "rgb")
+    g.output(g.lerp(g.mask(g.vector("WaterColor", WATER_COLOR), "rgb"), painted_color, painted), "MP_BASE_COLOR")
+    g.output(g.lerp(g.scalar("Roughness", 0.05), g.scalar("PaintedRoughness", 0.6, "Painted"), painted), "MP_ROUGHNESS")
+    g.output(g.lerp(g.scalar("Specular", 0.6), g.scalar("PaintedSpecular", 0.15, "Painted"), painted), "MP_SPECULAR")
     g.output(0.0, "MP_METALLIC")
     if single_layer:
-        # Opacity = coverage of a surface layer (foam) over the water volume: 0 shows the depth-tinted water.
-        g.output(g.scalar("SurfaceCoverage", 0.0), "MP_OPACITY")
+        # Opacity = coverage of a surface layer (foam) over the water volume: 0 shows the depth-tinted water. The
+        # painted wash is mostly that surface layer.
+        coverage = g.lerp(g.scalar("SurfaceCoverage", 0.0), g.scalar("PaintedCoverage", 0.9, "Painted"), painted)
+        g.output(coverage, "MP_OPACITY")
         water_out = g.node("MaterialExpressionSingleLayerWaterMaterialOutput")
         g.link(g.mask(g.vector("Scattering", WATER_SCATTERING, "Depth"), "rgb"), water_out,
                ("ScatteringCoefficients", "Scattering Coefficients"))
@@ -1006,9 +1111,12 @@ def _build_tint_material(ctx):
     tint = g.mask(g.vector("Tint", (1.0, 1.0, 1.0, 1.0), "Tint"), "rgb")
     color = g.lerp(tint, _instance_color(g), g.scalar("UseInstanceColor", 0.0, "Tint"))
     base = g.texture("BaseTex", ctx.texture("T_IronWhite"))
+    # The painted look (MPC_IronSeason "Painted") is matte: lacquer and silk banners as flat mineral colour.
+    painted = g.collection(ctx.mpc, "Painted", 1.0)
     g.output(g.mul((base, "RGB"), color), "MP_BASE_COLOR")
-    g.output(g.scalar("Roughness", 0.6), "MP_ROUGHNESS")
-    g.output(g.scalar("Metallic", 0.0), "MP_METALLIC")
+    g.output(g.lerp(g.scalar("Roughness", 0.6), g.scalar("PaintedRoughness", 0.95, "Painted"), painted), "MP_ROUGHNESS")
+    g.output(g.mul(g.scalar("Metallic", 0.0), g.one_minus(painted)), "MP_METALLIC")
+    g.output(g.lerp(0.5, g.scalar("PaintedSpecular", 0.25, "Painted"), painted), "MP_SPECULAR")
     return _end_material(g)
 
 
@@ -1039,6 +1147,18 @@ def _build_highlight_material(ctx):
 
 
 def _build_ink_material(ctx):
+    """M_IronInk: calligraphic ink outlines (docs/DESIGN.md 12.6), a post-process before depth of field.
+
+    Lines come from three cues, each tuned to stay quiet on smooth ground:
+      - occluding contours: the Laplacian of 1 / depth, which is exactly 0 on any plane (sloped ground included) and
+        jumps where one surface passes in front of another (ridgelines, city walls, tree crowns, model outlines);
+      - creases: neighbouring world normals turning by more than ~50 degrees (wall corners, roof edges, cliffs);
+      - coasts: a change of shading model between neighbours (Single Layer Water against land).
+    The line weight follows the brush: wider near the camera, finer far away, and its pressure varies smoothly along
+    the line (world-space noise, so it does not swim when the camera moves). The scene is multiplied by InkTone, the
+    linear warm black #1E1A16, so lines are warm black on light washes. "Strength" (driven at runtime by
+    AIronEnvironment::SetInkStrength) fades the whole pass.
+    """
     location = _enum("BlendableLocation", "BL_SCENE_COLOR_BEFORE_DOF", "BL_BEFORE_TRANSLUCENCY",
                      "BL_BEFORE_TONEMAPPING")
     material, g = _begin_material("M_IronInk", {
@@ -1050,45 +1170,127 @@ def _build_ink_material(ctx):
         "depth": _enum("SceneTextureId", "PPI_SCENE_DEPTH"),
         "normal": _enum("SceneTextureId", "PPI_WORLD_NORMAL"),
         "color": _enum("SceneTextureId", "PPI_POST_PROCESS_INPUT0"),
+        "shading": _enum("SceneTextureId", "PPI_SHADING_MODEL_ID"),
     }
     uv = (g.node("MaterialExpressionScreenPosition"), "ViewportUV")
     view = g.node("MaterialExpressionViewSize")
-    pixels = g.mul(g.scalar("Thickness", 1.0, "Lines"), g.max(1.0, g.div(g.mask(view, "g"), 1080.0)))
-    texel = g.div(pixels, view)
 
-    def sample(texture_id, offset):
+    def sample(texture_id, offset_uv):
         node = g.node("MaterialExpressionSceneTexture", scene_texture_id=texture_id, filtered=False)
-        if offset is not None:
-            g.link(g.add(uv, g.mul(texel, offset)), node, ("UVs", "Coordinates"))
+        if offset_uv is not None:
+            g.link(offset_uv, node, ("UVs", "Coordinates"))
         return (node, "Color")
 
-    offsets = ((-1.0, 0.0), (1.0, 0.0), (0.0, -1.0), (0.0, 1.0))
     depth_center = g.mask(sample(ids["depth"], None), "r")
-    depths = [g.mask(sample(ids["depth"], o), "r") for o in offsets]
-    twice = g.mul(depth_center, 2.0)
-    laplacian = g.add(g.abs(g.sub(g.add(depths[0], depths[1]), twice)),
-                      g.abs(g.sub(g.add(depths[2], depths[3]), twice)))
-    depth_edge = g.mul(g.div(laplacian, g.max(depth_center, 1.0)), g.scalar("DepthSensitivity", 80.0, "Lines"))
+    # Brush width in pixels at 1080p: NearWidth close to the camera, FarWidth from WidthDistance on.
+    far = g.sat(g.div(depth_center, g.scalar("WidthDistance", 250000.0, "Lines")))
+    width = g.mul(g.scalar("Thickness", 1.0, "Lines"),
+                  g.lerp(g.scalar("NearWidth", 1.6, "Lines"), g.scalar("FarWidth", 0.8, "Lines"), far))
+    texel = g.div(g.mul(width, g.max(1.0, g.div(g.mask(view, "g"), 1080.0))), view)
+    offsets = ((-1.0, 0.0), (1.0, 0.0), (0.0, -1.0), (0.0, 1.0))
+    offset_uvs = [g.add(uv, g.mul(texel, offset)) for offset in offsets]
+
+    # Occluding contours: d_c / d_i is linear across a plane, so its Laplacian vanishes there.
+    ratios = [g.div(depth_center, g.max(g.mask(sample(ids["depth"], o), "r"), 1.0)) for o in offset_uvs]
+    laplacian = g.add(g.abs(g.sub(g.add(ratios[0], ratios[1]), 2.0)), g.abs(g.sub(g.add(ratios[2], ratios[3]), 2.0)))
+    depth_edge = g.sat(g.mul(g.sub(laplacian, g.scalar("DepthThreshold", 0.015, "Lines")),
+                             g.scalar("DepthSensitivity", 25.0, "Lines")))
+
+    # Creases: 4 - sum of the dot products with the four neighbours (0 on a smooth surface).
     normal_center = g.mask(sample(ids["normal"], None), "rgb")
     agreement = None
-    for offset in offsets:
-        term = g.dot(normal_center, g.mask(sample(ids["normal"], offset), "rgb"))
+    for offset_uv in offset_uvs:
+        term = g.dot(normal_center, g.mask(sample(ids["normal"], offset_uv), "rgb"))
         agreement = term if agreement is None else g.add(agreement, term)
-    normal_edge = g.mul(g.sub(4.0, agreement), g.scalar("NormalSensitivity", 1.2, "Lines"))
-    edge = g.sat(g.mul(g.sub(g.max(depth_edge, normal_edge), g.scalar("Threshold", 0.18, "Lines")),
-                       g.scalar("Sharpness", 2.5, "Lines")))
+    normal_edge = g.sat(g.mul(g.sub(g.sub(4.0, agreement), g.scalar("NormalThreshold", 0.35, "Lines")),
+                              g.scalar("NormalSensitivity", 2.0, "Lines")))
+    edge = g.max(depth_edge, normal_edge)
+
+    # Coasts: the shading model changes (water against land); optional on engines without the scene texture.
+    if ids["shading"] is not None:
+        model_center = g.mask(sample(ids["shading"], None), "r")
+        change = None
+        for offset_uv in offset_uvs:
+            term = g.abs(g.sub(g.mask(sample(ids["shading"], offset_uv), "r"), model_center))
+            change = term if change is None else g.add(change, term)
+        edge = g.max(edge, g.mul(g.sat(g.mul(change, 1000.0)), g.scalar("CoastStrength", 1.0, "Lines")))
+    else:
+        g.fail("no PPI_SHADING_MODEL_ID scene texture: M_IronInk draws no coast lines", optional=True)
+
+    # Brush pressure: 1 - PressureVariation .. 1 along a line, from world-space noise (features ~PressureSize cm).
+    pressure_noise = g.node("MaterialExpressionNoise", scale=1.0, levels=1, output_min=0.0, output_max=1.0,
+                            turbulence=False)
+    g.link(g.div(g.node("MaterialExpressionWorldPosition"), g.scalar("PressureSize", 1500.0, "Lines")), pressure_noise,
+           "Position")
+    pressure = g.one_minus(g.mul(pressure_noise, g.scalar("PressureVariation", 0.45, "Lines")))
     # Lines fade out with distance (and vanish on the sky).
     distance_fade = g.one_minus(g.sat(g.div(g.sub(depth_center, g.scalar("FadeStart", 300000.0, "Lines")),
                                             g.scalar("FadeRange", 900000.0, "Lines"))))
-    ink = g.mul(g.mul(edge, distance_fade), g.scalar("Strength", 0.6, "Lines"))
+    ink = g.mul(g.mul(g.mul(edge, distance_fade), pressure), g.scalar("Strength", 0.9, "Lines"))
     scene = g.mask(sample(ids["color"], None), "rgb")
     inked = g.mul(scene, g.lerp((1.0, 1.0, 1.0), g.mask(g.vector("InkTone", INK_TONE, "Lines"), "rgb"), ink))
-    # Paper grain: static screen-space noise, about two pixels per grain.
+    # Paper grain: static screen-space noise, about two pixels per grain (M_IronSilk adds the silk weave).
     grain_noise = g.node("MaterialExpressionNoise", scale=1.0, levels=1, output_min=-1.0, output_max=1.0,
                          turbulence=False)
     g.link(g.append(g.div(g.mul(uv, view), g.scalar("GrainSize", 2.0, "Paper")), 0.0), grain_noise, "Position")
-    grain = g.add(1.0, g.mul(grain_noise, g.scalar("GrainStrength", 0.035, "Paper")))
+    grain = g.add(1.0, g.mul(grain_noise, g.scalar("GrainStrength", 0.02, "Paper")))
     g.output(g.mul(inked, grain), "MP_EMISSIVE_COLOR")
+    return _end_material(g)
+
+
+def _build_silk_material(ctx):
+    """M_IronSilk: the aged-silk grade of the painted look (docs/DESIGN.md 12.6), a post-process after tonemapping.
+
+    It works on display values (sRGB-encoded, 0..1), so its colours are the hex colours of the art bible:
+      1. bare silk as mist: the far map and the sky fade into SilkColor (#E6D6B0) with distance;
+      2. mineral grade: colours lose a little chroma and take the warm silk tone (PaperTint);
+      3. the silk itself: T_IronSilk's weave tiled in screen space (a fixed canvas) and slightly aged corners;
+      4. the darkest tone is warm ink (InkFloor #1E1A16), never pure black.
+    "Strength" (AIronEnvironment: the painted amount of the look) fades the whole pass; 0 = realistic.
+    """
+    location = _enum("BlendableLocation", "BL_SCENE_COLOR_AFTER_TONEMAPPING", "BL_AFTER_TONEMAPPING")
+    material, g = _begin_material("M_IronSilk", {
+        "material_domain": _enum("MaterialDomain", "MD_POST_PROCESS"),
+        "blendable_location": location,
+    })
+    color_id = _enum("SceneTextureId", "PPI_POST_PROCESS_INPUT0")
+    depth_id = _enum("SceneTextureId", "PPI_SCENE_DEPTH")
+    uv = (g.node("MaterialExpressionScreenPosition"), "ViewportUV")
+    view = g.node("MaterialExpressionViewSize")
+    scene = g.mask((g.node("MaterialExpressionSceneTexture", scene_texture_id=color_id, filtered=False), "Color"),
+                   "rgb")
+    depth = g.mask((g.node("MaterialExpressionSceneTexture", scene_texture_id=depth_id, filtered=False), "Color"),
+                   "r")
+    silk = g.mask(g.vector("SilkColor", SILK_DISPLAY, "Silk"), "rgb")
+
+    # 1. Bare silk as mist (the sky is the farthest depth, so it turns to silk entirely at HazeMax).
+    haze_start = g.scalar("HazeStart", 250000.0, "Haze")
+    haze_range = g.scalar("HazeRange", 600000.0, "Haze")
+    haze = g.mul(g.sat(g.div(g.sub(depth, haze_start), haze_range)), g.scalar("HazeMax", 0.85, "Haze"))
+    color = g.lerp(scene, silk, haze)
+    # 2. Mineral grade: some chroma goes, the warm silk shows through every wash (white turns to light silk).
+    luma = g.dot(color, LUMA)
+    color = g.lerp(g.append(g.append(luma, luma), luma), color, g.scalar("Chroma", 0.88, "Grade"))
+    silk_white = g.div(silk, g.max(g.max(g.mask(silk, "r"), g.mask(silk, "g")), g.mask(silk, "b")))
+    color = g.mul(color, g.lerp((1.0, 1.0, 1.0), silk_white, g.scalar("PaperTint", 0.55, "Grade")))
+    # 3. The silk weave, 1 texel per pixel at 1080p (SilkScale), centred on 1, and aged (darker) corners.
+    weave_uv = g.div(g.mul(uv, view), g.mul(g.scalar("SilkScale", 1.0, "Silk"),
+                                            g.max(1.0, g.div(g.mask(view, "g"), 1080.0))))
+    weave_uv = g.div(weave_uv, float(SILK_TEXTURE_SIZE))
+    silk_texture = ctx.texture(SILK_TEXTURE, "T_IronWhiteLinear")
+    weave = g.texture("SilkWeave", silk_texture, weave_uv, "Silk")
+    color = g.mul(color, g.add(1.0, g.mul(g.sub((weave, "R"), 0.5), g.scalar("WeaveStrength", 0.12, "Silk"))))
+    # Age mottling (G) at MottleScale times the weave's size, offset so it never lines up with the weave tiles.
+    mottle_uv = g.add(g.div(weave_uv, g.scalar("MottleScale", 5.7, "Silk")), (0.37, 0.61))
+    mottle = g.texture("SilkMottle", silk_texture, mottle_uv, "Silk")
+    color = g.mul(color, g.add(1.0, g.mul(g.sub((mottle, "G"), 0.5), g.scalar("MottleStrength", 0.1, "Silk"))))
+    centred = g.mul(g.sub(uv, (0.5, 0.5)), 2.0)
+    corner = g.sat(g.sub(g.dot(centred, centred), g.scalar("AgeStart", 0.6, "Silk")))
+    color = g.mul(color, g.one_minus(g.mul(g.mul(corner, corner), g.scalar("AgeStrength", 0.18, "Silk"))))
+    # 4. Ink floor: warm black is the darkest tone.
+    ink_floor = g.mask(g.vector("InkFloor", INK_FLOOR_DISPLAY, "Grade"), "rgb")
+    color = g.add(ink_floor, g.mul(g.sub((1.0, 1.0, 1.0), ink_floor), color))
+    g.output(g.lerp(scene, color, g.sat(g.scalar("Strength", 1.0, "Silk"))), "MP_EMISSIVE_COLOR")
     return _end_material(g)
 
 
@@ -1106,11 +1308,17 @@ def _build_model_master(ctx, name, masked, two_sided):
     normal = g.texture("NormalTex", ctx.texture("T_IronFlatNormal"))
     emissive = g.texture("EmissiveTex", ctx.texture("T_IronWhite"))
 
+    # 1 = the painted look (MPC_IronSeason "Painted", DESIGN.md 12.6): the baked textures are flat matte mineral
+    # washes, so the surface is matte and non-metallic with softened normal detail (fewer ink lines inside a model).
+    painted = g.collection(ctx.mpc, "Painted", 1.0)
     albedo = g.mul((base_node, "RGB"), g.mask(base_factor, "rgb"))
     rough = g.max(g.mul((metal_rough, "G"), g.scalar("RoughnessFactor", 1.0, "Factors")), 0.04)
     metallic = g.mul((metal_rough, "B"), g.scalar("MetallicFactor", 1.0, "Factors"))
+    metallic = g.mul(metallic, g.one_minus(painted))
     ambient = g.lerp(1.0, (occlusion, "R"), g.scalar("OcclusionStrength", 1.0, "Factors"))
-    bumped = g.lerp((0.0, 0.0, 1.0), (normal, "RGB"), g.scalar("NormalStrength", 1.0, "Factors"))
+    normal_amount = g.mul(g.scalar("NormalStrength", 1.0, "Factors"),
+                          g.lerp(1.0, g.scalar("PaintedNormalScale", 0.5, "Painted"), painted))
+    bumped = g.lerp((0.0, 0.0, 1.0), (normal, "RGB"), normal_amount)
     glow = g.mul((emissive, "RGB"), g.mask(g.vector("EmissiveFactor", (0.0, 0.0, 0.0, 1.0), "Factors"), "rgb"))
 
     # Seasons from MPC_IronSeason, scaled per model (trees and hexes take autumn, units little snow...).
@@ -1128,10 +1336,12 @@ def _build_model_master(ctx, name, masked, two_sided):
     snow_mask = g.sat(g.mul(g.sub(g.mul(up, g.mul(snow, 1.4)), 0.25), 2.5))
     albedo = g.lerp(albedo, g.mask(g.collection(ctx.mpc, "SnowColor", SNOW_COLOR), "rgb"), snow_mask)
     rough = g.lerp(rough, 0.65, snow_mask)
+    rough = g.lerp(rough, g.scalar("PaintedRoughness", 0.95, "Painted"), painted)
 
     g.output(albedo, "MP_BASE_COLOR")
     g.output(metallic, "MP_METALLIC")
     g.output(rough, "MP_ROUGHNESS")
+    g.output(g.lerp(0.5, g.scalar("PaintedSpecular", 0.25, "Painted"), painted), "MP_SPECULAR")
     g.output(ambient, "MP_AMBIENT_OCCLUSION")
     g.output(bumped, "MP_NORMAL")
     g.output(glow, "MP_EMISSIVE_COLOR")
@@ -1150,6 +1360,7 @@ def _build_materials(ctx):
         ("tint", _build_tint_material),
         ("highlight", _build_highlight_material),
         ("ink", _build_ink_material),
+        ("silk", _build_silk_material),
         ("model", lambda c: _build_model_master(c, "M_IronModel", False, False)),
         ("model_two_sided", lambda c: _build_model_master(c, "M_IronModelTwoSided", False, True)),
         ("model_masked", lambda c: _build_model_master(c, "M_IronModelMasked", True, True)),
@@ -1853,7 +2064,7 @@ def _write_result(folders, result):
 def expected_assets(folders=None):
     """Package paths a complete build must contain (used by the up-to-date check)."""
     folders = folders or paths()
-    expected = [TEXTURES_DIR + "/" + name for name, _, _ in DEFAULT_TEXTURES]
+    expected = [TEXTURES_DIR + "/" + name for name, _, _ in DEFAULT_TEXTURES] + [TEXTURES_DIR + "/" + SILK_TEXTURE]
     expected += [MATERIALS_DIR + "/" + name for name in EXPECTED_MATERIALS]
     art = folders["art"]
     for file_name, asset_name in (("Albedo.png", "T_Terrain_Albedo"), ("Masks.png", "T_Terrain_Masks")):

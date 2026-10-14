@@ -25,7 +25,7 @@ class UGameViewportClient;
  * once, the strategy screen activates the map when its scene is ready); a load of the same scenario only resyncs it,
  * another scenario rebuilds it, and ending the campaign or switching to 2D hides and destroys it (back to the Slate
  * view target). Graphics options (quality, tilt-shift, ink outlines) are applied live to the map, the battle board and
- * the shared environment.
+ * the shared environment, which always shows the painted (gongbi) look (FIronSession::ApplyEnvironmentOptions).
  */
 UCLASS()
 class IRONREIGN_API AIronReignPlayerController : public APlayerController
@@ -49,7 +49,7 @@ private:
 	void UpdateWorldPresentation(float DeltaSeconds);
 	/** Hides (world rendering off unless the battle board is up) and destroys the map, restoring the view target. */
 	void DestroyWorldMap();
-	/** Pushes quality, tilt-shift and ink outlines to the map, the battle board and the shared environment. */
+	/** Pushes quality to the map and the battle board, the look, tilt-shift and ink outlines to the shared environment. */
 	void ApplyGraphicsSettings();
 
 	TSharedPtr<SIronRoot> RootWidget;

@@ -135,6 +135,8 @@ def render(cv, out_png, ss=3, samples=5, silk_seed=1, threads=None):
     cy.transmission_bounces = 0
     cy.volume_bounces = 0
     cy.transparent_max_bounces = 1024
+    cy.min_transparent_bounces = 1024     # no Russian roulette through the glaze layers
+    cy.min_light_bounces = 0
     S.set_resolution(W, H, ss, sc)
     sc.render.image_settings.color_depth = "16"
     sc.render.dither_intensity = 0.0

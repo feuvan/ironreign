@@ -180,12 +180,17 @@ def decal_strip(name, surf, path2, widths, col, mat, offset=0.00035, parent=None
     """A brush stroke: 2D centreline + widths -> projected ribbon mesh (2 rows).  UV u runs
     along the stroke 0..1, v across 0..1 (shaders draw soft edges / dry-brush from it)."""
     L, R, u = ribbon2d(path2, widths)
-    PL = surf.project(L, offset)
-    PR = surf.project(R, offset)
     n = len(u)
-    verts = np.vstack([PR, PL])
-    faces = [(i, i + 1, n + i + 1, n + i) for i in range(n - 1)]
-    uvs = np.vstack([np.stack([u, np.zeros(n)], 1), np.stack([u, np.ones(n)], 1)])
+    rows = 5
+    verts, uvs = [], []
+    for k in range(rows):
+        f = k / (rows - 1)
+        verts.append(surf.project(R + (L - R) * f, offset))
+        uvs.append(np.stack([u, np.full(n, f)], 1))
+    verts = np.vstack(verts)
+    uvs = np.vstack(uvs)
+    faces = [(k * n + i, k * n + i + 1, (k + 1) * n + i + 1, (k + 1) * n + i)
+             for k in range(rows - 1) for i in range(n - 1)]
     return mesh_obj(name, verts, faces, col, mat, smooth=True, uvs=uvs if uv else None,
                     parent=parent)
 

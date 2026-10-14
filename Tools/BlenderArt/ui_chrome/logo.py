@@ -1,57 +1,53 @@
-"""Title_Logo.png (1200x400, transparent; the title screen draws it at 960x320):
-3D extruded, chisel-bevelled antique-gold "IRON REIGN" (Heading.ttf = Marcellus) under dramatic
-studio light, over large flowing brush calligraphy 铁血王座 (Brush.ttf = Ma Shan Zheng) in ink
-with gold-leaf flecks, and a red seal.
+"""Title_Logo.png (1200x400, transparent; the title screen draws it at 960x320).
 
-Layers (back to front):
-    calligraphy  a thin ink relief plate: glyphs set as a dynamic composition (sizes, tilt, a
-                 rising wave), dry-brush "flying white" streaks from a line-integral convolution
-                 along each stroke, feathered ink edges, gold-leaf flakes (tilted metal facets that
-                 glint) scattered on and around the strokes
-    seal         the 铁血 baiwen impression of Seal.png, smaller, under the last character
-    shadow       the gold letters float 14 mm above a shadow catcher, so their soft shadow is part
-                 of the logo (legible over light mist and dark backgrounds alike)
-    letters      Blender text, extrude 4 mm + 4.4 mm round bevel, antique gold (polished
-                 faces, satin bevels, faint wear), lit by a large softbox above the left letters
-                 (a highlight sweep across the word), a warm rim from the right and the family
-                 studio environment in every bevel
+Back to front:
+    calligraphy  铁血王座 in large flowing brush calligraphy (Brush.ttf = Ma Shan Zheng), set as
+                 a rising, tilting line across the whole width: graded ink (wet strokes near
+                 black #1E1A16, thin and dry parts greyer), flying-white (飞白) dry-brush streaks
+                 that follow each stroke (line-integral convolution along the stroke direction),
+                 a little bleed into the paper fibres at the edges
+    seal         the 铁血 baiwen impression of Seal.png, smaller, lower right
+    letters      "IRON REIGN" (Heading.ttf = Marcellus) in mud-gold (泥金): flat gold powder
+                 with a soft 晕染 (paler top, deeper ochre towards the bottom and into the
+                 outline), a fine ink outline and a narrow silk-coloured keyline outside it, so
+                 the word reads over the black calligraphy and over any background
+No shading, no shine, no shadow: a painted title block on a transparent ground.
 """
 
 import math
-import os
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
-import kit
-import seal
+from ironart import ui_chrome_paint as P
 from ironart import ui_chrome_sdf as S
-from ironart.ui_chrome_maps import Maps
+import seal
 
 NAME = "Title_Logo"
-SPEC = dict(shader_alpha=True, size=(1200, 400), ss=3, spp=24, seed=81, view="Standard", look="None",
-            mesh_step=2)
+SPEC = dict(size=(1200, 400), ss=4, seed=81)
 W, H = 1200, 400
 TEXT = "IRON REIGN"
-TEXT_W = 1000.0            # target width of the gold word (px)
-TEXT_CY = 212.0            # its vertical centre (px)
-LIFT = 10.0
+TEXT_W = 1000.0           # width of the gold word (px)
+TEXT_CY = 210.0           # its vertical centre
+TRACK = 0.075             # letter spacing (fraction of the cap height)
 #: calligraphy layout: (char, cx, cy, height px, rotation deg, shear)
-CALLI = [("铁", 188.0, 186.0, 300.0, -6.0, 0.10), ("血", 460.0, 210.0, 255.0, 3.0, 0.06),
-         ("王", 738.0, 186.0, 240.0, -3.0, 0.10), ("座", 1010.0, 200.0, 290.0, 5.0, 0.08)]
-SEAL = (1132.0, 318.0, 74.0, -4.0)
+CALLI = [("铁", 188.0, 178.0, 330.0, -5.0, 0.08), ("血", 452.0, 214.0, 290.0, 3.0, 0.05),
+         ("王", 735.0, 180.0, 270.0, -3.0, 0.08), ("座", 1012.0, 196.0, 330.0, 4.0, 0.07)]
+SEAL = (1128.0, 330.0, 72.0, -4.0)
+OUTLINE = 3.0             # ink outline of the letters (px)
+KEYLINE = 1.7             # silk keyline outside the ink
 
 
-def font(name):
-    from common import FONTS
-    return os.path.join(FONTS, name)
+def _font(name):
+    from common import font
+    return font(name)
 
 
 def glyph_layer(G):
     """Anti-aliased coverage of the calligraphy composition on the render grid."""
     ss = G.ss
     big = 600
-    f = ImageFont.truetype(font("Brush.ttf"), big)
+    f = ImageFont.truetype(_font("Brush.ttf"), big)
     canvas = Image.new("L", (G.nx, G.ny), 0)
     for ch, cx, cy, hgt, rot, shear in CALLI:
         im = Image.new("L", (big * 2, big * 2), 0)
@@ -59,7 +55,6 @@ def glyph_layer(G):
         im = im.crop(im.getbbox())
         k = hgt * ss / im.height
         im = im.resize((max(1, int(im.width * k)), int(im.height * k)), Image.LANCZOS)
-        # italic lean (calligraphic momentum) then tilt
         w0, h0 = im.size
         im = im.transform((w0 + int(abs(shear) * h0), h0), Image.AFFINE,
                           (1, shear, -shear * h0 if shear > 0 else 0, 0, 1, 0), Image.BICUBIC)
@@ -71,7 +66,7 @@ def glyph_layer(G):
 
 def lic(noise, angle, length, step):
     """Line integral convolution of ``noise`` along per-pixel directions ``angle`` (radians):
-    straight-line samples +-length (pixels) - streaks that follow each brush stroke."""
+    straight-line samples +-length (samples) - streaks that follow each brush stroke."""
     h, w = noise.shape
     ys, xs = np.mgrid[0:h, 0:w].astype(np.float32)
     ca, sa = np.cos(angle), np.sin(angle)
@@ -97,8 +92,7 @@ def _up(a, shape):
 
 def stroke_angle(mask, sigma_px, ss):
     """Stroke direction (radians, along the stroke) from the structure tensor of the blurred
-    glyph mask, computed at 1 sample per target px and upsampled (tensor components, so the
-    interpolation never wraps the angle)."""
+    glyph mask, at 1 sample per target px, upsampled as tensor components."""
     lo = _down(mask, ss)
     b = S.blur(lo, sigma_px)
     gy, gx = np.gradient(b)
@@ -107,208 +101,92 @@ def stroke_angle(mask, sigma_px, ss):
     jxy = S.blur(gx * gy, sigma_px * 1.5)
     c2 = _up(jxx - jyy, mask.shape)
     s2 = _up(2 * jxy, mask.shape)
-    theta = 0.5 * np.arctan2(s2, c2)                     # gradient direction
-    return theta + math.pi / 2
+    return 0.5 * np.arctan2(s2, c2) + math.pi / 2
 
 
-def build(G, variant=None):
+def calligraphy(G, seed):
+    """(alpha, colour) of the ink calligraphy."""
     ss = G.ss
-    m = Maps(G.shape, base="#141110", alpha=0.0)
     g = glyph_layer(G)
-    # ---- dry brush ----------------------------------------------------------------------------
-    rng = np.random.default_rng(5)
+    rng = np.random.default_rng(seed)
     ang = stroke_angle(g, 5.0, ss)
-    noise = rng.random(G.shape).astype(np.float32)
-    noise = S.blur(noise, 0.6 * ss)
-    streak = lic(noise, ang, 9.0 * ss, 1.0 * ss)
+    noise = S.blur(rng.random(G.shape).astype(np.float32), 0.6 * ss)
+    streak = lic(noise, ang, 10.0 * ss, 1.0 * ss)
     streak = (streak - streak.mean()) / (streak.std() + 1e-6)
-    inner = _up(S.blur(_down(g, ss), 2.2), G.shape)        # ~ distance into the stroke
-    patch = S.fbm(G.shape, 55.0 * ss, 9, octaves=3)        # where the brush ran dry
-    dry = kit.smoothstep(0.52, 0.75, patch) * (1 - kit.smoothstep(0.55, 0.95, inner)) + \
-        0.25 * kit.smoothstep(0.6, 0.8, patch)
-    gaps = kit.smoothstep(0.2, 1.1, streak * 0.9 + dry * 1.6 - 0.2)
-    cover = g * (1 - 0.92 * gaps * kit.smoothstep(0.15, 0.4, dry + 0.05 * streak))
-    # feathered ink edge (bleed into fibres)
-    feather = S.blur(cover, 0.35 * ss)
-    cover = np.maximum(cover, 0.6 * feather * (S.fibres(G.shape, G.w * G.h * 0.01, 3 * ss,
-                                                        0.25 * ss, 13, 0.8, 0.6, 1.0) > 0.2))
-    cover = np.clip(cover, 0, 1) * 0.9
-    tone = 0.85 + 0.3 * kit.smoothstep(0.3, 0.9, inner)     # wet strokes are blacker
-    m.paint(np.ones(G.shape, np.float32), "ink")
-    m.tint(np.ones(G.shape, np.float32), 1.6 - 0.6 * tone)
-    m.paint(cover, rough=0.45 + 0.25 * (1 - inner), spec=0.18)
-    z = 0.08 * cover * inner
-
-    # ---- gold-leaf flakes ---------------------------------------------------------------------
-    flakes = np.zeros(G.shape, np.float32)
-    fz = np.zeros(G.shape, np.float32)
-    fl = Image.new("L", (G.nx, G.ny), 0)
-    fd = ImageDraw.Draw(fl)
-    near = S.blur(_down(g, ss), 18.0)
-    idx = 1
-    tilt = {}
-    for _ in range(1400):
-        x, y = 6 + rng.random() * (G.w - 12), 6 + rng.random() * (G.h - 12)
-        p = near[min(int(y), near.shape[0] - 1), min(int(x), near.shape[1] - 1)]
-        on = g[min(int(y * ss), G.ny - 1), min(int(x * ss), G.nx - 1)]
-        if rng.random() > 0.01 + 0.25 * p + 0.35 * on:
-            continue
-        r = (0.5 + rng.random() ** 2 * 3.2) * (1.0 if rng.random() > 0.1 else 2.0)
-        pts = []
-        npt = 5 + int(rng.random() * 4)
-        for k in range(npt):
-            a = 2 * math.pi * k / npt + rng.random() * 0.6
-            rr = r * (0.55 + rng.random() * 0.6)
-            pts.append(((x + rr * math.cos(a)) * ss, (y + rr * math.sin(a)) * ss))
-        fd.polygon(pts, fill=idx)
-        tilt[idx] = (rng.random() - 0.5, rng.random() - 0.5, x, y, r)
-        idx = idx + 1 if idx < 255 else 1
-    lab = np.asarray(fl, np.int32)
-    has = lab > 0
-    tab = np.zeros((256, 5), np.float32)
-    for k, v in tilt.items():
-        tab[k] = v
-    t = tab[lab]
-    fm = has.astype(np.float32)
-    fm = S.blur(fm, 0.35)
-    flakes = np.clip(fm * 1.4, 0, 1)
-    # each flake is a small flat facet tilted at random (up to ~25 deg): they glint one by one
-    fz = np.where(has, 0.14 + 0.45 * (t[..., 0] * (G.X - t[..., 2]) + t[..., 1] * (G.Y - t[..., 3])),
-                  0.0).astype(np.float32)
-    m.paint(flakes, "gold", rough=0.25)
-    z = np.maximum(z, fz * flakes)
-    alpha = np.clip(cover + flakes, 0, 1)
-
-    # ---- seal ------------------------------------------------------------------------------------
-    sx, sy, side, srot = SEAL
-    half = side * 0.75
-    x0, y0 = int((sx - half)), int((sy - half))
-    Gs = S.Grid(2 * half, 2 * half, ss, x0=float(x0), y0=float(y0))
-    sm = seal.build(Gs, side=side, rot=srot, seed=63, cx=sx, cy=sy)
-    j0, i0 = y0 * ss, x0 * ss
-    sl = (slice(j0, j0 + Gs.ny), slice(i0, i0 + Gs.nx))
-    sa = sm.alpha
-    m.base[sl] = m.base[sl] * (1 - sa[..., None]) + sm.base * sa[..., None]
-    for k in ("metal", "rough", "coat", "spec"):
-        getattr(m, k)[sl] = getattr(m, k)[sl] * (1 - sa) + getattr(sm, k) * sa
-    alpha[sl] = np.maximum(alpha[sl], sa)
-    z[sl] = np.maximum(z[sl], sm.height)
-    m.height = z.astype(np.float32)
-    m.alpha = alpha.astype(np.float32)
-    return m
+    inner = _up(S.blur(_down(g, ss), 2.4), G.shape)              # ~ depth inside the stroke
+    patch = P.fbm2(G, 55.0, seed + 9, octaves=3)
+    thin = 1 - P.smoothstep(0.45, 0.9, inner)                      # stroke edges and tails
+    dry = P.smoothstep(0.2, 1.3, patch) * (0.35 + 0.65 * thin) + 0.3 * P.smoothstep(0.9, 1.7, patch)
+    gaps = P.smoothstep(0.15, 0.95, streak * 0.9 + dry * 2.0 - 0.45)
+    cover = g * (1 - 0.97 * gaps * P.smoothstep(0.1, 0.38, dry + 0.06 * streak))
+    # edge bleed into the paper fibres + a faint watery halo
+    feather = S.blur(cover, 0.45 * ss)
+    fib = S.fibres(G.shape, G.w * G.h * 0.008, 3 * ss, 0.3 * ss, seed + 13, 0.8, 0.6, 1.0)
+    cover = np.maximum(cover, 0.55 * feather * (fib > 0.2))
+    halo = np.clip(S.blur(g, 1.4 * ss) - g, 0, 1) * 0.35 * (1 - dry)
+    # ink tone: wet cores near black, pools where the brush paused, greyer dry edges
+    pools = P.smoothstep(0.6, 1.6, P.fbm2(G, 26.0, seed + 15, octaves=2))
+    tone = np.clip(P.smoothstep(0.25, 0.85, inner) * (1 - 0.55 * dry) + 0.35 * pools * inner, 0, 1)
+    alpha = np.clip(np.clip(cover, 0, 1) * (0.74 + 0.24 * tone) + halo, 0, 1)
+    col = P.mix("#5C5249", "ink", 0.25 + 0.75 * tone)
+    col = col * (1.0 + 0.05 * P.fine_grain(G, seed + 14, 0.6) * (1 - tone))[..., None]
+    return alpha, col
 
 
-# =============================================================================================
-# 3D letters, catcher, lights
-# =============================================================================================
-def _gold_material():
-    import bpy
-    from ironart import palette
-    mat = bpy.data.materials.new("AntiqueGold")
-    mat.use_nodes = True
-    nt = mat.node_tree
-    N, Lk = nt.nodes, nt.links
-    p = N["Principled BSDF"]
-    tc = N.new("ShaderNodeTexCoord")
-    nz = N.new("ShaderNodeTexNoise")
-    nz.inputs["Scale"].default_value = 18.0
-    nz.inputs["Detail"].default_value = 6.0
-    Lk.new(tc.outputs["Object"], nz.inputs["Vector"])
-    rr = N.new("ShaderNodeMapRange")
-    rr.inputs["To Min"].default_value = 0.14
-    rr.inputs["To Max"].default_value = 0.34
-    Lk.new(nz.outputs["Fac"], rr.inputs["Value"])
-    Lk.new(rr.outputs[0], p.inputs["Roughness"])
-    col = N.new("ShaderNodeValToRGB")
-    col.color_ramp.elements[0].position = 0.3
-    col.color_ramp.elements[0].color = palette.lin4("#D9A955")
-    col.color_ramp.elements[1].position = 0.75
-    col.color_ramp.elements[1].color = palette.lin4("#F2CF85")
-    Lk.new(nz.outputs["Fac"], col.inputs[0])
-    Lk.new(col.outputs[0], p.inputs["Base Color"])
-    p.inputs["Metallic"].default_value = 1.0
-    # fine wear (micro scratches) as a bump
-    sc = N.new("ShaderNodeTexNoise")
-    sc.inputs["Scale"].default_value = 520.0
-    sc.inputs["Detail"].default_value = 2.0
-    Lk.new(tc.outputs["Object"], sc.inputs["Vector"])
-    bp = N.new("ShaderNodeBump")
-    bp.inputs["Strength"].default_value = 0.03
-    Lk.new(sc.outputs["Fac"], bp.inputs["Height"])
-    Lk.new(bp.outputs[0], p.inputs["Normal"])
-    return mat
+def word_mask(G):
+    """Coverage of the word on the render grid (letter-spaced, centred)."""
+    ss = G.ss
+    px = 400
+    f = ImageFont.truetype(_font("Heading.ttf"), px)
+    # measure each letter for tracking
+    asc, desc = f.getmetrics()
+    cap = f.getbbox("I")[3] - f.getbbox("I")[1]
+    track = TRACK * cap
+    widths = [f.getlength(c) for c in TEXT]
+    total = sum(widths) + track * (len(TEXT) - 1)
+    im = Image.new("L", (int(total + px), px * 2), 0)
+    dr = ImageDraw.Draw(im)
+    x = px / 2
+    for c, w in zip(TEXT, widths):
+        dr.text((x, px / 2), c, font=f, fill=255)
+        x += w + track
+    im = im.crop(im.getbbox())
+    k = TEXT_W * ss / im.width
+    im = im.resize((int(im.width * k), int(im.height * k)), Image.LANCZOS)
+    canvas = Image.new("L", (G.nx, G.ny), 0)
+    canvas.paste(im, (int((G.nx - im.width) / 2), int(TEXT_CY * ss - im.height / 2)))
+    return np.asarray(canvas, np.float32) / 255.0, im.height / ss
 
 
-def extras(variant, G):
-    import bpy
-    from ironart.ui_chrome_render import MM
-    cu = bpy.data.curves.new("Word", "FONT")
-    cu.font = bpy.data.fonts.load(font("Heading.ttf"))
-    cu.body = TEXT
-    cu.align_x = "CENTER"
-    cu.align_y = "CENTER"
-    cu.size = 1.0
-    cu.space_character = 1.04
-    cu.extrude = 0.0
-    ob = bpy.data.objects.new("Word", cu)
-    bpy.context.scene.collection.objects.link(ob)
-    bpy.context.view_layer.update()
-    dims = ob.dimensions
-    k = TEXT_W * MM / max(dims.x, 1e-6)
-    cu.size = k
-    cu.extrude = 4.0 * MM
-    cu.bevel_depth = 4.4 * MM
-    cu.bevel_resolution = 5
-    cu.offset = -2.5 * MM
-    ob.location = (0.0, (H / 2 - TEXT_CY) * MM, (LIFT + 4.0) * MM)
-    ob.data.materials.append(_gold_material())
-    bpy.context.view_layer.update()
-    # shadow catcher under the word only (its shadow falls within ~30 px): a band, so the empty
-    # rest of the canvas costs nothing
-    me = bpy.data.meshes.new("Catcher")
-    hw = (TEXT_W / 2 + 40) * MM
-    y0, y1 = (H / 2 - TEXT_CY - 105) * MM, (H / 2 - TEXT_CY + 95) * MM
-    me.from_pydata([(-hw, y0, 0.0), (hw, y0, 0.0), (hw, y1, 0.0), (-hw, y1, 0.0)], [],
-                   [(0, 1, 2, 3)])
-    c = bpy.data.objects.new("Catcher", me)
-    bpy.context.scene.collection.objects.link(c)
-    c.is_shadow_catcher = True
-    return ob
+def dilate(mask, r, G):
+    """Round dilation by ``r`` target px (gaussian + threshold), anti-aliased."""
+    sig = max(0.5, r * G.ss / 1.6)
+    b = S.blur(mask, sig)
+    th = 0.5 * math.erfc(1.6 / math.sqrt(2))       # value of the blurred step at distance r
+    return P.smoothstep(th * 0.6, th * 1.6, b) if r > 0 else mask
 
 
-def rig(variant):
-    """Family studio environment and sun (softened to 12 deg for a soft letter shadow) + logo
-    drama on the gold word only (light linking: the calligraphy, seal and shadow keep the
-    calibrated family light): a softbox above the left letters (highlight sweep across the
-    word), a warm rim from the right, a cool kicker from the lower left."""
-    import bpy
-    from mathutils import Vector
-    from ironart import palette
-    from ironart import ui_chrome_render as R
-    from ironart.ui_chrome_render import MM
-    R.rig_chrome(ambient=0.14, key_soft=12.0, top=0.7, box=2.6, arc=1.7, ring=0.55)
-    word = bpy.data.objects.get("Word")
-    coll = bpy.data.collections.new("LogoWord")
-    if word is not None:
-        coll.objects.link(word)
-
-    def area(name, loc, size, power, col, target=(0, 0, 0), size_y=None):
-        ld = bpy.data.lights.new(name, "AREA")
-        ld.shape = "RECTANGLE"
-        ld.size = size * MM
-        ld.size_y = (size_y or size) * MM
-        ld.energy = power
-        ld.color = palette.lin(col)
-        ob = bpy.data.objects.new(name, ld)
-        bpy.context.scene.collection.objects.link(ob)
-        ob.location = Vector(loc) * MM
-        d = Vector(target) * MM - ob.location
-        ob.rotation_euler = d.to_track_quat("-Z", "Y").to_euler()
-        ob.light_linking.receiver_collection = coll
-        ob.light_linking.blocker_collection = coll
-        return ob
-    # powers are tiny on purpose: radiance ~ P / (pi * area) must stay ~1-3 so the reflections
-    # sweep across the gold instead of blowing it out
-    area("Softbox", (-330.0, 110.0, 620.0), 520.0, 0.75, "#FFF1DC", (-330.0, 60.0, 0.0), 260.0)
-    area("Rim", (900.0, 60.0, 160.0), 140.0, 0.9, "#FFC98A", (200.0, 0.0, 20.0), 500.0)
-    area("Kick", (-800.0, -260.0, 220.0), 160.0, 0.35, "#BFD3FF", (-200.0, 0.0, 20.0), 400.0)
+def paint(G, variant=None, seed=None):
+    seed = SPEC["seed"] if seed is None else seed
+    C = P.Canvas(G)
+    a, col = calligraphy(G, seed)
+    C.over(a, col)
+    sx, sy, side, rot = SEAL
+    sa, scol = seal.impression(G, sx, sy, side, rot, seed + 30, width=5.0 * side / 104.0,
+                               stretch=2.2, gap=4.0 * side / 104.0, margin=6.5 * side / 104.0)
+    C.over(sa * 0.95, scol)
+    # ---- the gold word -----------------------------------------------------------------------
+    m, hpx = word_mask(G)
+    key = dilate(m, OUTLINE + KEYLINE, G)
+    ink = dilate(m, OUTLINE, G)
+    C.over(key, P.mix("silk", "lead_white", 0.2), 0.88)
+    C.over(ink, "ink")
+    y = (G.Y - (TEXT_CY - hpx / 2)) / hpx
+    y = np.broadcast_to(y, G.shape)
+    gold = P.gold_field(G, seed + 5, grain=0.04, flecks=0.05)
+    gold = P.mix(gold, "#E3C77F", 0.45 * (1 - P.smoothstep(0.0, 0.55, y)))
+    gold = P.mix(gold, "#9A7432", 0.45 * P.smoothstep(0.45, 1.05, y))
+    inner = S.blur(m, 1.6 * G.ss)
+    gold = P.mix(gold, "#8E6A2C", 0.55 * (1 - P.smoothstep(0.55, 0.98, inner)))
+    C.over(m, gold)
+    return C.rgba()

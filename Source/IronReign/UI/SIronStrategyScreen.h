@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Layout/Margin.h"
 #include "Sim/IronBattle.h"
 #include "UObject/WeakObjectPtr.h"
 #include "UObject/WeakObjectPtrTemplates.h"
@@ -47,7 +48,9 @@ enum class EIronStrategyFlow : uint8
  * own backdrops, so the 3D scene only shows through the map area), and every frame the screen feeds the map the day
  * fraction, the month's season and the march targets (the map view pushes hover and selection). Until the scene is
  * ready, without assets or in 2D mode the painted 2D map is shown exactly as before. Opening a player battle hides the
- * map (the battle screen shows its own scene or the 2D board); coming back re-activates it.
+ * map (the battle screen shows its own scene or the 2D board); coming back re-activates it. The map's camera frames the
+ * map area: the screen measures how much of the viewport its panels cover and passes it to
+ * AIronWorldMap3D::SetFramingInsets whenever the layout changes (also before the map is shown).
  */
 class IRONREIGN_API SIronStrategyScreen : public SCompoundWidget
 {
@@ -102,6 +105,8 @@ private:
 	AIronWorldMap3D* FindWorldMap();
 	/** Hides the 3D map (before the battle screen opens); the next frame on this screen shows it again. */
 	void HideWorldMap();
+	/** Passes the viewport fractions the panels cover around the map view to the map's camera when they changed. */
+	void UpdateWorldMapFraming(AIronWorldMap3D& Map);
 
 	// Turn flow
 	void SyncFlowWithGame();
@@ -156,6 +161,15 @@ private:
 	/** Month whose season the 3D map shows, and the march target cities last sent to it. */
 	int32 WorldMapMonth = 0;
 	TArray<int32> WorldMapTargets;
+	/** Framing insets (viewport fractions) last given to the map, and that map (a respawned map is framed afresh). */
+	FMargin WorldMapInsets = FMargin(0.0f);
+	TWeakObjectPtr<AIronWorldMap3D> FramedWorldMap;
+	/**
+	 * FIronSession::GetCampaignSerial() of the campaign this screen was built for. After a load or a new game the
+	 * session notifies before SIronRoot replaces this screen: the old screen then leaves the new campaign (and the 3D
+	 * map, which the player controller resyncs or rebuilds) alone.
+	 */
+	int32 BuiltCampaignSerial = -1;
 
 	int32 SelectedCity = -1;
 	/** FArmy::Id selected on the 3D map (-1 for none). */
