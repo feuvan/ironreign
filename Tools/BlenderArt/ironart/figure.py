@@ -87,36 +87,66 @@ def _smax(vals, k):
 
 
 def head_masses(p):
-    """Anatomical masses (centre, radii, rot_x) for :class:`HeadParams` ``p`` (subject's left = +x)."""
-    j, ch, cb, br = p.jaw, p.chin, p.cheekbone, p.brow
-    nl, nw, nb = p.nose_len, p.nose_width, p.nose_bridge
+    """Base skull/jaw masses (centre, radii, rot_x) for :class:`HeadParams` ``p`` (subject's
+    left = +x).  Facial features are *not* masses (an ellipsoid union makes lumps and creases):
+    they are smooth additive relief, see :func:`face_relief`."""
+    j, ch = p.jaw, p.chin
     W = p.width / 0.150
     D = p.depth / 0.190
     Hh = p.height / 0.232
-    m = [
+    return [
         ((0, 0.012 * D, 0.022 * Hh), (0.074 * W, 0.097 * D, 0.100 * Hh), 0),        # cranium
-        ((0, -0.026 * D, 0.026 * Hh), (0.066 * W, 0.068 * D, 0.062 * Hh), 0),       # forehead
-        ((0, -0.020 * D, -0.030 * Hh), (0.058 * W, 0.074 * D, 0.060 * Hh), 0),      # mid face
-        ((0, -0.030 * D, -0.062 * Hh), (0.054 * W * j, 0.062 * D, 0.052 * Hh), 0),  # mandible
-        ((0.040 * W * j, 0.0, -0.066 * Hh), (0.022 * j, 0.036, 0.030), 0),          # jaw angle L
-        ((-0.040 * W * j, 0.0, -0.066 * Hh), (0.022 * j, 0.036, 0.030), 0),         # jaw angle R
-        ((0, -0.068 * D, -0.094 * Hh), (0.021 * ch, 0.020 * ch, 0.017), 0),         # chin
-        ((0.042 * W, -0.048 * D, -0.004), (0.020 * cb, 0.024, 0.015), 0),           # cheekbone L
-        ((-0.042 * W, -0.048 * D, -0.004), (0.020 * cb, 0.024, 0.015), 0),          # cheekbone R
-        ((0, -0.072 * D, 0.025), (0.054 * W, 0.020 * br, 0.012), 0),                # brow ridge
-        ((0, -0.066 * D, -0.064), (0.026, 0.020, 0.018 * p.lips), 0),               # muzzle
-        ((0, -0.082 * D, -0.058), (0.0185, 0.0085, 0.0062 * p.lips), 0),            # upper lip
-        ((0, -0.079 * D, -0.0705), (0.0165, 0.0085, 0.0058 * p.lips), 0),           # lower lip
-        ((0, -0.077 * D - 0.004 * nb, -0.017 * nl), (0.0078 * nw, 0.0095 * nb, 0.026 * nl),
-         math.radians(-28)),                                                         # nose bridge
-        ((0, -0.097 * D - 0.003 * nl, -0.035 * nl), (0.0088 * nw, 0.0088, 0.0085), 0),  # nose tip
-        ((0.012 * nw, -0.082 * D, -0.039 * nl), (0.0066 * nw, 0.0076, 0.0058), 0),   # ala L
-        ((-0.012 * nw, -0.082 * D, -0.039 * nl), (0.0066 * nw, 0.0076, 0.0058), 0),  # ala R
+        ((0, -0.024 * D, 0.028 * Hh), (0.066 * W, 0.066 * D, 0.064 * Hh), 0),       # forehead
+        ((0, -0.020 * D, -0.030 * Hh), (0.062 * W, 0.072 * D, 0.062 * Hh), 0),      # mid face
+        ((0, -0.020 * D, -0.058 * Hh), (0.052 * W * j, 0.069 * D, 0.053 * Hh), 0),  # mandible
+        ((0, -0.054 * D, -0.084 * Hh), (0.020 * ch, 0.029 * ch, 0.022), 0),         # chin base
     ]
-    return m
 
 
-def head(params=None, segments=320, rings=224, mat="Skin", blend=0.008):
+def face_relief(p, x, z, d):
+    """Smooth additive relief (radial metres) of the facial features at base-surface points
+    (x, z) with unit ray directions ``d``: brow ridge, cheekbones, nose (bridge rising from the
+    root to a 20 mm tip, rounded tip, alae on the cheeks, sharp fall-off to the subnasale),
+    philtrum, lips, chin boss.  Proportions: brow to nose base ~58 mm, philtrum ~14 mm, mouth
+    50 mm wide at z -56 mm."""
+    fw = np.clip((-d[:, 1] - 0.35) / 0.4, 0, 1)
+    fs = np.clip((-d[:, 1] - 0.05) / 0.4, 0, 1)
+    nl, nw, nb = p.nose_len, p.nose_width, p.nose_bridge
+    ax = np.abs(x)
+    off = np.zeros_like(x)
+    # brow ridge (broad, soft) + nasion dip
+    off += 0.0032 * p.brow * _g2(x, z - 0.024, 0.040, 0.0075) * fw
+    off -= 0.0030 * _g2(x, z - 0.011, 0.006, 0.005) * fw
+    # cheekbones (front-side)
+    off += 0.0050 * p.cheekbone * _g2(ax - 0.043, z + 0.008, 0.015, 0.012) * fs
+    # nose
+    z_root, z_tip = 0.009, -0.029 * nl
+    span = z_root - z_tip
+    s = (z_root - z) / span
+    h_bridge = (0.0025 + 0.0165 * nb * np.clip(s, 0, 1) ** 1.2) * np.clip(s / 0.15 + 1.0, 0, 1)
+    below = np.clip((s - 1.0) * span, 0, None)
+    h_bridge = h_bridge * np.exp(-(below / 0.0042) ** 2)
+    wid = (0.0050 + 0.0034 * np.clip(s, 0, 1.1) ** 2) * nw
+    off += h_bridge * np.exp(-0.5 * (x / wid) ** 2) * fw
+    off += 0.0022 * _g2(x, z - (z_tip + 0.0005), 0.0062 * nw, 0.0052) * fw            # tip ball
+    off += 0.0062 * _g2(ax - 0.0112 * nw, z - (z_tip - 0.0035), 0.0050 * nw, 0.0046) * fw  # alae
+    off -= 0.0014 * _g2(ax - 0.0172 * nw, z - (z_tip - 0.002), 0.0016, 0.0052) * fw  # alar crease
+    # mouth: dental-arch fullness, philtrum, lips, crease, corners
+    MZ = -0.0562
+    off += 0.0060 * _g2(x, z + 0.054, 0.024, 0.017) * fw
+    off -= 0.0007 * _g2(x, z + 0.0435, 0.0030, 0.0050) * fw
+    off += 0.0004 * _g2(ax - 0.0042, z + 0.0435, 0.0016, 0.0050) * fw
+    off += 0.0026 * p.lips * _g2(x, z + 0.0508, 0.0185, 0.0042) * fw
+    off += 0.0030 * p.lips * _g2(x, z + 0.0620, 0.0155, 0.0045) * fw
+    off -= 0.0016 * _g2(x, z - MZ, 0.024, 0.0011) * fw
+    off -= 0.0013 * _g2(ax - 0.0248, z - MZ, 0.0032, 0.0040) * fw
+    # chin boss and the sulcus above it
+    off += 0.0020 * p.chin * _g2(x, z + 0.087, 0.012, 0.009) * fw
+    off -= 0.0012 * _g2(x, z + 0.0735, 0.013, 0.0032) * fw
+    return off
+
+
+def head(params=None, segments=320, rings=224, mat="Skin", blend=0.014):
     """Sculpt the head as a smooth union of anatomical masses evaluated along radial rays from
     the skull centre (the head is star-shaped from there), then carve eye sockets and add
     detail offsets.  Returns ``(MeshBuilder, landmarks)``."""
@@ -129,6 +159,8 @@ def head(params=None, segments=320, rings=224, mat="Skin", blend=0.008):
     masses = head_masses(p)
     dists = [_exit_dist(d, c, np.array(R), rx) for (c, R, rx) in masses]
     r = _smax(dists, blend)
+    P = d * r[:, None]
+    r = r + face_relief(p, P[:, 0], P[:, 2], d)
     P = d * r[:, None]
     x, y, z = P[:, 0], P[:, 1], P[:, 2]
     fw = np.clip((-d[:, 1] - 0.35) / 0.4, 0, 1)                 # front weight
@@ -172,16 +204,12 @@ def head(params=None, segments=320, rings=224, mat="Skin", blend=0.008):
     x, y, z = P[:, 0], P[:, 1], P[:, 2]
     for sgn in (1, -1):
         # brow-to-lid concavity and the cheek pad under the lower lid
-        off -= 0.004 * p.socket * (1 + 0.25 * p.age) * _g2(x - sgn * (es + 0.002), z - ez - 0.016, 0.014, 0.006) * fw
+        off -= 0.0028 * p.socket * (1 + 0.25 * p.age) * _g2(x - sgn * (es + 0.002), z - ez - 0.015, 0.014, 0.006) * fw
         off += 0.0012 * _g2(x - sgn * (es + 0.004), z - ez + 0.02, 0.012, 0.004) * fw
-    off -= 0.0035 * _g2(x, z - 0.008, 0.006, 0.006) * fw          # nasion dip
-    off -= 0.0018 * _g2(x, z + 0.064, 0.02, 0.0014) * fw          # mouth line
     for sgn in (1, -1):
-        off -= 0.0020 * _g2(x - sgn * 0.021, z + 0.064, 0.004, 0.005) * fw    # mouth corners
-        off += (0.0012 + 0.0025 * p.age) * _g2(x - sgn * 0.025, z + 0.048, 0.0035, 0.012) * fw  # naso-labial
-        off -= (0.002 + 0.003 * p.age) * _g2(x - sgn * 0.045, z + 0.045, 0.013, 0.013)  # cheek hollow
+        off += (0.0008 + 0.0020 * p.age) * _g2(x - sgn * 0.026, z + 0.044, 0.0032, 0.011) * fw  # naso-labial
+        off -= (0.0008 + 0.0020 * p.age) * _g2(x - sgn * 0.046, z + 0.042, 0.012, 0.012)  # cheek hollow
         off -= 0.003 * _g2(np.abs(x) - 0.064, z - 0.03, 0.01, 0.018) * (np.sign(x) == sgn)  # temples
-    off -= 0.0025 * _g2(x, z + 0.083, 0.014, 0.004) * fw          # mentolabial sulcus
     rng = np.random.default_rng(p.seed)
     ph = rng.uniform(0, TAU, 2)
     off += 0.0005 * np.sin(x * 120 + ph[0]) * np.sin(z * 90 + ph[1]) * fw
@@ -190,7 +218,7 @@ def head(params=None, segments=320, rings=224, mat="Skin", blend=0.008):
     for i, co in enumerate(newV):
         mb.verts[s0 + i] = Vector(co)
     x, y, z = newV[:, 0], newV[:, 1], newV[:, 2]
-    tip_z = -0.034 * p.nose_len
+    tip_z = -0.029 * p.nose_len
     bl = np.clip(_g2(np.abs(x) - 0.042, z + 0.022, 0.016, 0.014) * 0.8
                  + _g2(x, z - tip_z, 0.01, 0.01) * 0.6, 0, 1)
     for i, val in enumerate(bl):
@@ -212,7 +240,7 @@ def head(params=None, segments=320, rings=224, mat="Skin", blend=0.008):
 
     rz_top = float(newV[:, 2].max())
     rz_bot = float(-newV[:, 2].min())
-    mz = -0.064
+    mz = -0.0562
     lm = {
         "params": p,
         "eye_l": eye_specs[0][0],                                      # subject's left = +x
@@ -220,7 +248,8 @@ def head(params=None, segments=320, rings=224, mat="Skin", blend=0.008):
         "eye_specs": eye_specs,
         "nose_tip": Vector((0, surf_y(0, tip_z), tip_z)),
         "mouth": Vector((0, surf_y(0, mz), mz)),
-        "chin": Vector((0, surf_y(0, -0.095), -0.095)),
+        "chin": Vector((0, surf_y(0, -0.092), -0.092)),
+        "subnasale": Vector((0, surf_y(0, tip_z - 0.007), tip_z - 0.007)),
         "brow_z": 0.024,
         "forehead": Vector((0, surf_y(0, 0.06), 0.06)),
         "crown": Vector((0, 0.012, rz_top)),

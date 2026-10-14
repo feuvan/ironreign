@@ -48,7 +48,8 @@ namespace IronBattleBoard3DDetail
 	constexpr double FlagScale = 0.38;
 	constexpr double FlagBackCm = -170.0;
 	constexpr double FlagSideCm = 185.0;
-	constexpr double UnitPickRadiusCm = 260.0;
+	constexpr double UnitPickRadiusCm = 230.0;
+	constexpr double MaxPlinthLiftCm = 60.0;
 	constexpr float FlashEmissive = 4.0f;
 
 	// Camera.
@@ -131,20 +132,20 @@ namespace IronBattleBoard3DDetail
 	/** Index = IronBoard3D::ELayer. */
 	const FLayerStyle LayerStyles[LayerCount] = {
 		// Grid: faint warm lines along the hex edges of the playable board.
-		{0xF4E9D0, 0.26f, 0.985f, 0.03f, 0.0f, 1.0f, 0.0f, 1.2f, 4.0f, 1, 1.0f},
+		{0xF4E9D0, 0.26f, 0.985f, 0.03f, 0.0f, 1.0f, 0.0f, 1.2f, 12.0f, 1, 1.0f},
 		// Burning: smouldering ground glow.
-		{0xFF6A1E, 0.9f, 0.72f, 0.3f, 0.5f, 0.55f, 6.0f, 2.2f, 5.0f, 2, 0.96f},
+		{0xFF6A1E, 0.9f, 0.72f, 0.3f, 0.5f, 0.55f, 6.0f, 2.2f, 13.0f, 2, 0.96f},
 		// Reachable: calm blue.
-		{0x5AA9FF, 0.85f, 0.86f, 0.07f, 0.26f, 0.8f, 1.6f, 2.4f, 7.0f, 3, 0.97f},
+		{0x5AA9FF, 0.85f, 0.86f, 0.07f, 0.26f, 0.8f, 1.6f, 2.4f, 15.0f, 3, 0.97f},
 		// Duel: orange.
-		{0xFFAA3C, 0.95f, 0.86f, 0.09f, 0.22f, 0.55f, 2.6f, 2.8f, 8.0f, 4, 0.97f},
+		{0xFFAA3C, 0.95f, 0.86f, 0.09f, 0.22f, 0.55f, 2.6f, 2.8f, 16.0f, 4, 0.97f},
 		// Tactic: purple.
-		{0xB77CFF, 0.95f, 0.86f, 0.09f, 0.24f, 0.55f, 2.6f, 2.8f, 9.0f, 5, 0.97f},
+		{0xB77CFF, 0.95f, 0.86f, 0.09f, 0.24f, 0.55f, 2.6f, 2.8f, 17.0f, 5, 0.97f},
 		// Attack: vermilion, pulsing faster.
-		{0xFF4B3A, 0.95f, 0.86f, 0.09f, 0.26f, 0.55f, 3.0f, 3.0f, 10.0f, 6, 0.97f},
+		{0xFF4B3A, 0.95f, 0.86f, 0.09f, 0.26f, 0.55f, 3.0f, 3.0f, 18.0f, 6, 0.97f},
 	};
-	const FLayerStyle HoverStyle = {0xFFF6E0, 0.9f, 0.93f, 0.05f, 0.1f, 1.0f, 0.0f, 2.0f, 11.0f, 7, 1.0f};
-	const FLayerStyle SelectStyle = {0xFFD45E, 1.0f, 0.9f, 0.08f, 0.14f, 0.7f, 2.0f, 3.2f, 12.0f, 8, 1.0f};
+	const FLayerStyle HoverStyle = {0xFFF6E0, 0.9f, 0.93f, 0.05f, 0.1f, 1.0f, 0.0f, 2.0f, 20.0f, 7, 1.0f};
+	const FLayerStyle SelectStyle = {0xFFD45E, 1.0f, 0.9f, 0.08f, 0.14f, 0.7f, 2.0f, 3.2f, 21.0f, 8, 1.0f};
 
 	// Effect colours (sRGB).
 	constexpr uint32 HitRgb = 0xFF2A1A;
@@ -1040,12 +1041,15 @@ void AIronBattleBoard3D::BuildUnits(const IronSim::FBattle& Battle)
 
 		const FLinearColor SideColor = IronWorld::ColorFromRGB(BattleSetup.Sides[Visual.Side].Color);
 		float TopM = 2.5f;
+		// The squad and its pennant stand on top of the plinth (a thin disc; capped in case a model is taller).
+		double PlinthTopCm = 0.0;
 		if (UnitBaseMesh != nullptr)
 		{
 			const double Scale = ModelParams.ScaleOf(TEXT("Unit_Base"));
 			Visual.Base = CreateMeshComponent(UnitBaseMesh.Get(), UnitRoot);
 			Visual.Base->SetRelativeRotation(ModelRotation);
 			Visual.Base->SetRelativeScale3D(FVector(Scale));
+			PlinthTopCm = FMath::Clamp(static_cast<double>(MeshTopM(UnitBaseMesh.Get(), Scale)) * IronWorld::CmPerMetre, 0.0, MaxPlinthLiftCm);
 		}
 		UStaticMesh* FigureMesh = UnitMeshes.IsValidIndex(Visual.TroopType) ? UnitMeshes[Visual.TroopType].Get() : nullptr;
 		for (int32 Fallback = 0; FigureMesh == nullptr && Fallback < UnitMeshes.Num(); ++Fallback)
@@ -1056,18 +1060,18 @@ void AIronBattleBoard3D::BuildUnits(const IronSim::FBattle& Battle)
 		{
 			const double Scale = ModelParams.ScaleOf(UnitModels[Visual.TroopType]);
 			Visual.Figure = CreateMeshComponent(FigureMesh, UnitRoot);
-			Visual.Figure->SetRelativeRotation(ModelRotation);
+			Visual.Figure->SetRelativeLocationAndRotation(FVector(0.0, 0.0, PlinthTopCm), ModelRotation);
 			Visual.Figure->SetRelativeScale3D(FVector(Scale));
-			TopM = FMath::Max(TopM, MeshTopM(FigureMesh, Scale));
+			TopM = FMath::Max(TopM, static_cast<float>(PlinthTopCm * IronWorld::MetresPerCm) + MeshTopM(FigureMesh, Scale));
 		}
 		if (Visual.bCommander && FlagMesh != nullptr)
 		{
 			// A small pennant behind the squad, on its right: the commander reads at a glance.
 			const double Scale = FlagScale * ModelParams.ScaleOf(TEXT("Flag"));
 			Visual.Flag = CreateMeshComponent(FlagMesh.Get(), UnitRoot);
-			Visual.Flag->SetRelativeLocationAndRotation(FVector(FlagBackCm, FlagSideCm, 0.0), ModelRotation);
+			Visual.Flag->SetRelativeLocationAndRotation(FVector(FlagBackCm, FlagSideCm, PlinthTopCm), ModelRotation);
 			Visual.Flag->SetRelativeScale3D(FVector(Scale));
-			TopM = FMath::Max(TopM, MeshTopM(FlagMesh.Get(), Scale));
+			TopM = FMath::Max(TopM, static_cast<float>(PlinthTopCm * IronWorld::MetresPerCm) + MeshTopM(FlagMesh.Get(), Scale));
 		}
 		Visual.TopM = TopM;
 
@@ -1083,7 +1087,7 @@ void AIronBattleBoard3D::BuildUnits(const IronSim::FBattle& Battle)
 			{
 				Visual.Materials.AddUnique(Tint);
 			}
-			if (Part == Visual.Flag)
+			if (Part == Visual.Flag.Get())
 			{
 				continue;
 			}

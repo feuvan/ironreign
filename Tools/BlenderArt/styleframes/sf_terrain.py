@@ -60,7 +60,7 @@ def make_fields():
     plains = 0.012 + 0.010 * T.fbm_at(x, y, 60, 4, seed=SEED + 8)
     height = (plains + foot + hills_c) * LOW + mountains
     # --- rivers: main river from the range to the bay, tributary snapped onto it
-    river_pts = T.meander([(212, 104), (232, 150), (262, 200), (318, 228), (360, 250), (398, 262),
+    river_pts = T.meander([(222, 128), (238, 158), (262, 200), (318, 228), (360, 250), (398, 262),
                            (416, 266)], 5, 9, 45, SEED + 2)
     d_rv, t_rv = T.polyline_distance(h, w, river_pts, 1.0 / SS, return_t=True)
     t_rv = T.smooth_t(t_rv, d_rv, 4.0)
@@ -78,7 +78,8 @@ def make_fields():
     edge_main = np.clip(1.0 - np.abs(d_rv - (half_w + 0.6)) / 0.7, 0, 1)
     edge_trib = np.clip(1.0 - np.abs(d_tr - (tw + 0.6)) / 0.7, 0, 1)
     bank = np.maximum(edge_main, edge_trib) * (1 - river) * (land > 0.5)
-    valley = np.exp(-(np.minimum(d_rv, d_tr) / 7.0) ** 2)
+    # valleys carve the lowland only (a carve inside the range made a black notch)
+    valley = np.exp(-(np.minimum(d_rv, d_tr) / 7.0) ** 2) * (1 - T.smoothstep(0.2, 0.6, rng_mask))
     height = height * (1 - 0.65 * valley) - 0.004 * river
     height = np.where(land > 0.5, np.maximum(height, 0.004), -0.02)
     # clamp the height gradient (no spike vertices / one-pixel cliffs)
@@ -153,8 +154,13 @@ def main():
     with scene.timer("fields", times):
         f = make_fields()
         hn = f["height"] / max(1e-6, f["height"].max())
+        # snow line from the range's own height distribution: caps on the top ~15 % of the range
+        # (shadowed flanks, noise and slope shedding leave 3-6 % reading as white)
+        snow_start = float(np.percentile(hn[f["mountains"] > 0.5], 85))
         albedo = T.paint_albedo(hn, f["land"], f["moisture"], f["steppe"], f["forest"],
-                                f["river"], seed=SEED, bank=f["bank"], px=SS)
+                                f["river"], seed=SEED, bank=f["bank"], px=SS,
+                                params={"snow_start": snow_start})
+        print("[ironart] snow line", round(snow_start, 3))
         alb_path = os.path.join(out, "terrain_albedo.png")
         a4 = np.dstack([albedo, np.ones(albedo.shape[:2], np.float32)])
         post.save(a4, alb_path, opaque=True)

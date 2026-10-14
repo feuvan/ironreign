@@ -74,11 +74,11 @@ MAT = {
     "eye_white": "#D8D0C4",
     "iris": "#3A2416",
     # terrain / map (RTK IX relief map look)
-    "plain": "#98A26C",           # sage lowland (renders ~#97A26E, hue 75-85)
+    "plain": "#94A26E",           # sage lowland (renders ~#97A26E, hue 75-85)
     "grass": "#7E9A5C",           # sage green
     "meadow": "#93A867",
-    "steppe": "#C8B282",          # sandy steppe
-    "desert": "#D4BC8A",
+    "steppe": "#B5A06E",          # sandy steppe (renders ~#C7AC76 under the map sun)
+    "desert": "#BFA776",
     "hill": "#949A6A",
     "rock": "#8A8578",
     "mountain": "#7C838C",        # blue-grey mountain
