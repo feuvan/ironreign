@@ -15,6 +15,7 @@ Options
     --spp N         override samples          --scale F   override master scale (preview)
     --out DIR       preview / intermediates folder (default $IRONART_OUT/scenes)
     --no-save       do not write Content/Data or ArtSource
+    --no-manifest   do not touch ArtSource/manifest.json (batch the update yourself)
 
 Each scene module ``sc_<name>.py`` defines ``SPEC`` (name, art, master, size, ss, spp, seed) and
 ``build(r)`` (builds geometry, lights, camera and sky; returns a dict with ``camera``, optional
@@ -59,12 +60,14 @@ def run_one(name, out_dir, preview=False, spp=None, scale=None, save=True):
         k = scale or 0.5
         w, h, ss = int(w * k), int(h * k), 1
     r = L.setup(w, h, ss=ss, spp=spp or (None if not preview else spec.get("preview_spp", 16)),
-                preview=preview, seed=spec.get("seed", 1))
+                preview=preview, seed=spec.get("seed", 1), look=spec.get("look", L.RECIPE["look"]),
+                light_paths=spec.get("light_paths"))
     if not preview and spec.get("spp") and not spp:
         bpy.context.scene.cycles.samples = spec["spp"]
         r["samples"] = spec["spp"]
     r["preview"] = preview
     r["name"] = name
+    r["brush_scale"] = float(w) / float(spec["size"][0])
     d = mod.build(r) or {}
     t.lap("build")
     n_fog = S.apply_fog()
@@ -74,11 +77,34 @@ def run_one(name, out_dir, preview=False, spp=None, scale=None, save=True):
         x, y, z = L.screen_pos(cam, d["beams"])
         if z > 0:
             beams = (x, y)
-    L.compositor(r, beams_source=beams, beams=d.get("beams_cfg"), glow=d.get("glow"),
-                 kuwahara=d.get("kuwahara"), lens=d.get("lens", 0.0))
-    raw = os.path.join(out_dir, "%s_raw.png" % name)
-    secs = scene.render(raw)
+    comp_kw = dict(beams_source=beams, beams=d.get("beams_cfg"), glow=d.get("glow"),
+                   kuwahara=d.get("kuwahara"), lens=d.get("lens", 0.0))
+    pdir = os.path.join(out_dir, "%s_passes" % name)
+    os.makedirs(pdir, exist_ok=True)
+    L.passes_compositor(pdir)
+    t0 = time.time()
+    bpy.context.scene.render.filepath = os.path.join(pdir, "composite.png")
+    scene.check_render_settings()
+    bpy.ops.render.render(write_still=False)
+    secs = time.time() - t0
+    print("[scenes] %s rendered %dx%d %d spp in %.1fs" % (name, bpy.context.scene.render.resolution_x,
+                                                          bpy.context.scene.render.resolution_y,
+                                                          r["samples"], secs))
     t.lap("render")
+    C = L.load_exr(os.path.join(pdir, "beauty0001.exr"))
+    dn = d.get("denoise", {})
+    if dn is not False:
+        A_ = L.load_exr(os.path.join(pdir, "albedo0001.exr"))
+        N_ = L.load_exr(os.path.join(pdir, "normal0001.exr"))
+        Z_ = L.load_exr(os.path.join(pdir, "depth0001.exr"))
+        D = L.denoise(C, A_, N_, Z_[..., :1], **(dn or {}))
+    else:
+        D = C[..., :3]
+    t.lap("denoise")
+    dexr = L.save_exr(D, os.path.join(pdir, "denoised.exr"))
+    raw = os.path.join(out_dir, "%s_raw.png" % name)
+    L.post_render(dexr, raw, r, depth_path=os.path.join(pdir, "depth0001.exr"), **comp_kw)
+    t.lap("post")
     img = L.load16(raw)
     fin = L.finish(img, d.get("grade"), seed=spec.get("seed", 1), master_scale=img.shape[1] / 1280.0)
     if ss > 1:
@@ -95,7 +121,9 @@ def run_one(name, out_dir, preview=False, spp=None, scale=None, save=True):
         one = L.downsample(fin, (fin.shape[1] // 2, fin.shape[0] // 2)) if spec.get("master") else fin
         L.save_png(L.to_rgba8(one, spec.get("seed", 1)), os.path.join(pv, "%s.png" % name))
     t.lap("save")
-    info = dict(scene=name, render_s=round(secs, 1), times=t.t, samples=r["samples"],
+    q = L.qa(fin if not spec.get("master") else L.downsample(fin, (fin.shape[1] // 2, fin.shape[0] // 2)), name)
+    print("[scenes] QA %s %s" % (name, json.dumps(q)))
+    info = dict(scene=name, render_s=round(secs, 1), times=t.t, samples=r["samples"], qa=q,
                 render_size=[bpy.context.scene.render.resolution_x, bpy.context.scene.render.resolution_y],
                 fogged_materials=n_fog,
                 outputs={k: dict(path=os.path.relpath(p, L.REPO), size=list(sz), kB=round(kb, 1))
@@ -118,7 +146,7 @@ def main():
     for n in names:
         infos.append(run_one(n, out, preview, spp, scale, save))
     masters = [i["outputs"]["master"]["path"] for i in infos if "master" in i.get("outputs", {})]
-    if masters and save and not preview:
+    if masters and save and not preview and "--no-manifest" not in scene.args():
         rel = [os.path.relpath(os.path.join(L.REPO, p), L.ART_SOURCE).replace(os.sep, "/") for p in masters]
         ver, added = L.manifest_add(rel)
         print("[scenes] ArtSource/manifest.json version %d (+%d files)" % (ver, len(added)))

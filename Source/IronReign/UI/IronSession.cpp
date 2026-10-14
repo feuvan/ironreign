@@ -4,7 +4,11 @@
 #include "UI/IronAudio.h"
 #include "UI/IronStyle.h"
 #include "UI/IronUI.h"
+#include "World/IronBattleBoard3D.h"
+#include "World/IronWorldMap3D.h"
 
+#include "Engine/GameViewportClient.h"
+#include "Engine/World.h"
 #include "HAL/FileManager.h"
 #include "HAL/PlatformMisc.h"
 #include "HAL/PlatformTime.h"
@@ -32,6 +36,55 @@ namespace IronSessionDetail
 	FString DisplayPath(const FString& Path)
 	{
 		return FPaths::ConvertRelativePathToFull(Path);
+	}
+
+	/**
+	 * A missing-assets answer is asked again after this many seconds: the editor may finish the asset import while a PIE
+	 * session runs. Rare on purpose (each check tries to load the marker asset synchronously).
+	 */
+	constexpr double AssetRecheckSeconds = 30.0;
+
+	const char* PresentationModeName(EIronPresentationMode Mode)
+	{
+		switch (Mode)
+		{
+		case EIronPresentationMode::ThreeD:
+			return "3d";
+		case EIronPresentationMode::TwoD:
+			return "2d";
+		case EIronPresentationMode::Auto:
+			break;
+		}
+		return "auto";
+	}
+
+	EIronPresentationMode ParsePresentationMode(const std::string& Name)
+	{
+		if (Name == "3d")
+		{
+			return EIronPresentationMode::ThreeD;
+		}
+		if (Name == "2d")
+		{
+			return EIronPresentationMode::TwoD;
+		}
+		return EIronPresentationMode::Auto;
+	}
+
+	/** Cached availability: a positive answer is final, a negative one is re-checked after AssetRecheckSeconds. */
+	bool CachedAvailability(bool& bInOutAvailable, double& InOutCheckedAt, bool (*Check)())
+	{
+		if (bInOutAvailable)
+		{
+			return true;
+		}
+		const double Now = FPlatformTime::Seconds();
+		if (InOutCheckedAt < 0.0 || Now - InOutCheckedAt >= AssetRecheckSeconds)
+		{
+			InOutCheckedAt = Now;
+			bInOutAvailable = Check();
+		}
+		return bInOutAvailable;
 	}
 
 	/** UTF-8 bytes (optional BOM) to a std::string for IronSim::FJson. */
@@ -190,6 +243,7 @@ bool FIronSession::StartNewGame(const FString& ScenarioPath, int32 FactionIndex,
 		return false;
 	}
 	bHasGame = true;
+	++CampaignSerial;
 	UE_LOG(LogIronReign, Log, TEXT("New campaign: %s, faction %d, difficulty %s."), *IronSessionDetail::DisplayPath(ScenarioPath), FactionIndex, UTF8_TO_TCHAR(IronSim::EnumName(Difficulty)));
 	NotifyStateChanged();
 	return true;
@@ -198,6 +252,7 @@ bool FIronSession::StartNewGame(const FString& ScenarioPath, int32 FactionIndex,
 void FIronSession::EndGame()
 {
 	bHasGame = false;
+	++CampaignSerial;
 	Campaign.State = IronSim::FGameState();
 	NotifyStateChanged();
 }
@@ -302,6 +357,7 @@ bool FIronSession::LoadFromSlot(int32 Slot, FText& OutError)
 		return false;
 	}
 	bHasGame = true;
+	++CampaignSerial;
 	UE_LOG(LogIronReign, Log, TEXT("Loaded the campaign from slot %d."), Slot);
 	NotifyStateChanged();
 	return true;
@@ -503,6 +559,10 @@ void FIronSession::LoadSettings()
 	BattleStepSeconds = FMath::Clamp(static_cast<float>(SettingsJson.GetNumber("battleStepSeconds", BattleStepSeconds)), 0.02f, 3.0f);
 	MusicVolume = FMath::Clamp(static_cast<float>(SettingsJson.GetNumber("musicVolume", MusicVolume)), 0.0f, 1.0f);
 	SfxVolume = FMath::Clamp(static_cast<float>(SettingsJson.GetNumber("sfxVolume", SfxVolume)), 0.0f, 1.0f);
+	PresentationMode = IronSessionDetail::ParsePresentationMode(SettingsJson.GetString("presentation", IronSessionDetail::PresentationModeName(PresentationMode)));
+	GraphicsQuality = FMath::Clamp(SettingsJson.GetInt("graphicsQuality", GraphicsQuality), 0, 3);
+	bTiltShift = SettingsJson.GetBool("tiltShift", bTiltShift);
+	bInkOutlines = SettingsJson.GetBool("inkOutlines", bInkOutlines);
 }
 
 void FIronSession::SaveSettings() const
@@ -513,9 +573,92 @@ void FIronSession::SaveSettings() const
 	SettingsJson.SetNumber("battleStepSeconds", BattleStepSeconds);
 	SettingsJson.SetNumber("musicVolume", MusicVolume);
 	SettingsJson.SetNumber("sfxVolume", SfxVolume);
+	SettingsJson.SetString("presentation", IronSessionDetail::PresentationModeName(PresentationMode));
+	SettingsJson.SetInt("graphicsQuality", GraphicsQuality);
+	SettingsJson.SetBool("tiltShift", bTiltShift);
+	SettingsJson.SetBool("inkOutlines", bInkOutlines);
 	FText Error;
 	if (!IronSessionDetail::WriteUtf8File(IronSessionDetail::SettingsFilePath(), SettingsJson.Write(true), Error))
 	{
 		UE_LOG(LogIronReign, Warning, TEXT("%s"), *Error.ToString());
 	}
+}
+
+// -------------------------------------------------------------------------------------------------
+// Graphics options and the 3D presentation context
+// -------------------------------------------------------------------------------------------------
+
+void FIronSession::CommitGraphicsChange()
+{
+	++GraphicsRevision;
+	SaveSettings();
+	OnGraphicsChanged.Broadcast();
+}
+
+void FIronSession::SetPresentationMode(EIronPresentationMode Mode)
+{
+	if (Mode == PresentationMode)
+	{
+		return;
+	}
+	PresentationMode = Mode;
+	CommitGraphicsChange();
+}
+
+void FIronSession::SetGraphicsQuality(int32 Level)
+{
+	const int32 Clamped = FMath::Clamp(Level, 0, 3);
+	if (Clamped == GraphicsQuality)
+	{
+		return;
+	}
+	GraphicsQuality = Clamped;
+	CommitGraphicsChange();
+}
+
+void FIronSession::SetTiltShiftEnabled(bool bEnabled)
+{
+	if (bEnabled == bTiltShift)
+	{
+		return;
+	}
+	bTiltShift = bEnabled;
+	CommitGraphicsChange();
+}
+
+void FIronSession::SetInkOutlinesEnabled(bool bEnabled)
+{
+	if (bEnabled == bInkOutlines)
+	{
+		return;
+	}
+	bInkOutlines = bEnabled;
+	CommitGraphicsChange();
+}
+
+bool FIronSession::Is3DMapAvailable() const
+{
+	return IronSessionDetail::CachedAvailability(bMapAssetsAvailable, MapAssetsCheckedAt, &AIronWorldMap3D::AreAssetsAvailable);
+}
+
+bool FIronSession::Is3DBattleAvailable() const
+{
+	return IronSessionDetail::CachedAvailability(bBattleAssetsAvailable, BattleAssetsCheckedAt, &AIronBattleBoard3D::AreAssetsAvailable);
+}
+
+void FIronSession::SetPresentationWorld(UWorld* InWorld)
+{
+	PresentationWorld = InWorld;
+}
+
+UWorld* FIronSession::GetPresentationWorld() const
+{
+	return PresentationWorld.Get();
+}
+
+bool FIronSession::IsWorldRendered() const
+{
+	const UWorld* World = PresentationWorld.Get();
+	const UGameViewportClient* ViewportClient = World != nullptr ? World->GetGameViewport() : nullptr;
+	return ViewportClient != nullptr && !ViewportClient->bDisableWorldRendering;
 }

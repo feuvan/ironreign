@@ -1,0 +1,716 @@
+[
+ {
+  "id": "m_warrior_01",
+  "gender": "m",
+  "archetype": "warrior",
+  "age": "adult",
+  "notes": "Yan Tieshan, the Iron Mountain"
+ },
+ {
+  "id": "m_warrior_02",
+  "gender": "m",
+  "archetype": "warrior",
+  "age": "young",
+  "notes": "Yan Lie, the Young Flame"
+ },
+ {
+  "id": "m_warrior_03",
+  "gender": "m",
+  "archetype": "warrior",
+  "age": "young",
+  "notes": "Lei Zhen, Thunderclap"
+ },
+ {
+  "id": "m_warrior_04",
+  "gender": "m",
+  "archetype": "warrior",
+  "age": "adult",
+  "notes": "Han Pojun, Breaker of Armies"
+ },
+ {
+  "id": "m_warrior_05",
+  "gender": "m",
+  "archetype": "warrior",
+  "age": "young",
+  "notes": "Duan Kui, the Bronze Bull"
+ },
+ {
+  "id": "m_warrior_06",
+  "gender": "m",
+  "archetype": "warrior",
+  "age": "adult",
+  "notes": "Murong Xiao, the Hawk of Beiyuan"
+ },
+ {
+  "id": "m_warrior_07",
+  "gender": "m",
+  "archetype": "warrior",
+  "age": "adult",
+  "notes": "Helian Bo, the Grey Wolf Khan"
+ },
+ {
+  "id": "m_warrior_08",
+  "gender": "m",
+  "archetype": "warrior",
+  "age": "young",
+  "notes": "Tuoba Ying, the Sky Hawk"
+ },
+ {
+  "id": "m_warrior_09",
+  "gender": "m",
+  "archetype": "warrior",
+  "age": "adult",
+  "notes": "Wugu Ta, the Black Ox"
+ },
+ {
+  "id": "m_warrior_10",
+  "gender": "m",
+  "archetype": "warrior",
+  "age": "adult",
+  "notes": "Dugu Heng, the Lone Scale"
+ },
+ {
+  "id": "m_warrior_11",
+  "gender": "m",
+  "archetype": "warrior",
+  "age": "young",
+  "notes": "Shi Tuo, the Stone Rider"
+ },
+ {
+  "id": "m_warrior_12",
+  "gender": "m",
+  "archetype": "warrior",
+  "age": "adult",
+  "notes": "Qin Shouzheng, the Azure Shield"
+ },
+ {
+  "id": "m_warrior_13",
+  "gender": "m",
+  "archetype": "warrior",
+  "age": "adult",
+  "notes": "Bai Chongyi, the Righteous"
+ },
+ {
+  "id": "m_warrior_14",
+  "gender": "m",
+  "archetype": "warrior",
+  "age": "adult",
+  "notes": "Luo Chengwu, the Spear of Chenliu"
+ },
+ {
+  "id": "m_warrior_15",
+  "gender": "m",
+  "archetype": "warrior",
+  "age": "adult",
+  "notes": "Qi Feng, Admiral of a Thousand Sails"
+ },
+ {
+  "id": "m_warrior_16",
+  "gender": "m",
+  "archetype": "warrior",
+  "age": "adult",
+  "notes": "Tang Jingyu, the Dyke-Builder"
+ },
+ {
+  "id": "m_warrior_17",
+  "gender": "m",
+  "archetype": "warrior",
+  "age": "young",
+  "notes": "Ling Botao, Rider of the Waves"
+ },
+ {
+  "id": "m_warrior_18",
+  "gender": "m",
+  "archetype": "warrior",
+  "age": "adult",
+  "notes": "Xiang Yuanbo, the River Tiger"
+ },
+ {
+  "id": "m_warrior_19",
+  "gender": "m",
+  "archetype": "warrior",
+  "age": "adult",
+  "notes": "Yue Changfeng, the Long Wind"
+ },
+ {
+  "id": "m_warrior_20",
+  "gender": "m",
+  "archetype": "warrior",
+  "age": "young",
+  "notes": "Tian Bugui, the One Who Stays"
+ },
+ {
+  "id": "m_warrior_21",
+  "gender": "m",
+  "archetype": "warrior",
+  "age": "adult",
+  "notes": "Long Tieshu, the Iron Tree"
+ },
+ {
+  "id": "m_warrior_22",
+  "gender": "m",
+  "archetype": "warrior",
+  "age": "adult",
+  "notes": "Ding Hengshan, the Axe of Heishan"
+ },
+ {
+  "id": "m_warrior_23",
+  "gender": "m",
+  "archetype": "warrior",
+  "age": "adult",
+  "notes": "Situ Kang, the Defeated General"
+ },
+ {
+  "id": "m_warrior_24",
+  "gender": "m",
+  "archetype": "warrior",
+  "age": "young",
+  "notes": "Ji Feiyu, Flying Feather"
+ },
+ {
+  "id": "m_warrior_25",
+  "gender": "m",
+  "archetype": "warrior",
+  "age": "adult",
+  "notes": "Chilu Han, the Red Hawk"
+ },
+ {
+  "id": "m_warrior_26",
+  "gender": "m",
+  "archetype": "warrior",
+  "age": "adult",
+  "notes": "Nangong Lie, the Caged Tiger"
+ },
+ {
+  "id": "m_warrior_27",
+  "gender": "m",
+  "archetype": "warrior",
+  "age": "young",
+  "notes": "Helian Shuo, the New Moon Rider"
+ },
+ {
+  "id": "m_warrior_28",
+  "gender": "m",
+  "archetype": "warrior",
+  "age": "young",
+  "notes": "spare warrior"
+ },
+ {
+  "id": "m_warrior_29",
+  "gender": "m",
+  "archetype": "warrior",
+  "age": "adult",
+  "notes": "spare warrior"
+ },
+ {
+  "id": "m_warrior_30",
+  "gender": "m",
+  "archetype": "warrior",
+  "age": "adult",
+  "notes": "spare warrior"
+ },
+ {
+  "id": "m_scholar_01",
+  "gender": "m",
+  "archetype": "scholar",
+  "age": "adult",
+  "notes": "Gao Jingzhe, the Waking Thunder"
+ },
+ {
+  "id": "m_scholar_02",
+  "gender": "m",
+  "archetype": "scholar",
+  "age": "adult",
+  "notes": "Pei Wenzhao, the Ledger of Tiezhou"
+ },
+ {
+  "id": "m_scholar_03",
+  "gender": "m",
+  "archetype": "scholar",
+  "age": "adult",
+  "notes": "Tan Zhongliang, the Horse Trader"
+ },
+ {
+  "id": "m_scholar_04",
+  "gender": "m",
+  "archetype": "scholar",
+  "age": "adult",
+  "notes": "Lu Xingzhou, the Star Reader"
+ },
+ {
+  "id": "m_scholar_05",
+  "gender": "m",
+  "archetype": "scholar",
+  "age": "young",
+  "notes": "Liu Chengxuan, the Last Prince"
+ },
+ {
+  "id": "m_scholar_06",
+  "gender": "m",
+  "archetype": "scholar",
+  "age": "adult",
+  "notes": "Feng Yan, the Silk Tongue"
+ },
+ {
+  "id": "m_scholar_07",
+  "gender": "m",
+  "archetype": "scholar",
+  "age": "adult",
+  "notes": "Tao Lianshan, the Granary Lord"
+ },
+ {
+  "id": "m_scholar_08",
+  "gender": "m",
+  "archetype": "scholar",
+  "age": "young",
+  "notes": "Ren Zhiyuan, the Far-Sighted"
+ },
+ {
+  "id": "m_scholar_09",
+  "gender": "m",
+  "archetype": "scholar",
+  "age": "adult",
+  "notes": "Shen Jiuling, the Salt King"
+ },
+ {
+  "id": "m_scholar_10",
+  "gender": "m",
+  "archetype": "scholar",
+  "age": "young",
+  "notes": "Gu Shaohua, the Silk Heir"
+ },
+ {
+  "id": "m_scholar_11",
+  "gender": "m",
+  "archetype": "scholar",
+  "age": "adult",
+  "notes": "Qu Jingyuan, the Mirror Abyss"
+ },
+ {
+  "id": "m_scholar_12",
+  "gender": "m",
+  "archetype": "scholar",
+  "age": "adult",
+  "notes": "Liang Yin, the Quiet Magistrate"
+ },
+ {
+  "id": "m_scholar_13",
+  "gender": "m",
+  "archetype": "scholar",
+  "age": "adult",
+  "notes": "Lu Buping, the Failed Examinee"
+ },
+ {
+  "id": "m_scholar_14",
+  "gender": "m",
+  "archetype": "scholar",
+  "age": "adult",
+  "notes": "Cui Hengzhi, the Dismissed Minister"
+ },
+ {
+  "id": "m_scholar_15",
+  "gender": "m",
+  "archetype": "scholar",
+  "age": "adult",
+  "notes": "Qian Wantong, the Thrice-Bankrupt"
+ },
+ {
+  "id": "m_scholar_16",
+  "gender": "m",
+  "archetype": "scholar",
+  "age": "adult",
+  "notes": "Yin Hexuan, the Sleeping Crane"
+ },
+ {
+  "id": "m_scholar_17",
+  "gender": "m",
+  "archetype": "scholar",
+  "age": "young",
+  "notes": "Wen Ruoshui, Still Water"
+ },
+ {
+  "id": "m_scholar_18",
+  "gender": "m",
+  "archetype": "scholar",
+  "age": "adult",
+  "notes": "spare scholar"
+ },
+ {
+  "id": "m_scholar_19",
+  "gender": "m",
+  "archetype": "scholar",
+  "age": "adult",
+  "notes": "spare scholar"
+ },
+ {
+  "id": "m_scholar_20",
+  "gender": "m",
+  "archetype": "scholar",
+  "age": "young",
+  "notes": "spare scholar"
+ },
+ {
+  "id": "m_elder_01",
+  "gender": "m",
+  "archetype": "elder",
+  "age": "old",
+  "notes": "Wei Shoucheng, the Old Wall"
+ },
+ {
+  "id": "m_elder_02",
+  "gender": "m",
+  "archetype": "elder",
+  "age": "adult",
+  "notes": "Cen Huaiyuan, the Exiled Censor"
+ },
+ {
+  "id": "m_elder_03",
+  "gender": "m",
+  "archetype": "elder",
+  "age": "old",
+  "notes": "Wen Tingjian, the Grand Chancellor"
+ },
+ {
+  "id": "m_elder_04",
+  "gender": "m",
+  "archetype": "elder",
+  "age": "old",
+  "notes": "Zheng Gu, the Old Oak"
+ },
+ {
+  "id": "m_elder_05",
+  "gender": "m",
+  "archetype": "elder",
+  "age": "adult",
+  "notes": "Meng Kuan, the Lenient Governor"
+ },
+ {
+  "id": "m_elder_06",
+  "gender": "m",
+  "archetype": "elder",
+  "age": "old",
+  "notes": "Pan Zhihe, the Crane of Langya"
+ },
+ {
+  "id": "m_elder_07",
+  "gender": "m",
+  "archetype": "elder",
+  "age": "old",
+  "notes": "Dongfang Ce, the Old Fox"
+ },
+ {
+  "id": "m_elder_08",
+  "gender": "m",
+  "archetype": "elder",
+  "age": "old",
+  "notes": "Xie Lingxiao, Sword Above the Clouds"
+ },
+ {
+  "id": "m_elder_09",
+  "gender": "m",
+  "archetype": "elder",
+  "age": "old",
+  "notes": "Kou Zhongyuan, Guardian of the Central Plain"
+ },
+ {
+  "id": "m_elder_10",
+  "gender": "m",
+  "archetype": "elder",
+  "age": "old",
+  "notes": "Tian Fengnian, the Rice Sage"
+ },
+ {
+  "id": "m_elder_11",
+  "gender": "m",
+  "archetype": "elder",
+  "age": "old",
+  "notes": "spare elder"
+ },
+ {
+  "id": "m_elder_12",
+  "gender": "m",
+  "archetype": "elder",
+  "age": "old",
+  "notes": "spare elder"
+ },
+ {
+  "id": "m_monk_01",
+  "gender": "m",
+  "archetype": "monk",
+  "age": "old",
+  "notes": "Shi Huiming, Abbot of the Stone Bell"
+ },
+ {
+  "id": "m_monk_02",
+  "gender": "m",
+  "archetype": "monk",
+  "age": "adult",
+  "notes": "spare monk"
+ },
+ {
+  "id": "m_monk_03",
+  "gender": "m",
+  "archetype": "monk",
+  "age": "adult",
+  "notes": "spare monk"
+ },
+ {
+  "id": "m_monk_04",
+  "gender": "m",
+  "archetype": "monk",
+  "age": "old",
+  "notes": "spare monk"
+ },
+ {
+  "id": "m_monk_05",
+  "gender": "m",
+  "archetype": "monk",
+  "age": "adult",
+  "notes": "spare monk"
+ },
+ {
+  "id": "m_monk_06",
+  "gender": "m",
+  "archetype": "monk",
+  "age": "old",
+  "notes": "spare monk"
+ },
+ {
+  "id": "m_rogue_01",
+  "gender": "m",
+  "archetype": "rogue",
+  "age": "adult",
+  "notes": "Kang Mo, the Caravan Master"
+ },
+ {
+  "id": "m_rogue_02",
+  "gender": "m",
+  "archetype": "rogue",
+  "age": "adult",
+  "notes": "Zhuo Hu, the Hired Tiger"
+ },
+ {
+  "id": "m_rogue_03",
+  "gender": "m",
+  "archetype": "rogue",
+  "age": "adult",
+  "notes": "Mo Xuan, the Black Tiger"
+ },
+ {
+  "id": "m_rogue_04",
+  "gender": "m",
+  "archetype": "rogue",
+  "age": "adult",
+  "notes": "Xiong Kuo, the Mountain Bear"
+ },
+ {
+  "id": "m_rogue_05",
+  "gender": "m",
+  "archetype": "rogue",
+  "age": "young",
+  "notes": "Shan Bao, the Leopard"
+ },
+ {
+  "id": "m_rogue_06",
+  "gender": "m",
+  "archetype": "rogue",
+  "age": "adult",
+  "notes": "Huo Lin, the Smuggler"
+ },
+ {
+  "id": "m_rogue_07",
+  "gender": "m",
+  "archetype": "rogue",
+  "age": "adult",
+  "notes": "Jing Wuming, the Nameless Blade"
+ },
+ {
+  "id": "m_rogue_08",
+  "gender": "m",
+  "archetype": "rogue",
+  "age": "young",
+  "notes": "Rong Kuai, the Quick Knife"
+ },
+ {
+  "id": "m_rogue_09",
+  "gender": "m",
+  "archetype": "rogue",
+  "age": "young",
+  "notes": "Sha Wuying, the Shadowless"
+ },
+ {
+  "id": "m_rogue_10",
+  "gender": "m",
+  "archetype": "rogue",
+  "age": "adult",
+  "notes": "spare rogue"
+ },
+ {
+  "id": "f_warrior_01",
+  "gender": "f",
+  "archetype": "warrior",
+  "age": "young",
+  "notes": "Yan Hongying, Red Tassel"
+ },
+ {
+  "id": "f_warrior_02",
+  "gender": "f",
+  "archetype": "warrior",
+  "age": "young",
+  "notes": "Helian Yue, Moon of the Steppe"
+ },
+ {
+  "id": "f_warrior_03",
+  "gender": "f",
+  "archetype": "warrior",
+  "age": "young",
+  "notes": "Lin Shuangyue, the Frost Moon"
+ },
+ {
+  "id": "f_warrior_04",
+  "gender": "f",
+  "archetype": "warrior",
+  "age": "young",
+  "notes": "Cheng Lanyin, the Orchid Blade"
+ },
+ {
+  "id": "f_warrior_05",
+  "gender": "f",
+  "archetype": "warrior",
+  "age": "young",
+  "notes": "Jiang Xiaoman, the Wildcat"
+ },
+ {
+  "id": "f_warrior_06",
+  "gender": "f",
+  "archetype": "warrior",
+  "age": "young",
+  "notes": "Qiao Yinling, Silver Bell"
+ },
+ {
+  "id": "f_warrior_07",
+  "gender": "f",
+  "archetype": "warrior",
+  "age": "young",
+  "notes": "Yun Feixue, Snow on the Wind"
+ },
+ {
+  "id": "f_warrior_08",
+  "gender": "f",
+  "archetype": "warrior",
+  "age": "young",
+  "notes": "Lu Chenxi, the Dawn Sword"
+ },
+ {
+  "id": "f_warrior_09",
+  "gender": "f",
+  "archetype": "warrior",
+  "age": "young",
+  "notes": "spare warrior"
+ },
+ {
+  "id": "f_warrior_10",
+  "gender": "f",
+  "archetype": "warrior",
+  "age": "young",
+  "notes": "spare warrior"
+ },
+ {
+  "id": "f_scholar_01",
+  "gender": "f",
+  "archetype": "scholar",
+  "age": "young",
+  "notes": "Shangguan Qiu, the Autumn Scribe"
+ },
+ {
+  "id": "f_scholar_02",
+  "gender": "f",
+  "archetype": "scholar",
+  "age": "young",
+  "notes": "Xu Mochou, the Untroubled"
+ },
+ {
+  "id": "f_scholar_03",
+  "gender": "f",
+  "archetype": "scholar",
+  "age": "adult",
+  "notes": "Shen Yuzhu, the Pearl Ledger"
+ },
+ {
+  "id": "f_scholar_04",
+  "gender": "f",
+  "archetype": "scholar",
+  "age": "young",
+  "notes": "Su Wanqing, the Lotus Poet"
+ },
+ {
+  "id": "f_scholar_05",
+  "gender": "f",
+  "archetype": "scholar",
+  "age": "young",
+  "notes": "Ning Shuyu, Jade of the Library"
+ },
+ {
+  "id": "f_scholar_06",
+  "gender": "f",
+  "archetype": "scholar",
+  "age": "young",
+  "notes": "Yao Su, the Barefoot Physician"
+ },
+ {
+  "id": "f_scholar_07",
+  "gender": "f",
+  "archetype": "scholar",
+  "age": "adult",
+  "notes": "Ouyang Ci, the Wandering Physician"
+ },
+ {
+  "id": "f_scholar_08",
+  "gender": "f",
+  "archetype": "scholar",
+  "age": "young",
+  "notes": "Xiao Qinyin, the Zither of Chenliu"
+ },
+ {
+  "id": "f_scholar_09",
+  "gender": "f",
+  "archetype": "scholar",
+  "age": "young",
+  "notes": "Ye Zhiqiu, the Falling Leaf"
+ },
+ {
+  "id": "f_scholar_10",
+  "gender": "f",
+  "archetype": "scholar",
+  "age": "young",
+  "notes": "He Yunshang, Cloud Robe"
+ },
+ {
+  "id": "f_elder_01",
+  "gender": "f",
+  "archetype": "elder",
+  "age": "old",
+  "notes": "Fan Qingzhi, the Queen's Tutor"
+ },
+ {
+  "id": "f_elder_02",
+  "gender": "f",
+  "archetype": "elder",
+  "age": "adult",
+  "notes": "Lan Yueru, Mistress of the Moonwell"
+ },
+ {
+  "id": "f_elder_03",
+  "gender": "f",
+  "archetype": "elder",
+  "age": "old",
+  "notes": "spare elder"
+ },
+ {
+  "id": "f_elder_04",
+  "gender": "f",
+  "archetype": "elder",
+  "age": "old",
+  "notes": "spare elder"
+ }
+]

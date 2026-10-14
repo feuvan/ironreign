@@ -1,0 +1,51 @@
+{
+ "id": "m_scholar_20",
+ "seed": 62451,
+ "gender": "m",
+ "age": 22,
+ "archetype": "scholar",
+ "expression": null,
+ "bg": "warm",
+ "notes": "spare scholar",
+ "hair": {
+  "style": "topknot",
+  "grey": 0.0,
+  "recede": 0.1
+ },
+ "skin": {
+  "weather": 0.2,
+  "scars": []
+ },
+ "camera": {
+  "yaw": 20.0,
+  "pitch": -3.0,
+  "head_frac": 0.42,
+  "eye_line": 0.39
+ },
+ "beard": null,
+ "beard_grey": 0.0,
+ "outfit": {
+  "kind": "scholar",
+  "outer": [
+   0.12,
+   0.1,
+   0.07
+  ],
+  "band": [
+   0.04,
+   0.035,
+   0.03
+  ],
+  "motif": "roundels",
+  "depth": 0.13
+ },
+ "headgear": {
+  "kind": "guan",
+  "rgb": [
+   0.015,
+   0.013,
+   0.012
+  ],
+  "size": 1.1
+ }
+}

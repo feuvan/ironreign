@@ -57,7 +57,7 @@ def main(out):
     lx, ly, lw, lh = 24, 92, 400, 700
     bg.alpha_composite(P.nine(P.load("Panel"), ms["Panel"], (lw, lh)), (lx, ly))
     dr.text((lx + 30, ly + 30), "Luoyang", font=fh26, fill=P.LACQUER)
-    dr.text((lx + 160, ly + 26), "洛陽", font=fbr, fill=P.INK)
+    dr.text((lx + 160, ly + 26), "洛阳", font=fbr, fill=P.INK)
     dv = P.load("Divider").resize((lw - 60, 12), Image.BICUBIC)
     bg.alpha_composite(dv, (lx + 30, ly + 70))
     # portrait frame + portrait (scaled to 156 px high, as the city panel does)

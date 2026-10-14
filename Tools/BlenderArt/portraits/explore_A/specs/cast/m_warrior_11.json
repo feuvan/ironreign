@@ -1,0 +1,69 @@
+{
+ "id": "m_warrior_11",
+ "seed": 6314,
+ "gender": "m",
+ "age": 24,
+ "archetype": "warrior",
+ "expression": "stern",
+ "bg": "warm",
+ "notes": "Shi Tuo, the Stone Rider",
+ "hair": {
+  "style": "helmet",
+  "grey": 0.0,
+  "recede": 0.1
+ },
+ "skin": {
+  "weather": 0.8,
+  "scars": []
+ },
+ "camera": {
+  "yaw": -20.0,
+  "pitch": -3.0,
+  "head_frac": 0.42,
+  "eye_line": 0.39
+ },
+ "beard": {
+  "mustache": 1.0,
+  "soul": 0.0,
+  "tails": 0.8,
+  "gravity": 0.7,
+  "radius": 0.0001,
+  "frizz": 0.0014,
+  "must_len": 0.0445,
+  "chin": 0.0,
+  "jaw": 0.0,
+  "cheeks": 0.0,
+  "neck": 0.0,
+  "sideburns": 0.0,
+  "length": 0.02,
+  "count": 2500
+ },
+ "beard_grey": 0.0,
+ "outfit": {
+  "kind": "armour",
+  "silk": [
+   0.18,
+   0.09,
+   0.03
+  ],
+  "trim": [
+   0.55,
+   0.4,
+   0.2
+  ],
+  "fur": true
+ },
+ "headgear": {
+  "kind": "helmet",
+  "tassel": [
+   0.25,
+   0.12,
+   0.03
+  ],
+  "trim": [
+   0.55,
+   0.4,
+   0.2
+  ]
+ }
+}

@@ -18,7 +18,7 @@ def _pat(kind, size=512):
 
 
 def silk(name, rgb, sheen=0.6, rough=0.42, motif=None, motif_rgb=None, motif_scale=9.0,
-         motif_metal=0.0, weave=1.0, vary=0.08, sss=0.0, pass_index=5):
+         motif_metal=0.0, weave=1.0, vary=0.08, sss=0.0, pass_index=5, band=None):
     """Silk/satin: soft sheen, fine weave breakup, optional woven/embroidered motif in UV space
     (UVs are metres, so ``motif_scale`` = tiles per metre)."""
     m = bpy.data.materials.new(name)
@@ -41,9 +41,29 @@ def silk(name, rgb, sheen=0.6, rough=0.42, motif=None, motif_rgb=None, motif_sca
         rough_s = nb.mixf(rough_s, 0.32, mvf)
         if motif_metal:
             metal = nb.math("MULTIPLY", mvf, motif_metal)
-    p = nb.principled(Base_Color=col, Roughness=rough_s, Metallic=metal, Sheen_Weight=sheen,
-                      Sheen_Roughness=0.35, Sheen_Tint=(1, 1, 1, 1), Specular_IOR_Level=0.45,
-                      Normal=nb.bump(h, 0.35, 0.0006))
+    if band is not None:
+        # collar band painted in the shader along UV v (= metres below the neckline): a crisp,
+        # smooth edge whatever the mesh density.  band = dict(width, rgb, thread, motif, edge_rgb)
+        u, v, _ = nb.sep(uv)
+        bw = band.get("width", 0.03)
+        inb = nb.maprange(v, bw + 0.0012, bw - 0.0012)
+        bcol = lin(band["rgb"]) if isinstance(band["rgb"], str) else tuple(band["rgb"]) + (1,)
+        bc = bcol
+        if band.get("motif"):
+            vec = nb.combine(nb.math("MULTIPLY", u, 1.0 / bw), nb.math("MULTIPLY", v, 1.0 / bw), 0.0)
+            mv = nb.sep(nb.image(_pat(band["motif"]), vec, interp="Linear")[0])[0]
+            bc = nb.mix(bcol, tuple(band.get("thread", (0.6, 0.45, 0.2))) + (1,), mv)
+            h = nb.math("ADD", h, nb.math("MULTIPLY", nb.math("MULTIPLY", mv, inb), 0.5))
+        # thin piping at the band's outer edge
+        pipe = nb.math("MULTIPLY", nb.maprange(v, bw - 0.0045, bw - 0.0025), nb.maprange(v, bw - 0.0005, bw - 0.0022))
+        bc = nb.mix(bc, tuple(band.get("edge_rgb", (0.5, 0.36, 0.12))) + (1,), pipe)
+        col = nb.mix(col, bc, inb)
+        rough_s = nb.mixf(rough_s, band.get("rough", 0.45), inb)
+    # sheen tinted toward the dye (white sheen turns dark silks silvery under a hard key)
+    stint = tuple(min(1.0, 0.35 + 2.5 * c) for c in base[:3]) + (1,)
+    p = nb.principled(Base_Color=col, Roughness=nb.math("ADD", rough_s, 0.12), Metallic=metal,
+                      Sheen_Weight=sheen * 0.7, Sheen_Roughness=0.45, Sheen_Tint=stint,
+                      Specular_IOR_Level=0.2, Normal=nb.bump(h, 0.35, 0.0006))
     if sss:
         p.inputs["Subsurface Weight"].default_value = sss
         p.inputs["Subsurface Scale"].default_value = 0.002
@@ -129,7 +149,17 @@ def pearl(name="Pearl"):
 
 
 def tassel(name="Tassel", rgb=(0.55, 0.05, 0.04)):
-    """Dyed horsehair (helmet tassels) - Principled Hair in direct colour mode."""
+    """Dyed horsehair (helmet tassels): principled with sheen and per-strand value jitter."""
+    m = bpy.data.materials.new(name)
+    nb = NB(m)
+    info = nb.node("ShaderNodeHairInfo")
+    col = nb.mix(tuple(c * 0.6 for c in rgb), tuple(min(1, c * 1.5) for c in rgb), info.outputs["Random"])
+    p = nb.principled(Base_Color=col, Roughness=0.4, Sheen_Weight=0.5, Sheen_Tint=(1, 0.6, 0.6, 1))
+    nb.output(p.outputs[0])
+    return m
+
+
+def _tassel_physical(name="Tassel", rgb=(0.55, 0.05, 0.04)):
     from nodes import sock
     m = bpy.data.materials.new(name)
     nb = NB(m)
@@ -162,6 +192,24 @@ def scales(name, rgb=(0.05, 0.05, 0.055), lace_rgb=(0.3, 0.02, 0.015), plate=(0.
     met = nb.math("MULTIPLY", nb.math("SUBTRACT", 1.0, lG), metallic)
     p = nb.principled(Base_Color=col, Metallic=met, Roughness=nb.mixf(rough, 0.6, lG),
                       Normal=nb.bump(nb.math("ADD", hR, nb.math("MULTIPLY", lG, 0.5)), 0.8, 0.0015))
+    nb.output(p.outputs[0])
+    m.pass_index = 4
+    return m
+
+
+def lacquer_iron(name, rgb=(0.035, 0.03, 0.028), edge_rgb=(0.32, 0.30, 0.28), rough=0.42, coat=0.6):
+    """Black-lacquered iron plates (Chinese lamellar): dark glossy coat over iron, worn to bare
+    metal where the noise peaks (edges catch light without the chrome look)."""
+    m = bpy.data.materials.new(name)
+    nb = NB(m)
+    obj = nb.coord("Object")
+    n1 = nb.noise(obj, scale=60.0, detail=4.0, rough=0.6)[0]
+    wear = nb.maprange(n1, 0.62, 0.78)
+    col = nb.mix(tuple(rgb) + (1,), tuple(edge_rgb) + (1,), wear)
+    met = nb.mixf(0.25, 0.9, wear)
+    r = nb.mixf(rough, 0.35, wear)
+    p = nb.principled(Base_Color=col, Metallic=met, Roughness=r, Coat_Weight=coat,
+                      Coat_Roughness=0.18, Normal=nb.bump(n1, 0.15, 0.0008))
     nb.output(p.outputs[0])
     m.pass_index = 4
     return m

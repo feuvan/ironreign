@@ -7,11 +7,20 @@
 #include "UI/IronUI.h"
 #include "UI/SIronDuelDialog.h"
 #include "UI/SIronHexView.h"
+#include "World/IronBattleBoard3D.h"
+#include "World/IronEnvironment.h"
+#include "World/IronWorldMap3D.h"
 
+#include "Camera/CameraActor.h"
+#include "Camera/CameraComponent.h"
+#include "Engine/Engine.h"
+#include "Engine/GameViewportClient.h"
+#include "Engine/World.h"
 #include "Framework/Application/SlateApplication.h"
 #include "HAL/PlatformTime.h"
 #include "Input/Events.h"
 #include "InputCoreTypes.h"
+#include "Layout/Geometry.h"
 #include "Styling/SlateColor.h"
 #include "Widgets/Images/SImage.h"
 #include "Widgets/Input/SButton.h"
@@ -31,6 +40,40 @@ namespace IronBattleScreenDetail
 	constexpr int32 MaxStalls = 3;
 	constexpr int32 MaxLogLines = 200;
 	constexpr double ResultDelaySeconds = 1.2;
+
+	// 3D board.
+	/** Fractions of a 1920 x 1080 screen covered by the top bar, unit panel and bottom bar, until they are measured. */
+	constexpr float EstimatedTopInset = 0.11f;
+	constexpr float EstimatedRightInset = 0.21f;
+	constexpr float EstimatedBottomInset = 0.16f;
+	/** Smallest change of a measured inset that reframes the board. */
+	constexpr float InsetTolerance = 0.004f;
+	/** Month shown on the board when no campaign is running. */
+	constexpr int32 DefaultBoardMonth = 4;
+
+	/** The world the 3D scenes live in (the session's presentation world, else the game viewport's), or null. */
+	UWorld* FindBattleWorld(const FIronSession* InSession)
+	{
+		if (InSession != nullptr)
+		{
+			if (UWorld* PresentationWorld = InSession->GetPresentationWorld())
+			{
+				return PresentationWorld;
+			}
+		}
+		if (GEngine == nullptr || GEngine->GameViewport == nullptr)
+		{
+			return nullptr;
+		}
+		return GEngine->GameViewport->GetWorld();
+	}
+
+	/** Converts any Slate 2D vector type (FVector2D, FVector2f, deprecation wrappers) to FVector2f. */
+	template <typename VectorType>
+	FVector2f ScreenVec(const VectorType& Value)
+	{
+		return FVector2f(static_cast<float>(Value.X), static_cast<float>(Value.Y));
+	}
 
 	bool ContainsId(const std::vector<int>& Ids, int32 Id)
 	{
@@ -97,6 +140,19 @@ void SIronBattleScreen::Construct(const FArguments& InArgs)
 		}
 	}
 
+	// The campaign map pauses for the battle (StopBoard3D gives it the view back): on the 3D board it would only be a
+	// second scene to render far away, behind the 2D board it would be hidden.
+	if (UWorld* BattleWorld = IronBattleScreenDetail::FindBattleWorld(Session.Get()))
+	{
+		AIronWorldMap3D* CampaignMap = AIronWorldMap3D::FindMap(BattleWorld);
+		if (CampaignMap != nullptr && CampaignMap->IsMapActive())
+		{
+			PausedMap = CampaignMap;
+			CampaignMap->SetActive(false);
+		}
+	}
+	StartBoard3D();
+
 	ChildSlot
 	[
 		BuildLayout()
@@ -121,9 +177,16 @@ SIronBattleScreen::~SIronBattleScreen()
 	{
 		Session->OnCultureChanged.Remove(CultureChangedHandle);
 	}
+	// Normally done when the player continues from the result; here only if the screen goes away some other way.
+	StopBoard3D(false);
 }
 
 void SIronBattleScreen::OnCultureChanged()
+{
+	RebuildLayout();
+}
+
+void SIronBattleScreen::RebuildLayout()
 {
 	ChildSlot
 	[
@@ -140,51 +203,20 @@ TSharedRef<SWidget> SIronBattleScreen::BuildLayout()
 	SAssignNew(HexView, SIronHexView)
 		.Battle(Battle)
 		.Session(Session)
+		.Board(Board)
 		.OnHexClicked(FOnIronHexClicked::CreateSP(this, &SIronBattleScreen::OnHexClicked))
 		.OnCancel(FOnIronHexCancel::CreateSP(this, &SIronBattleScreen::CancelAction));
+	HexView->SetCoveredInsets(BoardInsets);
+
+	TopBarWidget.Reset();
+	UnitPanelWidget.Reset();
+	BottomBarWidget.Reset();
+	const TSharedRef<SWidget> Content = bBoard3D ? BuildBoardLayout() : BuildFlatLayout();
 
 	const TSharedRef<SWidget> Layout = SNew(SOverlay)
 		+ SOverlay::Slot()
 		[
-			SNew(SBorder)
-			.BorderImage(IronStyle::WhiteBrush())
-			.BorderBackgroundColor(IronStyle::Night())
-			.Padding(FMargin(10.0f))
-			[
-				SNew(SVerticalBox)
-				+ SVerticalBox::Slot()
-				.AutoHeight()
-				[
-					BuildTopBar()
-				]
-				+ SVerticalBox::Slot()
-				.FillHeight(1.0f)
-				.Padding(FMargin(0.0f, 8.0f))
-				[
-					SNew(SHorizontalBox)
-					+ SHorizontalBox::Slot()
-					.FillWidth(1.0f)
-					[
-						SNew(SBorder)
-						.BorderImage(IronStyle::PanelDark())
-						.Padding(FMargin(10.0f))
-						[
-							HexView.ToSharedRef()
-						]
-					]
-					+ SHorizontalBox::Slot()
-					.AutoWidth()
-					.Padding(FMargin(8.0f, 0.0f, 0.0f, 0.0f))
-					[
-						BuildUnitPanel()
-					]
-				]
-				+ SVerticalBox::Slot()
-				.AutoHeight()
-				[
-					BuildBottomBar()
-				]
-			]
+			Content
 		]
 		+ SOverlay::Slot()
 		[
@@ -204,6 +236,91 @@ TSharedRef<SWidget> SIronBattleScreen::BuildLayout()
 		LocalModalHost->SetContent(LocalModals.Last());
 	}
 	return Layout;
+}
+
+TSharedRef<SWidget> SIronBattleScreen::BuildFlatLayout()
+{
+	return SNew(SBorder)
+		.BorderImage(IronStyle::WhiteBrush())
+		.BorderBackgroundColor(IronStyle::Night())
+		.Padding(FMargin(10.0f))
+		[
+			SNew(SVerticalBox)
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			[
+				BuildTopBar()
+			]
+			+ SVerticalBox::Slot()
+			.FillHeight(1.0f)
+			.Padding(FMargin(0.0f, 8.0f))
+			[
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot()
+				.FillWidth(1.0f)
+				[
+					SNew(SBorder)
+					.BorderImage(IronStyle::PanelDark())
+					.Padding(FMargin(10.0f))
+					[
+						HexView.ToSharedRef()
+					]
+				]
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.Padding(FMargin(8.0f, 0.0f, 0.0f, 0.0f))
+				[
+					BuildUnitPanel()
+				]
+			]
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			[
+				BuildBottomBar()
+			]
+		];
+}
+
+TSharedRef<SWidget> SIronBattleScreen::BuildBoardLayout()
+{
+	// No background anywhere: the 3D board shows through the hex view, which covers the whole screen under the panels.
+	// The containers between the panels are not hit-testable, so the cursor reaches the board through the gaps.
+	TopBarWidget = BuildTopBar();
+	UnitPanelWidget = BuildUnitPanel();
+	BottomBarWidget = BuildBottomBar();
+	return SNew(SOverlay)
+		.Visibility(EVisibility::SelfHitTestInvisible)
+		+ SOverlay::Slot()
+		[
+			HexView.ToSharedRef()
+		]
+		+ SOverlay::Slot()
+		[
+			SNew(SBox)
+			.Visibility(EVisibility::SelfHitTestInvisible)
+			.Padding(FMargin(10.0f))
+			[
+				SNew(SVerticalBox)
+				.Visibility(EVisibility::SelfHitTestInvisible)
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				[
+					TopBarWidget.ToSharedRef()
+				]
+				+ SVerticalBox::Slot()
+				.FillHeight(1.0f)
+				.Padding(FMargin(0.0f, 8.0f))
+				.HAlign(HAlign_Right)
+				[
+					UnitPanelWidget.ToSharedRef()
+				]
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				[
+					BottomBarWidget.ToSharedRef()
+				]
+			]
+		];
 }
 
 TSharedRef<SWidget> SIronBattleScreen::BuildTopBar()
@@ -693,6 +810,142 @@ TSharedRef<SWidget> SIronBattleScreen::MakeModalFrame(const TSharedRef<SWidget>&
 }
 
 // -------------------------------------------------------------------------------------------------
+// 3D board
+// -------------------------------------------------------------------------------------------------
+
+void SIronBattleScreen::ApplyBoardGraphicsOptions(AIronBattleBoard3D& InBoard, const FIronSession& InSession)
+{
+	const bool bTiltShift = InSession.IsTiltShiftEnabled();
+	if (AIronEnvironment* BoardEnvironment = InBoard.GetEnvironment())
+	{
+		BoardEnvironment->SetTiltShiftStrength(bTiltShift ? 1.0f : 0.0f);
+		BoardEnvironment->SetInkStrength(InSession.IsInkOutlinesEnabled() ? 1.0f : 0.0f);
+	}
+	// The board rewrites its camera's focal distance every tick (gated only on the quality), and the camera's post
+	// process is blended over the environment volume. Without the override the volume's focal distance applies, which
+	// SetTiltShiftStrength(0) set to 0: no depth of field.
+	ACameraActor* BoardCameraActor = InBoard.GetCamera();
+	UCameraComponent* BoardCameraComponent = BoardCameraActor != nullptr ? BoardCameraActor->GetCameraComponent() : nullptr;
+	if (BoardCameraComponent != nullptr)
+	{
+		BoardCameraComponent->PostProcessSettings.bOverride_DepthOfFieldFocalDistance = bTiltShift;
+	}
+}
+
+bool SIronBattleScreen::StartBoard3D()
+{
+	// Presentation mode Auto / 3D with the board's imported assets available (FIronSession::Uses3DBattle).
+	if (!Session.IsValid() || !Session->Uses3DBattle())
+	{
+		return false;
+	}
+	UWorld* BattleWorld = IronBattleScreenDetail::FindBattleWorld(Session.Get());
+	AIronBattleBoard3D* NewBoard = BattleWorld != nullptr ? AIronBattleBoard3D::SpawnBoard(BattleWorld) : nullptr;
+	if (NewBoard == nullptr)
+	{
+		return false;
+	}
+	NewBoard->Build(*Battle);
+	if (!NewBoard->IsBuilt())
+	{
+		return false;
+	}
+	NewBoard->SetSeason(Session->HasGame() ? Session->State().Month : IronBattleScreenDetail::DefaultBoardMonth);
+	NewBoard->SetQuality(Session->GetGraphicsQuality());
+	// The other graphics options at once: without a 3D map the player controller's poll would apply them up to half a
+	// second later (ink outlines popping in). The controller keeps applying them on every settings change.
+	ApplyBoardGraphicsOptions(*NewBoard, *Session);
+	// Frame for the usual panel sizes at once; UpdateBoardFraming refines it from the real layout.
+	NewBoard->SetFramingInsets(0.0f, IronBattleScreenDetail::EstimatedTopInset, IronBattleScreenDetail::EstimatedRightInset, IronBattleScreenDetail::EstimatedBottomInset);
+	NewBoard->ResetView(true);
+	NewBoard->SetActive(true);
+	Board = NewBoard;
+	bBoard3D = true;
+	bBoardFramed = false;
+	return true;
+}
+
+void SIronBattleScreen::StopBoard3D(bool bRestoreMap)
+{
+	AIronBattleBoard3D* ShownBoard = Board.Get();
+	Board.Reset();
+	bBoard3D = false;
+	if (ShownBoard != nullptr)
+	{
+		// Finishes running animations, restores the shared sun and turns world rendering off unless the map shows.
+		ShownBoard->SetActive(false);
+		if (bRestoreMap)
+		{
+			// Free the hexes and units until the next battle builds the board again.
+			ShownBoard->ClearBoard();
+		}
+	}
+	AIronWorldMap3D* CampaignMap = PausedMap.Get();
+	PausedMap.Reset();
+	if (bRestoreMap && CampaignMap != nullptr && !CampaignMap->HasFailed())
+	{
+		CampaignMap->SetActive(true);
+	}
+}
+
+void SIronBattleScreen::FallBackTo2D()
+{
+	if (AIronBattleBoard3D* ShownBoard = Board.Get())
+	{
+		ShownBoard->SetActive(false);
+	}
+	Board.Reset();
+	bBoard3D = false;
+	BoardInsets = FMargin(0.0f);
+	RebuildLayout();
+}
+
+void SIronBattleScreen::UpdateBoardFraming()
+{
+	AIronBattleBoard3D* ShownBoard = Board.Get();
+	if (ShownBoard == nullptr || !HexView.IsValid() || !TopBarWidget.IsValid() || !UnitPanelWidget.IsValid() || !BottomBarWidget.IsValid())
+	{
+		return;
+	}
+	// The hex view covers the screen; the panels' edges in its space give the covered fractions.
+	const FGeometry& ViewGeometry = HexView->GetTickSpaceGeometry();
+	const FVector2f ViewSize = IronBattleScreenDetail::ScreenVec(ViewGeometry.GetLocalSize());
+	if (ViewSize.X < 64.0f || ViewSize.Y < 64.0f)
+	{
+		return;
+	}
+	const FVector2f TopBarMax = IronBattleScreenDetail::ScreenVec(ViewGeometry.AbsoluteToLocal(TopBarWidget->GetTickSpaceGeometry().GetAbsolutePositionAtCoordinates(FVector2D(1.0, 1.0))));
+	const FVector2f UnitPanelMin = IronBattleScreenDetail::ScreenVec(ViewGeometry.AbsoluteToLocal(UnitPanelWidget->GetTickSpaceGeometry().GetAbsolutePositionAtCoordinates(FVector2D(0.0, 0.0))));
+	const FVector2f BottomBarMin = IronBattleScreenDetail::ScreenVec(ViewGeometry.AbsoluteToLocal(BottomBarWidget->GetTickSpaceGeometry().GetAbsolutePositionAtCoordinates(FVector2D(0.0, 0.0))));
+	if (TopBarMax.Y <= 0.0f || UnitPanelMin.X <= 0.0f || BottomBarMin.Y <= 0.0f)
+	{
+		// Not laid out yet.
+		return;
+	}
+	const FMargin NewInsets(
+		0.0f,
+		FMath::Clamp(TopBarMax.Y / ViewSize.Y, 0.0f, 0.45f),
+		FMath::Clamp((ViewSize.X - UnitPanelMin.X) / ViewSize.X, 0.0f, 0.45f),
+		FMath::Clamp((ViewSize.Y - BottomBarMin.Y) / ViewSize.Y, 0.0f, 0.45f));
+	const bool bChanged = FMath::Abs(NewInsets.Top - BoardInsets.Top) > IronBattleScreenDetail::InsetTolerance
+		|| FMath::Abs(NewInsets.Right - BoardInsets.Right) > IronBattleScreenDetail::InsetTolerance
+		|| FMath::Abs(NewInsets.Bottom - BoardInsets.Bottom) > IronBattleScreenDetail::InsetTolerance;
+	if (bBoardFramed && !bChanged)
+	{
+		return;
+	}
+	BoardInsets = NewInsets;
+	HexView->SetCoveredInsets(BoardInsets);
+	ShownBoard->SetFramingInsets(BoardInsets.Left, BoardInsets.Top, BoardInsets.Right, BoardInsets.Bottom);
+	if (!bBoardFramed)
+	{
+		// First real layout: frame the whole board at once instead of gliding from the estimate.
+		bBoardFramed = true;
+		ShownBoard->ResetView(true);
+	}
+}
+
+// -------------------------------------------------------------------------------------------------
 // Turn flow
 // -------------------------------------------------------------------------------------------------
 
@@ -708,6 +961,17 @@ bool SIronBattleScreen::IsHumanTurn() const
 
 EActiveTimerReturnType SIronBattleScreen::OnDriverTick(double /*InCurrentTime*/, float /*InDeltaTime*/)
 {
+	if (bBoard3D)
+	{
+		if (!HexView.IsValid() || !HexView->IsBoardMode())
+		{
+			FallBackTo2D();
+		}
+		else
+		{
+			UpdateBoardFraming();
+		}
+	}
 	if (!bFocusRequested && HexView.IsValid() && FSlateApplication::IsInitialized() && !IsAnyModalOpen())
 	{
 		bFocusRequested = true;
@@ -719,7 +983,8 @@ EActiveTimerReturnType SIronBattleScreen::OnDriverTick(double /*InCurrentTime*/,
 	}
 
 	const double Now = FPlatformTime::Seconds();
-	const bool bAnimating = HexView.IsValid() && Now < HexView->GetBusyUntil();
+	// 2D move animations, or the 3D board's queued animations.
+	const bool bAnimating = HexView.IsValid() && HexView->IsAnimating();
 	if (Battle->IsOver())
 	{
 		if (OverSince < 0.0)
@@ -736,6 +1001,11 @@ EActiveTimerReturnType SIronBattleScreen::OnDriverTick(double /*InCurrentTime*/,
 	}
 	if (bAnimating)
 	{
+		if (bBoard3D)
+		{
+			// The 3D animations outlast the step time: the AI still pauses briefly after each one before acting again.
+			NextStepTime = FMath::Max(NextStepTime, Now + StepSeconds() * 0.5);
+		}
 		return EActiveTimerReturnType::Continue;
 	}
 	if (Battle->HasPendingChallenge())
@@ -826,12 +1096,17 @@ void SIronBattleScreen::AnnouncePlayerTurn()
 
 void SIronBattleScreen::ConsumeEvents(bool bAnimate)
 {
-	if (bAnimate && HexView.IsValid())
+	if (HexView.IsValid())
 	{
-		for (const IronSim::FBattleEvent& Event : Battle->Events())
+		if (bAnimate)
 		{
-			HexView->PlayEvent(Event);
+			for (const IronSim::FBattleEvent& Event : Battle->Events())
+			{
+				HexView->PlayEvent(Event);
+			}
 		}
+		// 3D: the board takes the resolved state after queueing the events (a fast-forward snaps it); no-op in 2D.
+		HexView->SyncBoard(!bAnimate);
 	}
 	Battle->ClearEvents();
 	RefreshAll();
@@ -1481,6 +1756,8 @@ FReply SIronBattleScreen::OnResultContinue()
 	// OnFinished usually replaces this screen: keep it alive until the handler returns.
 	const TSharedRef<SIronBattleScreen> KeepAlive = SharedThis(this);
 	PopScreenModal();
+	// The view goes back to the campaign map (if it was showing) or to the 2D screens.
+	StopBoard3D(true);
 	const IronSim::FBattleResult FinalResult = Battle->Result();
 	FinishedDelegate.ExecuteIfBound(FinalResult);
 	return FReply::Handled();

@@ -313,10 +313,11 @@ def _sky_cam(sky, base_group):
         tex = dsc.get("texture", 0.0)
         if tex:
             n = b.node("ShaderNodeTexNoise")
-            n.inputs["Scale"].default_value = 9.0 / max(r, 1e-3) * 0.02
+            n.inputs["Scale"].default_value = 2.2
             n.inputs["Detail"].default_value = 5.0
             n.inputs["Roughness"].default_value = 0.65
-            b.link(b.vmath("SUBTRACT", D, b.vec(M)).outputs[0], n.inputs["Vector"])
+            b.link(b.vmath("SCALE", b.vmath("SUBTRACT", D, b.vec(M)).outputs[0], scale=1.0 / max(r, 1e-4)).outputs[0],
+                   n.inputs["Vector"])
             maria = b.smooth(n.outputs["Fac"], 0.42, 0.62)
             # limb darkening
             limb = b.smooth(cosM, math.cos(r), math.cos(r * 0.2))
@@ -452,7 +453,8 @@ def _fog_group(sky, base_g):
     pz = b.sep(P)[2]
     ix, iy, iz = b.sep(I)
     oz = b.math("ADD", pz, b.math("MULTIPLY", iz, dist))
-    flag = b.math("MAXIMUM", cam, lp.outputs["Is Glossy Ray"])
+    # camera rays only: fog on glossy rays turns rough reflections into fireflies
+    flag = cam
     cur = gi.outputs[0]
     # haze: sky colour along the (horizon-clamped) view ray
     th = _height_tau(b, f["haze"], f["haze_falloff"], f["haze_h0"], dist, pz, oz)

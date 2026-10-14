@@ -6,8 +6,10 @@
  "archetype": "warrior",
  "expression": "fierce",
  "expr": {
-  "eyebrows-left-down": 0.1,
-  "eyebrows-right-down": 0.1
+  "eyebrows-left-down": 0.25,
+  "eyebrows-right-down": 0.25,
+  "eye-left-slit": 0.08,
+  "eye-right-slit": 0.08
  },
  "face": {
   "chin/chin-width-decr|incr": 0.35,
@@ -23,7 +25,10 @@
   "head/head-fat-decr|incr": -0.4,
   "forehead/forehead-trans-backward|forward": 0.2,
   "mouth/mouth-scale-horiz-decr|incr": 0.15,
-  "mouth/mouth-laugh-lines-in|out": 0.4
+  "mouth/mouth-laugh-lines-in|out": 0.4,
+  "head/head-age-decr|incr": 0.35,
+  "eyes/{s}-eye-bag-decr|incr": 0.5,
+  "eyes/{s}-eye-height2-decr|incr": -0.15
  },
  "identity": {
   "skin_tone": 0.62,
@@ -31,6 +36,7 @@
   "muscle": 0.85,
   "weight": 0.5
  },
+ "iris": 0.3,
  "skin": {
   "weather": 0.9,
   "scars": [
@@ -53,11 +59,11 @@
   "recede": 0.2
  },
  "brows": {
-  "thick": 1.35,
-  "arch": 0.7,
+  "thick": 1.45,
+  "arch": 0.6,
   "angle": 0.35,
-  "count": 1300,
-  "hair_len": 0.011
+  "count": 2600,
+  "hair_len": 0.012
  },
  "beard": {
   "mustache": 1.0,
@@ -84,8 +90,14 @@
    0.2,
    0.016,
    0.012
+  ],
+  "cape": [
+   0.16,
+   0.012,
+   0.01
   ]
  },
+ "exposure": 0.1,
  "headgear": {
   "kind": "helmet"
  },

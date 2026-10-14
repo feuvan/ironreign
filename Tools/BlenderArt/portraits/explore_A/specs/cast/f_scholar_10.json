@@ -1,0 +1,56 @@
+{
+ "id": "f_scholar_10",
+ "seed": 35082,
+ "gender": "f",
+ "age": 18,
+ "archetype": "scholar",
+ "expression": "serene",
+ "bg": "warm",
+ "notes": "He Yunshang, Cloud Robe",
+ "hair": {
+  "style": "lady",
+  "grey": 0.0,
+  "recede": 0.1,
+  "count": 10000,
+  "bun": 0.03192248309687405,
+  "puff": 0.016
+ },
+ "skin": {
+  "weather": 0.2,
+  "scars": [],
+  "huadian": true
+ },
+ "camera": {
+  "yaw": -18.0,
+  "pitch": -3.0,
+  "head_frac": 0.42,
+  "eye_line": 0.39
+ },
+ "outfit": {
+  "kind": "lady",
+  "outer": [
+   0.12,
+   0.1,
+   0.07
+  ],
+  "mid": [
+   0.32,
+   0.03,
+   0.04
+  ],
+  "band": [
+   0.04,
+   0.035,
+   0.03
+  ],
+  "motif": "roundels",
+  "earrings": true,
+  "shawl": false
+ },
+ "headgear": {
+  "kind": "pins"
+ },
+ "identity": {
+  "makeup": 0.87
+ }
+}

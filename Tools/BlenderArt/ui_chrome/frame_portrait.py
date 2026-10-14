@@ -11,10 +11,8 @@ real figure that wanders along the rails):
 Inside the window a shadow catcher (the portrait plane) records the frame's own cast shadow and
 contact darkening as a soft translucent shade over the top/left portrait edge.
 Corners: gilt xiangyun corner pieces - a ruyi head on the mitre pointing into the window and two
-cloud scrolls running along the rails - overlapping the portrait corner by up to 13 px.
+cloud scrolls running along the rails - overlapping the portrait corner by up to 14 px.
 """
-
-import math
 
 import numpy as np
 
@@ -24,10 +22,10 @@ from ironart import ui_chrome_sdf as S
 from ironart.ui_chrome_maps import Maps, L
 
 NAME = "Frame_Portrait"
-SPEC = dict(size=(212, 260), ss=4, spp=64, seed=41)
+SPEC = dict(size=(212, 260), ss=4, spp=40, seed=41)
 W, H = 212, 260
 B = 10.0
-CORNER = 40
+CORNER = 48
 
 
 def corner_piece(ss):
@@ -35,25 +33,19 @@ def corner_piece(ss):
     Returns (height, mask, engraving mask)."""
     G = S.Grid(CORNER, CORNER, ss)
     u, v = MO.corner_fold(G)
-    F = kit.Folded(u, v)
     strokes = []
     # scroll along the rail (in the folded frame the rail is the u axis, v across it)
-    stem = S.bezier((7.5, 4.6), (13.0, 3.9), (20.0, 3.8), (25.5, 5.2), n=40)
-    curl = S.spiral(26.2, 8.6, 3.5, 0.6, 1.05, -90.0 + 12.0, cw=True, n=70)
+    stem = S.bezier((8.0, 4.8), (16.0, 3.9), (26.0, 3.7), (33.5, 5.6), n=48)
+    curl = S.spiral(34.2, 10.0, 4.5, 0.7, 1.1, -90.0 + 10.0, cw=True, n=90)
     path = np.concatenate([stem, curl[1:]], 0)
-    rad = S.taper(len(path), 1.55, 0.42, power=0.9)
+    rad = S.taper(len(path), 1.85, 0.5, power=0.85)
     strokes.append((path, rad))
-    # a small counter-curl leaf springing from the stem towards the window
-    leaf = S.bezier((16.0, 4.6), (17.5, 7.5), (16.0, 10.0), (13.4, 9.6), n=30)
-    lcurl = S.spiral(14.0, 8.4, 1.3, 0.3, 0.8, 90.0, cw=False, n=30)
-    lp = np.concatenate([leaf, lcurl[1:]], 0)
-    strokes.append((lp, S.taper(len(lp), 0.95, 0.3, power=1.0)))
     sd = MO.strokes_sd(G, strokes, pad=3.0)
     # mirror the strokes to the other rail: evaluate on swapped coords and union
     sd_sw = MO.strokes_sd(S.Grid(CORNER, CORNER, ss), [(p[:, ::-1].copy(), r) for p, r in strokes], pad=3.0)
     sd = np.minimum(sd, sd_sw)
-    ry, ry_eng = MO.ruyi(kit.Folded(G.X, G.Y), 12.6, 12.6, 13.0, rot=-45.0)
-    boss = np.hypot(G.X - 5.0, G.Y - 5.0) - 3.2
+    ry, ry_eng = MO.ruyi(kit.Folded(G.X, G.Y), 13.6, 13.6, 17.0, rot=-45.0)
+    boss = np.hypot(G.X - 5.0, G.Y - 5.0) - 3.4
     shape = S.smooth_union(S.smooth_union(sd, ry, 0.7), boss, 0.8)
     z = MO.dome(shape, 1.4, 0.95)
     z = S.blur(z, 0.3 * ss)
@@ -99,6 +91,9 @@ def build(G, variant=None):
     z = z * (1 - cm) + np.maximum(z, zc) * cm
     m.paint(cm, "gold")
     m.tint(cm, kit.recess_shade(cz, G.ss, radius=1.6, k=1.6))
+    wf, wr = kit.edge_wear(cz, G.ss, radius=1.0, k=1.5)
+    m.tint(cm, wf)
+    m.rough = m.rough + wr * cm
     m.tint(cm * ce, 0.62)
     m.paint(cm * ce, rough=0.45)
 
@@ -109,18 +104,19 @@ def build(G, variant=None):
 
 
 def extras(variant, G):
-    """The portrait plane as a shadow catcher inside the window (frame shadow + occlusion)."""
+    """The portrait plane as a shadow catcher inside the window (frame shadow + occlusion).
+    Only a 16 px ring along the window edge is modelled - the shadow never reaches further and
+    an empty centre costs nothing to render."""
     import bpy
     from ironart.ui_chrome_render import MM
-    me = bpy.data.meshes.new("Catcher")
     hw, hh = (W / 2 - B + 0.5) * MM, (H / 2 - B + 0.5) * MM
-    me.from_pydata([(-hw, -hh, 0.0), (hw, -hh, 0.0), (hw, hh, 0.0), (-hw, hh, 0.0)], [],
-                   [(0, 1, 2, 3)])
+    iw, ih = hw - 16 * MM, hh - 16 * MM
+    verts = [(-hw, -hh, 0.0), (hw, -hh, 0.0), (hw, hh, 0.0), (-hw, hh, 0.0),
+             (-iw, -ih, 0.0), (iw, -ih, 0.0), (iw, ih, 0.0), (-iw, ih, 0.0)]
+    faces = [(0, 1, 5, 4), (1, 2, 6, 5), (2, 3, 7, 6), (3, 0, 4, 7)]
+    me = bpy.data.meshes.new("Catcher")
+    me.from_pydata(verts, [], faces)
     ob = bpy.data.objects.new("Catcher", me)
     bpy.context.scene.collection.objects.link(ob)
     ob.is_shadow_catcher = True
-    mat = bpy.data.materials.new("CatcherMat")
-    mat.use_nodes = True
-    mat.node_tree.nodes["Principled BSDF"].inputs["Base Color"].default_value = (0.5, 0.5, 0.5, 1)
-    ob.data.materials.append(mat)
     return ob

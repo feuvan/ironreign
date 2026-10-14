@@ -41,6 +41,9 @@ class Identity:
     grey: float = 0.0                 # fraction of grey/white strands
     # painted hair-root masses in the skin (painters block the mass in before the strands)
     brow_paint: float = 0.75
+    brow_mask: str = "brow"           # 'brow' or 'brow_f' (thin willow-leaf brows)
+    brow_thick: float = 1.0
+    brow_angle: float = 0.0           # + raises the tails (fierce), - drops them (sage / worried)
     scalp_paint: float = 0.0
     scalp_mask: str = "scalp"         # 'scalp' (men) or 'scalp_low' (women / youths)
     beard_paint: float = 0.0

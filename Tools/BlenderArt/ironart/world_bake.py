@@ -22,6 +22,7 @@ multiplied into the base colour (``cavity``) so small parts keep definition unde
 """
 
 import fcntl
+import math
 import json
 import os
 import struct
@@ -76,11 +77,21 @@ def copy_uv(obj, src, dst=UV_EXPORT, scale=1.0, offset=(0.0, 0.0), faces=None):
 
 
 def strip_uvs(obj, keep=UV_EXPORT):
+    """Keep only ``keep`` (renamed ``UVMap``): the GLB carries exactly one UV set."""
     me = obj.data
-    for layer in list(me.uv_layers):
-        if layer.name != keep:
-            me.uv_layers.remove(layer)
+    if bpy.context.object and bpy.context.object.mode != "OBJECT":
+        bpy.ops.object.mode_set(mode="OBJECT")
+    for nm in [l.name for l in me.uv_layers]:
+        if nm == keep:
+            continue
+        try:
+            me.uv_layers.remove(me.uv_layers[nm])
+        except RuntimeError:
+            a = me.attributes.get(nm)
+            if a is not None:
+                me.attributes.remove(a)
     me.uv_layers[keep].name = "UVMap"
+    me.uv_layers.active = me.uv_layers["UVMap"]
 
 
 def spread(objs, gap=8.0):
@@ -95,44 +106,264 @@ def spread(objs, gap=8.0):
     bpy.context.view_layer.update()
 
 
-def unwrap(objs, size=2048, margin_px=6, angle_deg=62.0, weights=None, skip_mats=("Foliage", "Water", "Tint")):
-    """One shared atlas for all ``objs``: Smart UV Project of every face whose material is not
-    in ``skip_mats`` (those keep their preset UV0), optional per-object texel weights
-    (``{name: k}`` scales that object's islands by k before the final pack)."""
+#: slot-name suffixes written by the kit:
+#:   ``~row``  cover-tile rows: no atlas island of their own; after the bake they take the UVs of
+#:             the roof surface right under them (:func:`transfer_row_uvs`) and they are left out of
+#:             the bake itself (they still occlude the AO bake of the surface)
+#:   ``~d``    tiny repeated details (brackets, posts, caps, rings, beasts): mapped into one small
+#:             per-material swatch at the top of the atlas (the bake margin fills the swatch)
+SUFFIXES = ("~row", "~d")
+
+
+def base_name(slot):
+    for sfx in SUFFIXES:
+        if slot.endswith(sfx):
+            return slot[:-len(sfx)]
+    return slot
+
+
+def alias_mats(mats):
+    """``mats`` + every ``name~row`` / ``name~d`` alias pointing at the same material."""
+    out = dict(mats)
+    for k, m in mats.items():
+        for sfx in SUFFIXES:
+            out[k + sfx] = m
+    return out
+
+
+def build(mb, name, mats, **kw):
+    """MeshBuilder.build with the suffix aliases; remembers the builder slot names on the object
+    (``obj['slots']``), which the unwrap / row transfer read."""
+    obj = mb.build(name, alias_mats(mats), **kw)
+    obj["slots"] = list(mb.mat_names)
+    return obj
+
+
+def _slots(obj):
+    return list(obj.get("slots") or [m.name if m else "" for m in obj.data.materials])
+
+
+#: trim strips (patterned repeated parts share one strip of the atlas; all instances overlap):
+#: base material -> (u0, v0, u1, v1) atlas rectangle, metres represented across (u, v) (None =
+#: per-face normalised), u wrap period (pattern-continuous) or None
+TRIMS = {
+    "W_Fascia": ((0.0, 0.822, 1.0, 0.858), (8.0, None), 8.0),
+    "W_BeamPaint": ((0.0, 0.862, 1.0, 0.905), (1.0, 0.75), None),
+    "W_Lattice": ((0.0, 0.91, 0.30, 1.0), (5.0, 6.0), None),
+}
+PACKED_V = 0.815               # unique islands are packed into v in [0, PACKED_V]
+REPACK = "AABB"                # pack_islands shape method after Smart UV Project ('' = keep its packing)
+SWATCH_RECT = (0.31, 0.91, 1.0, 1.0)
+
+
+def unwrap(objs, size=2048, margin_px=6, angle_deg=62.0, weights=None, skip_mats=("Leaves", "Bark", "Water", "Tint"),
+           swatch=0.045, trims=True, method="metre"):
+    """One shared atlas for all ``objs`` (a production-style modular atlas):
+
+    * regular faces: the kit's metre UVs (``method='metre'``, default; or Smart UV Project with
+      ``'smart'`` for meshes without good UVs, e.g. the sect rock), jointly packed with the 4.x
+      island packer, squeezed into v in [0, PACKED_V]
+    * :data:`TRIMS` materials: mapped into their trim strip (every instance shares it)
+    * ``~d`` faces: per-material swatch cells in :data:`SWATCH_RECT` (the bake margin fills them)
+    * ``~row`` and ``skip_mats`` faces keep their UVs (rows get theirs from the roof later)
+    ``weights`` = {object name: k} scales that object's islands before a final repack."""
+    import bmesh
     for o in bpy.context.view_layer.objects:
         o.select_set(False)
     for o in objs:
         o.select_set(True)
     bpy.context.view_layer.objects.active = objs[0]
     bpy.ops.object.mode_set(mode="EDIT")
-    import bmesh
+    bpy.ops.mesh.select_all(action="DESELECT")
+    trim_names = tuple(TRIMS) if trims else ()
+
+    def kind(sl, mats, f):
+        nm = sl[f.material_index] if f.material_index < len(sl) else ""
+        mn = mats[f.material_index] if f.material_index < len(mats) else ""
+        if nm.endswith("~row") or any(mn.startswith(k) for k in skip_mats):
+            return "keep", mn
+        if nm.endswith("~d"):
+            return "swatch", mn
+        if base_name(nm) in trim_names:
+            return "trim", base_name(nm)
+        return "pack", mn
+
     for o in objs:
         bm = bmesh.from_edit_mesh(o.data)
+        sl = _slots(o)
         mats = [m.name if m else "" for m in o.data.materials]
         for f in bm.faces:
-            f.select = not any(mats[f.material_index].startswith(s) for s in skip_mats) if mats else True
+            f.select = kind(sl, mats, f)[0] == "pack"
         bmesh.update_edit_mesh(o.data)
     margin = margin_px / float(size)
     t0 = time.time()
-    bpy.ops.uv.smart_project(angle_limit=np.radians(angle_deg), island_margin=margin,
-                             area_weight=0.0, correct_aspect=True, scale_to_bounds=False)
-    if weights:
+    if method == "smart":
+        bpy.ops.uv.smart_project(angle_limit=np.radians(angle_deg), island_margin=margin,
+                                 area_weight=0.0, correct_aspect=True, scale_to_bounds=False)
+    else:
+        # the kit's own metre UVs: undistorted, roof slopes / wall runs as single islands, true
+        # relative size (uniform texel density after packing)
         for o in objs:
-            k = weights.get(o.name)
-            if not k or k == 1.0:
-                continue
             bm = bmesh.from_edit_mesh(o.data)
             uvl = bm.loops.layers.uv.active
+            mlay = bm.loops.layers.uv.get("MetreUV")
+            if mlay is None:
+                continue
             for f in bm.faces:
                 if f.select:
                     for lp in f.loops:
-                        lp[uvl].uv = lp[uvl].uv * k
+                        lp[uvl].uv = lp[mlay].uv * 0.01
             bmesh.update_edit_mesh(o.data)
+    for o in objs if weights else ():
+        k = weights.get(o.name)
+        if not k or k == 1.0:
+            continue
+        bm = bmesh.from_edit_mesh(o.data)
+        uvl = bm.loops.layers.uv.active
+        for f in bm.faces:
+            if f.select:
+                for lp in f.loops:
+                    lp[uvl].uv = lp[uvl].uv * k
+        bmesh.update_edit_mesh(o.data)
+    # Smart UV Project's own packer wastes ~70 % of the square with thousands of islands: repack
+    # with the 4.x island packer (rotation, exact margins), into the rectangle we keep for them
+    if REPACK or method != "smart":
         bpy.ops.uv.select_all(action="SELECT")
-        bpy.ops.uv.pack_islands(udim_source="CLOSEST_UDIM", rotate=True, margin_method="FRACTION",
-                                margin=margin, shape_method="AABB", scale=True)
+        bpy.ops.uv.pack_islands(udim_source="CLOSEST_UDIM", rotate=True, rotate_method="CARDINAL",
+                                margin_method="FRACTION", margin=margin, shape_method=REPACK or "AABB", scale=True,
+                                merge_overlap=False)
+    sw_index = {}
+    ncol = int((SWATCH_RECT[2] - SWATCH_RECT[0]) / swatch)
+    for o in objs:
+        bm = bmesh.from_edit_mesh(o.data)
+        uvl = bm.loops.layers.uv.active
+        mlay = bm.loops.layers.uv.get("MetreUV")
+        sl = _slots(o)
+        mats = [m.name if m else "" for m in o.data.materials]
+        for f in bm.faces:
+            k, key = kind(sl, mats, f)
+            if k == "pack":
+                for lp in f.loops:
+                    lp[uvl].uv = (lp[uvl].uv.x, lp[uvl].uv.y * PACKED_V)
+            elif k == "swatch":
+                if key not in sw_index:
+                    sw_index[key] = len(sw_index)
+                i = sw_index[key]
+                cu = SWATCH_RECT[0] + swatch * (i % ncol) + swatch / 2
+                cv = SWATCH_RECT[3] - swatch / 2 - swatch * (i // ncol)
+                for lp in f.loops:
+                    m = lp[mlay].uv if mlay is not None else lp.vert.co.xy
+                    lp[uvl].uv = (cu + ((m.x * 0.37) % 1.0 - 0.5) * swatch * 0.25,
+                                  cv + ((m.y * 0.37) % 1.0 - 0.5) * swatch * 0.25)
+            elif k == "trim":
+                (u0, v0, u1, v1), (su, sv), wrap = TRIMS[key]
+                ms = [lp[mlay].uv.copy() for lp in f.loops]
+                umin = min(m.x for m in ms)
+                umax = max(m.x for m in ms)
+                vmin = min(m.y for m in ms)
+                vmax = max(m.y for m in ms)
+                if wrap:
+                    base = wrap * math.floor(umin / wrap)
+                    if umax - base > wrap:
+                        base = umin
+                else:
+                    base = 0.0 if umin >= -1e-6 and umax <= su + 1e-6 else umin
+                for lp, m in zip(f.loops, ms):
+                    uu = min(1.0, max(0.0, (m.x - base) / su))
+                    if sv is None:
+                        vv = (m.y - vmin) / max(vmax - vmin, 1e-6)
+                    else:
+                        vv = min(1.0, max(0.0, (m.y - (0.0 if vmin >= -1e-6 else vmin)) / sv))
+                    lp[uvl].uv = (u0 + (u1 - u0) * (0.004 + 0.992 * uu), v0 + (v1 - v0) * (0.04 + 0.92 * vv))
+        bmesh.update_edit_mesh(o.data)
     bpy.ops.object.mode_set(mode="OBJECT")
-    print("[ironart] unwrap %d objects in %.1fs" % (len(objs), time.time() - t0))
+    print("[ironart] unwrap %d objects in %.1fs (%d swatches)" % (len(objs), time.time() - t0, len(sw_index)))
+
+
+def separate_rows(obj):
+    """Move the ``~row`` faces of ``obj`` into a new object (returned, or None)."""
+    import bmesh
+    sl = _slots(obj)
+    idx = {i for i, nm in enumerate(sl) if nm.endswith("~row")}
+    if not idx:
+        return None
+    me = obj.data
+    mi = np.zeros(len(me.polygons), np.int32)
+    me.polygons.foreach_get("material_index", mi)
+    if not np.isin(mi, list(idx)).any():
+        return None
+    for o in bpy.context.view_layer.objects:
+        o.select_set(False)
+    obj.select_set(True)
+    bpy.context.view_layer.objects.active = obj
+    bpy.ops.object.mode_set(mode="EDIT")
+    bm = bmesh.from_edit_mesh(me)
+    for f in bm.faces:
+        f.select = f.material_index in idx
+    bmesh.update_edit_mesh(me)
+    bpy.ops.mesh.separate(type="SELECTED")
+    bpy.ops.object.mode_set(mode="OBJECT")
+    rows = [o for o in bpy.context.selected_objects if o is not obj][0]
+    rows.name = obj.name + "_rows"
+    rows["slots"] = list(sl)
+    return rows
+
+
+def transfer_row_uvs(rows, surface):
+    """Give every ``~row`` loop the atlas UV of the closest point on the matching roof surface
+    faces of ``surface`` (same base material, non-row) - rows sample the baked roof under them."""
+    from mathutils.bvhtree import BVHTree
+    from mathutils.interpolate import poly_3d_calc
+    sme = surface.data
+    ssl = _slots(surface)
+    rsl = _slots(rows)
+    suv = sme.uv_layers[UV_EXPORT].data
+    verts = [v.co.copy() for v in sme.vertices]
+    by_mat = {}
+    for p in sme.polygons:
+        nm = ssl[p.material_index] if p.material_index < len(ssl) else ""
+        if nm.endswith(SUFFIXES):
+            continue
+        by_mat.setdefault(nm, []).append(p.index)
+    trees = {}
+    for nm, faces in by_mat.items():
+        polys = [list(sme.polygons[i].vertices) for i in faces]
+        trees[nm] = (BVHTree.FromPolygons(verts, polys, all_triangles=False), faces)
+    rme = rows.data
+    ruv = rme.uv_layers[UV_EXPORT].data
+    for p in rme.polygons:
+        nm = base_name(rsl[p.material_index]) if p.material_index < len(rsl) else ""
+        tr = trees.get(nm)
+        if tr is None:
+            continue
+        tree, faces = tr
+        for li in p.loop_indices:
+            co = rme.vertices[rme.loops[li].vertex_index].co
+            hit = tree.find_nearest(co)
+            if hit[0] is None:
+                continue
+            sp = sme.polygons[faces[hit[2]]]
+            pts = [verts[v] for v in sp.vertices]
+            w = poly_3d_calc(pts, hit[0])
+            n = len(w)
+            w = [0.8 * wi + 0.2 / n for wi in w]          # stay inside the island (no edge bleed)
+            u = sum(wi * suv[l].uv.x for wi, l in zip(w, sp.loop_indices))
+            v = sum(wi * suv[l].uv.y for wi, l in zip(w, sp.loop_indices))
+            ruv[li].uv = (u, v)
+
+
+def join(target, others):
+    for o in bpy.context.view_layer.objects:
+        o.select_set(False)
+    for o in others:
+        o.select_set(True)
+    target.select_set(True)
+    bpy.context.view_layer.objects.active = target
+    slots = target.get("slots")
+    bpy.ops.object.join()
+    if slots is not None:
+        target["slots"] = slots
+    return target
 
 
 # ---------------------------------------------------------------------------------------------
@@ -182,6 +413,11 @@ def _rewire(mats, socket):
         old = out.inputs["Surface"].links[0].from_socket if out.inputs["Surface"].is_linked else None
         em = nt.nodes.new("ShaderNodeEmission")
         em.name = "_BakeEmit"
+        if socket is None:                       # coverage mask: constant white
+            em.inputs["Color"].default_value = (1.0, 1.0, 1.0, 1.0)
+            nt.links.new(em.outputs[0], out.inputs["Surface"])
+            saved.append((m, old, em))
+            continue
         s = p.inputs[socket]
         if s.is_linked:
             nt.links.new(s.links[0].from_socket, em.inputs["Color"])
@@ -220,7 +456,7 @@ def _pixels(img):
 
 
 def bake(objs, size, out_dir, name, ao=True, ao_samples=24, ao_distance=2.5, samples=4,
-         margin=16, cavity=0.22, skip_mats=("Foliage", "Water", "Tint"), height=None,
+         margin=16, cavity=0.22, skip_mats=("Leaves", "Bark", "Water", "Tint"), height=None,
          ao_floor=0.35, select=None, jpeg=False):
     """Bake base / roughness / metallic / normal (+ AO) of every non-skipped material on
     ``objs`` (all selected, one shared atlas via their active UV layer).  Writes
@@ -249,28 +485,43 @@ def bake(objs, size, out_dir, name, ao=True, ao_samples=24, ao_distance=2.5, sam
     mats = _bake_mats(objs, skip_mats)
     res = {}
     sc.cycles.samples = samples
-    for key, sock, srgb in (("base", "Base Color", True), ("rough", "Roughness", False),
+    # NB every pass bakes with margin 0: Blender extends the margin per object, so with several
+    # objects in one atlas a later object's margin paints over earlier objects' islands.  The
+    # coverage mask pass + dilate() below make one correct margin for the whole atlas.
+    sc.render.bake.margin = 0
+    for key, sock, srgb in (("mask", None, False), ("base", "Base Color", True), ("rough", "Roughness", False),
                             ("metal", "Metallic", False)):
         img = _image("%s_%s" % (name, key), size, h, srgb)
         _set_target(mats, img)
+        sc.cycles.samples = 1 if key == "mask" else samples
         saved = _rewire(mats, sock)
         try:
-            bpy.ops.object.bake(type="EMIT", margin=margin)
+            bpy.ops.object.bake(type="EMIT", margin=0)
         finally:
             _restore(saved)
         res[key] = _pixels(img)
+    covered = res.pop("mask")[..., 0] > 0.5
     img = _image("%s_normal" % name, size, h, False)
     _set_target(mats, img)
-    bpy.ops.object.bake(type="NORMAL", normal_space="TANGENT", margin=margin)
+    bpy.ops.object.bake(type="NORMAL", normal_space="TANGENT", margin=0)
     res["normal"] = _pixels(img)
     if ao:
         sc.cycles.samples = ao_samples
         img = _image("%s_ao" % name, size, h, False)
         _set_target(mats, img)
-        bpy.ops.object.bake(type="AO", margin=margin)
+        bpy.ops.object.bake(type="AO", margin=0)
         res["ao"] = np.clip(_pixels(img)[..., 0], 0.0, 1.0)
     else:
         res["ao"] = np.ones((h, size), np.float32)
+    stack = np.dstack([res["base"][..., :3], res["rough"][..., :1], res["metal"][..., :1],
+                       res["normal"][..., :3], res["ao"][..., None]])
+    stack = dilate(stack, covered, margin, fill=(0.5, 0.5, 0.5, 0.8, 0.0, 0.5, 0.5, 1.0, 1.0))
+    res["base"] = stack[..., 0:3]
+    res["rough"] = stack[..., 3:4]
+    res["metal"] = stack[..., 4:5]
+    res["normal"] = stack[..., 5:8]
+    res["ao"] = stack[..., 8]
+    res["coverage"] = float(covered.mean())
     for m in mats:
         n = m.node_tree.nodes.get("_BakeTarget")
         if n:
@@ -293,8 +544,38 @@ def bake(objs, size, out_dir, name, ao=True, ao_samples=24, ao_distance=2.5, sam
             im.save(p, optimize=True)
         paths[key.lower()] = p
     paths["secs"] = time.time() - t0
-    print("[ironart] baked %s %dx%d in %.1fs" % (name, size, h, paths["secs"]))
+    paths["coverage"] = res["coverage"]
+    print("[ironart] baked %s %dx%d in %.1fs (%.0f %% texels covered)" % (name, size, h, paths["secs"],
+                                                                         100 * res["coverage"]))
     return paths
+
+
+def dilate(arr, known, iters, fill=None):
+    """Grow ``arr`` (H x W x C) out of the ``known`` texels by ``iters`` px (mean of known
+    8-neighbours per step, no wrap-around); texels still unknown get ``fill`` (per channel)."""
+    out = arr.copy()
+    known = known.copy()
+    H, W = known.shape
+    for _ in range(int(iters)):
+        kp = np.pad(known, 1, mode="constant", constant_values=False)
+        ap = np.pad(out, ((1, 1), (1, 1), (0, 0)), mode="edge")
+        acc = np.zeros_like(out)
+        cnt = np.zeros((H, W), np.float32)
+        for dy in (-1, 0, 1):
+            for dx in (-1, 0, 1):
+                if dx == 0 and dy == 0:
+                    continue
+                k = kp[1 + dy:1 + dy + H, 1 + dx:1 + dx + W]
+                acc += ap[1 + dy:1 + dy + H, 1 + dx:1 + dx + W] * k[..., None]
+                cnt += k
+        grow = (~known) & (cnt > 0)
+        if not grow.any():
+            break
+        out[grow] = acc[grow] / cnt[grow][:, None]
+        known = known | grow
+    if fill is not None:
+        out[~known] = np.array(fill, np.float32)[:out.shape[-1]]
+    return out
 
 
 def _lin_to_srgb(x):
@@ -383,7 +664,7 @@ def tint_material(name="Tint", roughness=0.85):
     return m
 
 
-def assign(objs, mat, keep=("Foliage", "Water", "Tint")):
+def assign(objs, mat, keep=("Leaves", "Bark", "Water", "Tint")):
     """Replace every material slot of ``objs`` by ``mat`` except slots whose name starts with
     one of ``keep`` (those stay for their own export material)."""
     for o in objs:
@@ -573,15 +854,24 @@ def verify_glb(path, footprint=None, height=None, tint=None, max_tris=150000, fr
     info["size"] = tuple(round(v, 2) for v in (hi - lo))
     if not (-2.6 <= lo.z <= 0.01):
         probs.append("min z %.2f (base should sit at z = 0, skirts down to -2.5 m)" % lo.z)
-    cx = (lo.x + hi.x) / 2
+    # origin = base centre: the centroid of the lowest 0.6 m of the model (trunk foot, wall and
+    # gate skirts) must sit on the origin; the crown / barbican may be asymmetric
+    me = o.data
+    co = np.zeros(len(me.vertices) * 3, np.float32)
+    me.vertices.foreach_get("co", co)
+    co = co.reshape(-1, 3)
+    base = co[co[:, 2] < co[:, 2].min() + 0.6]
+    bc = base[:, :2].mean(0) if len(base) else np.zeros(2)
+    info["base_centre"] = (round(float(bc[0]), 2), round(float(bc[1]), 2))
+    ext = max(hi.x - lo.x, hi.y - lo.y)
+    if abs(bc[0]) > max(0.8, 0.06 * ext) or abs(bc[1]) > max(0.8, 0.1 * ext):
+        probs.append("origin not at the base centre (base centroid %.2f, %.2f)" % (bc[0], bc[1]))
     if footprint:
         for k, (want, got) in enumerate(zip(footprint, (hi.x - lo.x, hi.y - lo.y))):
             if want and not (0.8 * want <= got <= 1.2 * want):
                 probs.append("footprint %s %.1f m vs %.1f m" % ("xy"[k], got, want))
     if height and not (0.8 * height <= hi.z <= 1.2 * height):
         probs.append("height %.1f m vs %.1f m" % (hi.z, height))
-    if abs(cx) > max(1.0, 0.08 * (hi.x - lo.x)):
-        probs.append("origin not at the base centre (bbox centre x %.2f)" % cx)
     info["reimport_materials"] = [s.material.name if s.material else None for s in o.material_slots]
     info["obj"] = o
     return info, probs
@@ -620,3 +910,31 @@ def manifest_add(paths, root=ART_SOURCE):
     finally:
         fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
         lock.close()
+
+
+# ---------------------------------------------------------------------------------------------
+# one-call atlas for a set of prototypes
+# ---------------------------------------------------------------------------------------------
+def atlas_bake(protos, size, out_dir, name, preview=False, weights=None, angle_deg=62.0, ao_distance=2.0,
+               ao_samples=24, jpeg=True, keep=("Leaves", "Bark", "Water", "Tint"), gap=6.0):
+    """prepare -> spread -> unwrap (rows / details handled) -> separate rows -> bake -> row UVs
+    from the roof under them -> rejoin -> every atlas slot = the ``Atlas`` material -> back to the
+    origin.  Returns (maps, material)."""
+    for o in protos:
+        prepare(o)
+    spread(protos, gap=gap)
+    unwrap(protos, size=size, margin_px=4 if preview else 6, angle_deg=angle_deg, weights=weights)
+    rows = {o.name: separate_rows(o) for o in protos}
+    maps = bake(protos, size, out_dir, name, ao_samples=8 if preview else ao_samples, ao_distance=ao_distance,
+                jpeg=jpeg)
+    for o in protos:
+        r = rows.get(o.name)
+        if r is not None:
+            transfer_row_uvs(r, o)
+            join(o, [r])
+    mat = pbr_material("Atlas", maps)
+    assign(protos, mat, keep=keep)
+    for o in protos:
+        o.location = (0, 0, 0)
+    bpy.context.view_layer.update()
+    return maps, mat

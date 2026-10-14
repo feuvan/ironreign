@@ -38,7 +38,7 @@ GRID_STEP = 2
 
 #: flat pad radius / blend ring (m) per city size; City_1..3 footprints are ~45 / 75 / 120 m
 PAD_RADIUS = {1: 38.0, 2: 52.0, 3: 68.0}
-PAD_BLEND = 55.0
+PAD_BLEND = 70.0
 #: no trees closer than this to a city point (DESIGN.md: 25 m; we keep the whole pad clear)
 TREE_CITY_CLEAR = {1: 50.0, 2: 64.0, 3: 80.0}
 
@@ -52,7 +52,7 @@ PARAMS = {
     # hills
     "hill_height": 66.0,
     # mountains
-    "mtn_base": 142.0, "mtn_per_width": 0.55, "mtn_ridge_scale": 150.0, "mtn_peak": 179.0,
+    "mtn_base": 140.0, "mtn_per_width": 0.6, "mtn_ridge_scale": 150.0, "mtn_peak": 179.0,
     # rivers
     "river_bank": 3.0, "river_meander": 1.0,
 }
@@ -116,6 +116,36 @@ def vnoise(shape, cell, seed, octaves=1, gain=0.5, lacunarity=2.0, normalise=Tru
         acc -= acc.mean()
         acc /= max(1e-6, float(acc.std()))
     return acc
+
+
+def vnoise_box(full_shape, box, cell, seed, octaves=1, gain=0.5, lacunarity=2.0):
+    """:func:`vnoise`-style fractal value noise defined on ``full_shape`` but evaluated only in
+    ``box`` = (x0, y0, x1, y1) (pixels): a crop is bit-identical to the same window of the full
+    evaluation.  Normalised with fixed constants (bicubic lattice std 0.814), zero mean, ~unit
+    std."""
+    from PIL import Image
+    h, w = full_shape
+    x0, y0, x1, y1 = box
+    rng = np.random.default_rng(seed)
+    acc = np.zeros((y1 - y0, x1 - x0), np.float32)
+    amp, tot = 1.0, 0.0
+    c = float(cell)
+    for o in range(octaves):
+        cs = max(c, 1.0)
+        gh, gw = int(math.ceil(h / cs)) + 4, int(math.ceil(w / cs)) + 4
+        lat = rng.standard_normal((gh, gw)).astype(np.float32)
+        oh, ow = int(round(gh * cs)), int(round(gw * cs))
+        oy = int(rng.integers(0, max(1, int(cs * 2))))
+        ox = int(rng.integers(0, max(1, int(cs * 2))))
+        sx, sy = gw / ow, gh / oh
+        bx = ((ox + x0) * sx, (oy + y0) * sy, (ox + x1) * sx, (oy + y1) * sy)
+        big = np.asarray(Image.fromarray(lat, "F").resize((x1 - x0, y1 - y0), Image.BICUBIC, box=bx),
+                         np.float32)
+        acc += amp * big
+        tot += amp * amp
+        amp *= gain
+        c /= lacunarity
+    return acc / (0.814 * math.sqrt(tot))
 
 
 def upsample2(f):
@@ -519,43 +549,45 @@ def _rot(v, deg):
 def ridge_network(stroke, width, peak, seed):
     """Skeleton of a mountain range: a meandering main crest with summits, spurs branching to
     alternating sides and sub-spurs off the spurs.  Returns a list of ridges
-    ``(pts (n, 2), heights (n,), lam)`` - ``lam`` is the flank fall-off length (m)."""
+    ``(pts (n, 2), heights (n,), lam)`` - ``lam`` is the flank fall-off length (m).
+
+    Sizes follow the *peak height* (not only the stroke width), so even a narrow stroke gets
+    flanks of at most ~50-55 deg: crest fall-off ``lc = 0.36 * peak``."""
     rng = np.random.default_rng(seed)
     w = float(width)
+    lc = 0.36 * peak
     crest = smooth_line(resample(stroke, 4.0), 9.0)
-    crest = meander(crest, 0.16 * w, seed + 1, step=4.0, fade=20.0)
+    crest = meander(crest, 0.4 * lc, seed + 1, step=4.0, fade=20.0)
     crest = smooth_line(crest, 2.0)
     u = arclen(crest)
     L = u[-1]
-    summit = T.perlin_at((u / 105.0).astype(np.float32), np.full(len(u), 0.4, np.float32), seed + 2)
-    summit2 = T.perlin_at((u / 37.0).astype(np.float32), np.full(len(u), 0.8, np.float32), seed + 3)
-    taper = 0.55 + 0.45 * T.smoothstep(0.0, 1.1 * w, u) * T.smoothstep(L, L - 1.1 * w, u)
-    hc = peak * (0.80 + 0.17 * summit + 0.06 * summit2) * taper
-    ridges = [(crest, hc, 0.42 * w)]
+    summit = T.perlin_at((u / 120.0).astype(np.float32), np.full(len(u), 0.4, np.float32), seed + 2)
+    summit2 = T.perlin_at((u / 45.0).astype(np.float32), np.full(len(u), 0.8, np.float32), seed + 3)
+    taper = 0.55 + 0.45 * T.smoothstep(0.0, 1.6 * lc, u) * T.smoothstep(L, L - 1.6 * lc, u)
+    hc = peak * (0.76 + 0.26 * summit + 0.07 * summit2) * taper
+    ridges = [(crest, hc, lc)]
     nrm, tg = normals(crest)
-    pos = rng.uniform(0.15, 0.4) * w
+    pos = rng.uniform(0.2, 0.6) * lc
     side = 1.0 if rng.random() < 0.5 else -1.0
-    while pos < L - 0.1 * w:
-        i = int(np.searchsorted(u, pos))
-        i = min(i, len(crest) - 1)
+    while pos < L - 0.15 * lc:
+        i = min(int(np.searchsorted(u, pos)), len(crest) - 1)
         if rng.random() < 0.72:
             side = -side
-        length = w * rng.uniform(1.15, 2.0) * (0.75 + 0.25 * taper[i])
-        d0 = _rot(nrm[i] * side, rng.uniform(-38, 38))
-        # a gently curving spur (5 points, lateral wander)
+        length = lc * rng.uniform(1.7, 3.1) * (0.75 + 0.25 * taper[i])
+        d0 = _rot(nrm[i] * side, rng.uniform(-42, 42))
         sp = [crest[i]]
         dcur = d0.copy()
+        bend = rng.uniform(-12, 12)
         for k in range(1, 6):
-            dcur = _rot(dcur, rng.uniform(-14, 14))
+            dcur = _rot(dcur, bend + rng.uniform(-10, 10))
             sp.append(sp[-1] + dcur * length / 5.0)
-        sp = resample(np.array(sp), 8.0)
+        sp = resample(np.array(sp), 6.0)
         ss = arclen(sp) / max(1e-6, arclen(sp)[-1])
         h0 = hc[i] * rng.uniform(0.84, 0.96)
-        hs = h0 * (1.0 - 0.9 * ss ** 0.9)
-        ridges.append((sp, hs, 0.36 * w))
-        # sub-spurs
-        for _ in range(int(rng.integers(0, 3))):
-            s0 = rng.uniform(0.22, 0.62)
+        hs = h0 * (1.0 - 0.9 * ss ** 0.85)
+        ridges.append((sp, hs, 0.62 * lc))
+        for _ in range(int(rng.integers(1, 4))):
+            s0 = rng.uniform(0.2, 0.65)
             j = int(s0 * (len(sp) - 1))
             q0 = sp[j]
             dd = sp[min(j + 1, len(sp) - 1)] - sp[max(j - 1, 0)]
@@ -566,54 +598,42 @@ def ridge_network(stroke, width, peak, seed):
             for k in range(1, 4):
                 d2 = _rot(d2, rng.uniform(-12, 12))
                 sub.append(sub[-1] + d2 * l2 / 3.0)
-            sub = resample(np.array(sub), 8.0)
+            sub = resample(np.array(sub), 6.0)
             s2 = arclen(sub) / max(1e-6, arclen(sub)[-1])
-            hsub = hs[j] * rng.uniform(0.88, 0.97) * (1.0 - 0.88 * s2)
-            ridges.append((sub, hsub, 0.22 * w))
-        pos += w * rng.uniform(0.34, 0.6)
-    # the crest at 8 m steps (the tents interpolate heights linearly along each segment)
-    ci = np.arange(0, len(crest), 2)
-    if ci[-1] != len(crest) - 1:
-        ci = np.append(ci, len(crest) - 1)
-    ridges[0] = (crest[ci], hc[ci], ridges[0][2])
+            hsub = hs[j] * rng.uniform(0.86, 0.96) * (1.0 - 0.88 * s2)
+            ridges.append((sub, hsub, 0.45 * lc))
+        pos += lc * rng.uniform(0.9, 1.5)
     return ridges
 
 
-def ridge_raster(out, pts, heights, lam, origin_xy, pert=None, power=1.35, reach=2.8, k=0.35):
+def ridge_raster(out, pts, heights, lam, origin_xy, pert=None, power=1.18, reach=3.6, k=0.35):
     """Union (smooth max, in place) of one ridge into ``out`` (a window of the master grid whose
-    point (0, 0) is map ``origin_xy``).  Each segment is a tent whose height varies linearly along
-    it, so the union is continuous (no nearest-segment seams); the profile across is
-    ``exp(-(d / lam) ** power)`` tapered to exactly 0 at ``reach * lam``."""
+    point (0, 0) is map ``origin_xy``).  Exact distance to the whole ridge polyline (no
+    per-segment scallops); the height along the ridge comes from the arc parameter blurred over
+    6 m (no bisector seams on the inner side of bends); the profile across is
+    ``exp(-(d / lam) ** power)``, faded to 0 over the last 20 % of ``reach * lam``."""
     H, W = out.shape
     R = reach * lam
-    pts = np.asarray(pts, np.float64) - np.asarray(origin_xy, np.float64)
-    hmin, hmax = float(np.min(heights)), float(np.max(heights))
-    for i in range(len(pts) - 1):
-        a, b = pts[i], pts[i + 1]
-        ha, hb = float(heights[i]), float(heights[i + 1])
-        x0 = int(max(0, math.floor(min(a[0], b[0]) - R)))
-        x1 = int(min(W - 1, math.ceil(max(a[0], b[0]) + R)))
-        y0 = int(max(0, math.floor(min(a[1], b[1]) - R)))
-        y1 = int(min(H - 1, math.ceil(max(a[1], b[1]) + R)))
-        if x1 < x0 or y1 < y0:
-            continue
-        xs = np.arange(x0, x1 + 1, dtype=np.float32)[None, :]
-        ys = np.arange(y0, y1 + 1, dtype=np.float32)[:, None]
-        d = b - a
-        L2 = float(d @ d) + 1e-9
-        tu = ((xs - a[0]) * d[0] + (ys - a[1]) * d[1]) / L2
-        t = np.clip(tu, 0.0, 1.0)
-        px = a[0] + t * d[0] - xs
-        py = a[1] + t * d[1] - ys
-        dist = np.sqrt(px * px + py * py + 9.0) - 3.0        # crest rounded over ~3 m
-        if pert is not None:
-            dist = np.maximum(dist + 0.16 * lam * pert[y0:y1 + 1, x0:x1 + 1], 0.0)
-        g = np.exp(-(dist / lam) ** power) * T.smoothstep(R, 0.55 * R, dist)
-        # height continues along the ridge past the segment ends (no scalloped caps)
-        hh = np.clip(ha + (hb - ha) * tu, hmin, hmax)
-        prof = (hh * g).astype(np.float32)
-        sub = out[y0:y1 + 1, x0:x1 + 1]
-        out[y0:y1 + 1, x0:x1 + 1] = smax(sub, prof, k)
+    pts = np.asarray(pts, np.float64)
+    sy, sx, org = window(pts - np.asarray(origin_xy, np.float64), R, (H, W))
+    if sy.stop <= sy.start or sx.stop <= sx.start:
+        return out
+    shp = (sy.stop - sy.start, sx.stop - sx.start)
+    gorg = (origin_xy[0] + org[0], origin_xy[1] + org[1])
+    d, t = polyline_field(pts, R, want_t=True, shape=shp, origin=gorg)
+    ok = np.isfinite(d)
+    if not ok.any():
+        return out
+    tb = gaussian(np.where(ok, t, 0.0), 6.0)
+    wb = gaussian(ok.astype(np.float32), 6.0)
+    tb = np.where(wb > 1e-3, tb / np.maximum(wb, 1e-3), 0.0)
+    hh = np.interp(tb, arclen(pts), heights).astype(np.float32)
+    dist = np.where(ok, np.sqrt(d * d + 9.0) - 3.0, 1e5)          # crest rounded over ~3 m
+    if pert is not None:
+        dist = np.maximum(dist + 0.16 * lam * pert[sy, sx], 0.0)
+    g = np.exp(-(dist / lam) ** power) * T.smoothstep(R, 0.8 * R, dist)
+    prof = (hh * g).astype(np.float32)
+    out[sy, sx] = smax(out[sy, sx], prof, k)
     return out
 
 
@@ -789,7 +809,7 @@ class World:
         city_r = np.zeros(self.shape, np.float32)
         for (_k, cx, cy, s) in self.cities:
             dd = np.hypot(self.xs - cx, self.ys - cy)
-            city_r = np.maximum(city_r, T.smoothstep(PAD_RADIUS[s] + 105.0, PAD_RADIUS[s] + 5.0, dd))
+            city_r = np.maximum(city_r, T.smoothstep(PAD_RADIUS[s] + 60.0, PAD_RADIUS[s] + 10.0, dd))
         keep_city = 1.0 - city_r          # 0 at city sites, 1 away from them
         road_d = self._road_corridor_distance()
         self.f["road_d0"] = road_d
@@ -810,7 +830,7 @@ class World:
                                                 + 0.16 * bill[wn])
             hills[wn] = np.maximum(hills[wn], hk)
             hill_env[wn] = np.maximum(hill_env[wn], e)
-        saddle_h = 1.0 - 0.45 * np.exp(-(road_d / 26.0) ** 2)
+        saddle_h = 1.0 - 0.3 * np.exp(-(road_d / 24.0) ** 2)
         hills = hills * saddle_h * keep_city
         # ---- mountains: a sharp continuous crest per stroke, spurs running down from it
         #      (ridged noise in stroke-aligned coordinates), summits along the crest, then
@@ -828,24 +848,21 @@ class World:
             ridges = ridge_network(st["points"], w, peak, self.seed + 500 + 37 * k)
             # envelopes for masks / valley widths (from the original stroke)
             spts = smooth_line(resample(st["points"], 4.0), 9.0)
-            R = 4.4 * w
+            lc = 0.36 * peak
+            R = 6.0 * lc
             sy, sx, org = window(spts, R, self.shape)
             shp = (sy.stop - sy.start, sx.stop - sx.start)
             d = polyline_field(spts, R, want_t=False, shape=shp, origin=org)
             d = np.where(np.isfinite(d), d, 1e5)
             fade = T.smoothstep(R, 0.6 * R, d)
-            core_env[sy, sx] = np.maximum(core_env[sy, sx], np.exp(-(d / (0.95 * w)) ** 2) * fade)
-            foot_env[sy, sx] = np.maximum(foot_env[sy, sx], np.exp(-(d / (2.0 * w)) ** 2) * fade)
+            core_env[sy, sx] = np.maximum(core_env[sy, sx], np.exp(-(d / (1.6 * lc)) ** 2) * fade)
+            foot_env[sy, sx] = np.maximum(foot_env[sy, sx], np.exp(-(d / (3.3 * lc)) ** 2) * fade)
             for (rp, rh, lam) in ridges:
-                R = 2.8 * lam
-                sy, sx, org = window(rp, R, self.shape)
-                sub = mtn[sy, sx]
-                ridge_raster(sub, rp, rh, lam, org, pert=pert[sy, sx])
-                mtn[sy, sx] = sub
+                ridge_raster(mtn, rp, rh, lam, (0, 0), pert=pert)
         # foothills around every range
-        mtn = smax(mtn, 26.0 * foot_env * (0.35 + 0.65 * lumps), 0.3)
+        mtn = smax(mtn, 22.0 * foot_env * (0.35 + 0.65 * lumps), 0.3)
         mtn = mtn + 9.0 * (ridged - 0.4) * core_env * T.smoothstep(20.0, 80.0, mtn)
-        saddle_m = 1.0 - 0.72 * np.exp(-(road_d / 46.0) ** 2)
+        saddle_m = 1.0 - 0.42 * np.exp(-(self.f["pass_d"] / 34.0) ** 2) - 0.2 * np.exp(-(road_d / 26.0) ** 2)
         mtn = mtn * saddle_m * keep_city
         land = self.f["land0"]
         lift = (np.maximum(hills, 0) + np.maximum(mtn, 0)) * T.smoothstep(-6.0, 30.0, self.f["sd"])
@@ -876,33 +893,38 @@ class World:
         """Light droplet erosion on the 2 m grid (gullies, rounded valley floors, small alluvial
         fans) of the whole relief; droplets start on the hills and ranges and run out onto the
         plains.  Then talus relaxation.  Returns the eroded master-grid height."""
-        k = 2
+        k = 4
         hk = box_down(h, k)
         lk = box_down(lift, k)
         spawn = np.where(lk > 12.0, lk, 0.0) ** 0.5
-        n = int((lk > 12.0).sum() * 0.9)
-        e = erode_droplets(hk, spawn, n, self.seed + 77, unit=100.0, inertia=0.2,
-                           erode_speed=0.22, deposit_speed=0.25, steps=48, max_step=0.003,
+        n = int((lk > 12.0).sum() * 1.6)
+        e = erode_droplets(hk, spawn, n, self.seed + 77, unit=100.0, inertia=0.3,
+                           erode_speed=0.3, deposit_speed=0.25, steps=40, max_step=0.006,
                            log=self.log)
-        e = thermal(e, talus=1.7, rate=0.3, iters=4, cell=float(k))
-        delta = gaussian(e - hk, 0.6) * (box_down(self.f["sd"], k) > 4.0)
+        e = thermal(e, talus=1.6, rate=0.3, iters=3, cell=float(k))
+        delta = gaussian(e - hk, 0.5) * (box_down(self.f["sd"], k) > 4.0)
         up = smooth_up(delta, (hk.shape[0] * k, hk.shape[1] * k))
         out = h.copy()
         out[:up.shape[0], :up.shape[1]] += up
         return out
 
     def _road_corridor_distance(self):
-        """Distance to the straight city-to-city road/pass lines (river routes excluded)."""
-        segs = []
+        """Distance to the straight city-to-city road lines (river routes excluded); the passes'
+        own distance goes to ``f['pass_d']`` (they cut real saddles through the ranges)."""
+        d = np.full(self.shape, np.inf, np.float32)
+        dp = np.full(self.shape, np.inf, np.float32)
         for r in self.sc["roads"]:
             if r.get("kind") == "river":
                 continue
             a, b = self.sc["cities"][r["a"]], self.sc["cities"][r["b"]]
-            segs.append(((a["x"], a["y"]), (b["x"], b["y"])))
-        d = np.full(self.shape, np.inf, np.float32)
-        for a, b in segs:
-            dd = polyline_field(np.array([a, b], np.float64), 160.0, want_t=False, shape=self.shape)
-            np.minimum(d, dd, out=d)
+            pts = np.array([(a["x"], a["y"]), (b["x"], b["y"])], np.float64)
+            sy, sx, org = window(pts, 160.0, self.shape)
+            shp = (sy.stop - sy.start, sx.stop - sx.start)
+            dd = polyline_field(pts, 160.0, want_t=False, shape=shp, origin=org)
+            d[sy, sx] = np.minimum(d[sy, sx], dd)
+            if r.get("kind") == "pass":
+                dp[sy, sx] = np.minimum(dp[sy, sx], dd)
+        self.f["pass_d"] = dp
         return d
 
     # -- 4. lakes ------------------------------------------------------------------------------
@@ -994,8 +1016,7 @@ class World:
         h = self.f["h_pre"].copy()
         bank = self.p["river_bank"]
         # valley half-width beyond the banks: narrow on the plains, wide gorges in the ranges
-        wv = (34.0 + 60.0 * self.f["hill_env"] + 110.0 * self.f["mtn_core"]
-              + 40.0 * self.f["mtn_foot"]).astype(np.float32)
+        wv = (30.0 + 25.0 * self.f["hill_env"] + 45.0 * self.f["mtn_core"]).astype(np.float32)
         hsm = gaussian(h, 3.0)
         river_d = np.full(self.shape, np.inf, np.float32)
         river_hw = np.zeros(self.shape, np.float32)
@@ -1043,7 +1064,7 @@ class World:
             c["t"], c["bed"], c["w"], c["src_fade"] = t, bed, wdt, src_fade
             done[c["index"]] = c
             # ---- carve
-            reach = 420.0
+            reach = 200.0
             wy_, wx_, org = window(pts, reach, self.shape)
             shp = (wy_.stop - wy_.start, wx_.stop - wx_.start)
             d_w, tt_w = polyline_field(pts, reach, want_t=True, shape=shp, origin=org)
@@ -1064,7 +1085,7 @@ class World:
             chan = bed_g - dish + dep * T.smoothstep(hw_g - 0.5, hw_g + bankw, dd)
             hv = h[m]
             excess = np.maximum(hv - top, 0.0)
-            wvm = np.minimum(wv[m] + 1.0 * excess, reach - hw_g - bankw - 30.0)  # higher -> wider
+            wvm = wv[m] + np.minimum(0.3 * excess, 30.0)          # higher ground -> wider
             g = T.smoothstep(0.0, 1.0, (dd - hw_g - bankw) / wvm) ** 0.85
             valley = top + excess * g
             prof = np.where(dd < hw_g + bankw, chan, valley)
@@ -1109,7 +1130,6 @@ class World:
                 level = max(level, float(self.f["river_bed"][near_r].max()) + 3.2)
             level = max(level, 3.0)
             w = T.smoothstep(R + PAD_BLEND, R, dd)
-            w = w * w * (3 - 2 * w)
             h = h * (1 - w) + level * w
             self.pads.append({"key": key, "x": cx, "y": cy, "size": s, "radius": R, "level": level})
         self.f["h"] = np.clip(h, MIN_H, MAX_H).astype(np.float32)
@@ -1135,7 +1155,7 @@ class World:
             fade = np.clip(np.minimum(t, L - t) / 60.0, 0, 1)
             pts = pts + nrm * (5.0 * n * fade)[:, None]
             self.roads.append({"a": r["a"], "b": r["b"], "kind": kind, "pts": pts,
-                               "width": 4.6 if kind == "road" else 3.6})
+                               "width": 4.0 if kind == "road" else 3.2})
 
     # -- 8. forests ------------------------------------------------------------------------------
     def build_forests(self):
@@ -1149,7 +1169,7 @@ class World:
             # lobed outline: radius varies with angle (3-5 lobes) + small satellite groves
             lob = (0.18 * np.sin(3 * ang + rng.uniform(0, 6.3)) + 0.10 * np.sin(5 * ang + rng.uniform(0, 6.3))
                    + 0.06 * np.sin(8 * ang + rng.uniform(0, 6.3)))
-            rr = r * (1.08 + lob)
+            rr = r * (1.22 + lob)
             dd = np.hypot(wx - cx, wy - cy)
             dens = np.maximum(dens, T.smoothstep(rr + 14.0, rr - 10.0, dd))
             for _ in range(int(rng.integers(3, 6))):
@@ -1164,7 +1184,7 @@ class World:
         cityd = self.f["city_d"]
         copses = []
         tries = 0
-        while len(copses) < 70 and tries < 4000:
+        while len(copses) < 190 and tries < 9000:
             tries += 1
             x, y = rng.uniform(30, MAP_W - 30), rng.uniform(30, MAP_H - 30)
             ix, iy = int(x), int(y)
@@ -1172,9 +1192,9 @@ class World:
                     or self.f["river_d"][iy, ix] < 30 or self.f["desert"][iy, ix] > 0.2
                     or dens[iy, ix] > 0.1 or self.f["lake_sd"][iy, ix] > -30):
                 continue
-            if any((x - a) ** 2 + (y - b) ** 2 < 90 ** 2 for a, b, _ in copses):
+            if any((x - a) ** 2 + (y - b) ** 2 < 65 ** 2 for a, b, _ in copses):
                 continue
-            copses.append((x, y, rng.uniform(9.0, 22.0)))
+            copses.append((x, y, rng.uniform(11.0, 28.0)))
         for (x, y, r) in copses:
             x0, x1 = int(max(0, x - r - 30)), int(min(MAP_W, x + r + 30))
             y0, y1 = int(max(0, y - r - 30)), int(min(MAP_H, y + r + 30))
@@ -1319,7 +1339,12 @@ def preview_rgb(world, scale=1):
     h = world.f["h"]
     if scale > 1:
         h = box_down(h, scale)
-    sh = hillshade(h, z=1.0 / scale)
+    return preview_rgb_from_h(h, float(scale))
+
+
+def preview_rgb_from_h(h, cell=1.0):
+    """Hypsometric tint x hillshade of a height grid with ``cell`` metres per sample."""
+    sh = hillshade(h, z=1.0 / cell)
     c = np.zeros(h.shape + (3,), np.float32)
     land = h >= 0
     t = np.clip(h / 180.0, 0, 1)[..., None]

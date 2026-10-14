@@ -5,11 +5,15 @@
 #include "UI/IronSession.h"
 #include "UI/IronStyle.h"
 #include "UI/IronUI.h"
+#include "World/IronBattleBoard3D.h"
 
+#include "Engine/GameViewportClient.h"
+#include "Engine/World.h"
 #include "Fonts/FontMeasure.h"
 #include "Framework/Application/SlateApplication.h"
 #include "HAL/PlatformTime.h"
 #include "InputCoreTypes.h"
+#include "Input/CursorReply.h"
 #include "Input/Events.h"
 #include "Input/Reply.h"
 #include "Layout/Geometry.h"
@@ -25,6 +29,24 @@ namespace IronHexViewDetail
 	constexpr float MoveSeconds = 0.25f;
 	constexpr float FxSeconds = 0.6f;
 	constexpr float BannerSeconds = 1.6f;
+
+	// 3D board overlay.
+	/** Impact moments (seconds after an event's animation starts) of the board's lunge, volley, gate and tactic animations. */
+	constexpr double BoardMeleeImpactSeconds = 0.15;
+	constexpr double BoardVolleyImpactSeconds = 0.42;
+	constexpr double BoardGateBreakSeconds = 0.3;
+	constexpr double BoardTacticImpactSeconds = 0.4;
+	/** A melee hit flash outlasts its lunge by this much; the board starts a counter as soon as the lunge ends. */
+	constexpr double BoardHitOverhangSeconds = 0.21;
+	/** Heights (metres above the board) where floating texts and gate bars are anchored. */
+	constexpr float BoardFloatHeightM = 4.0f;
+	constexpr float BoardGateBarHeightM = 6.0f;
+	/** Unit plates sit this far above the unit model's top (metres). */
+	constexpr float BoardPlateAboveModelM = 0.5f;
+	/** On-screen hex size (corner to corner, Slate units) at which plates are drawn at their nominal size. */
+	constexpr float BoardNominalHexSize = 110.0f;
+	/** Cursor travel (Slate units) after which a press on the board pans instead of clicking. */
+	constexpr float BoardDragThreshold = 6.0f;
 
 	/** Converts any Slate 2D vector type (FVector2D, FVector2f, deprecation wrappers) to FVector2f. */
 	template <typename VectorType>
@@ -160,6 +182,7 @@ void SIronHexView::Construct(const FArguments& InArgs)
 {
 	Battle = InArgs._Battle;
 	Session = InArgs._Session;
+	Board = InArgs._Board;
 	OnHexClickedDelegate = InArgs._OnHexClicked;
 	OnCancelDelegate = InArgs._OnCancel;
 
@@ -213,7 +236,9 @@ void SIronHexView::Construct(const FArguments& InArgs)
 		BoardExtent = (MaxCenter - MinCenter) + HalfHex * 2.0f;
 	}
 
-	RegisterActiveTimer(1.0f / 60.0f, FWidgetActiveTimerDelegate::CreateSP(this, &SIronHexView::OnAnimationTick));
+	// Over the 3D board the plates follow the animated models: repaint every frame.
+	RegisterActiveTimer(Board.IsValid() ? 0.0f : 1.0f / 60.0f, FWidgetActiveTimerDelegate::CreateSP(this, &SIronHexView::OnAnimationTick));
+	PushBoardHighlights();
 }
 
 SIronHexView::FArtRef SIronHexView::MakeArt(const FString& RelativePath)
@@ -342,13 +367,14 @@ int32 SIronHexView::TooltipDefenseSide() const
 void SIronHexView::SetHighlights(const FIronHexHighlights& InHighlights)
 {
 	Highlights = InHighlights;
+	PushBoardHighlights();
 	Invalidate(EInvalidateWidgetReason::Paint);
 }
 
 void SIronHexView::ShowBanner(const FText& Text)
 {
 	BannerText = Text;
-	BannerStart = FMath::Max(FPlatformTime::Seconds(), AnimCursor);
+	BannerStart = FMath::Max(FPlatformTime::Seconds(), GetBusyUntil());
 	Invalidate(EInvalidateWidgetReason::Paint);
 }
 
@@ -359,12 +385,59 @@ void SIronHexView::ClearAnimations()
 	FloatingTexts.Reset();
 	QueuedSounds.Reset();
 	AnimCursor = 0.0;
+	if (AIronBattleBoard3D* ActiveBoard = GetActiveBoard())
+	{
+		ActiveBoard->FinishAnimations();
+	}
 	Invalidate(EInvalidateWidgetReason::Paint);
+}
+
+double SIronHexView::GetBusyUntil() const
+{
+	if (const AIronBattleBoard3D* ActiveBoard = GetActiveBoard())
+	{
+		return FPlatformTime::Seconds() + static_cast<double>(ActiveBoard->GetRemainingAnimationSeconds());
+	}
+	return AnimCursor;
+}
+
+bool SIronHexView::IsAnimating() const
+{
+	if (const AIronBattleBoard3D* ActiveBoard = GetActiveBoard())
+	{
+		return ActiveBoard->IsAnimating();
+	}
+	return FPlatformTime::Seconds() < AnimCursor;
+}
+
+void SIronHexView::SyncBoard(bool bFinishAnimations)
+{
+	AIronBattleBoard3D* ActiveBoard = GetActiveBoard();
+	if (ActiveBoard == nullptr || !Battle.IsValid())
+	{
+		return;
+	}
+	ActiveBoard->SyncFromBattle(*Battle);
+	if (bFinishAnimations)
+	{
+		ActiveBoard->FinishAnimations();
+	}
+}
+
+bool SIronHexView::IsBoardMode() const
+{
+	return GetActiveBoard() != nullptr;
+}
+
+void SIronHexView::SetCoveredInsets(const FMargin& InInsets)
+{
+	CoveredInsets = InInsets;
 }
 
 void SIronHexView::AddFx(EFxKind Kind, IronSim::FHex Hex, double Start, float Duration)
 {
-	if (!Battle.IsValid() || !Battle->InBounds(Hex))
+	// The 3D board draws its own hit, fire and tactic effects.
+	if (!Battle.IsValid() || !Battle->InBounds(Hex) || IsBoardMode())
 	{
 		return;
 	}
@@ -394,6 +467,8 @@ void SIronHexView::AddFloat(IronSim::FHex Hex, const FString& Text, const FLinea
 	}
 	FFloatText NewText;
 	NewText.BoardPos = BasePos - FVector2f(0.0f, 24.0f * static_cast<float>(Stacked));
+	NewText.Hex = Hex;
+	NewText.Stack = Stacked;
 	NewText.Text = Text;
 	NewText.Color = Color;
 	NewText.Start = Start;
@@ -440,11 +515,27 @@ void SIronHexView::PlayEvent(const IronSim::FBattleEvent& Event)
 	}
 	using EEvent = IronSim::EBattleEventType;
 	const double Now = FPlatformTime::Seconds();
-	const double EventTime = FMath::Max(Now, AnimCursor);
+	AIronBattleBoard3D* ActiveBoard = GetActiveBoard();
+	const bool bOnBoard = ActiveBoard != nullptr;
+	// 2D: effects start once the queued moves finished. 3D: the board starts this event's animation once what it already
+	// queued is over; texts and sounds follow that timeline.
+	const double EventTime = bOnBoard ? Now + static_cast<double>(ActiveBoard->GetRemainingAnimationSeconds()) : FMath::Max(Now, AnimCursor);
+	if (bOnBoard)
+	{
+		ActiveBoard->PlayEvent(Event);
+		// Action the player cannot see (the camera is zoomed in elsewhere): the camera glides there.
+		const bool bFollow = Event.Type == EEvent::Move || Event.Type == EEvent::Attack || Event.Type == EEvent::GateHit || Event.Type == EEvent::Tactic;
+		if (bFollow && Battle->InBounds(Event.To))
+		{
+			ActiveBoard->FocusHex(Event.To, true);
+		}
+	}
 	const FLinearColor DamageColor(1.0f, 0.32f, 0.2f, 1.0f);
 	const FLinearColor GoodColor(0.45f, 0.95f, 0.55f, 1.0f);
 	const FLinearColor MutedColor(0.8f, 0.78f, 0.72f, 1.0f);
 	const FLinearColor TacticColor(0.8f, 0.55f, 1.0f, 1.0f);
+	// Moment of impact: on the 2D board effects start with the event; the 3D animations strike a little later.
+	const double TacticTime = EventTime + (bOnBoard ? IronHexViewDetail::BoardTacticImpactSeconds : 0.0);
 
 	switch (Event.Type)
 	{
@@ -452,7 +543,8 @@ void SIronHexView::PlayEvent(const IronSim::FBattleEvent& Event)
 		ShowBanner(IronUI::LocF("ui.battle.banner.day", "Day {day}", {{"day", IronSim::ToText(Battle->Day())}}));
 		break;
 	case EEvent::Move:
-		if (IsValidUnit(Event.Unit) && Event.From != Event.To)
+		// The 3D board walks the unit along its path itself.
+		if (!bOnBoard && IsValidUnit(Event.Unit) && Event.From != Event.To)
 		{
 			const int32 MovingUnit = Event.Unit;
 			MoveAnims.RemoveAll([MovingUnit](const FMoveAnim& Existing) { return Existing.Unit == MovingUnit; });
@@ -468,7 +560,16 @@ void SIronHexView::PlayEvent(const IronSim::FBattleEvent& Event)
 	case EEvent::Attack:
 	case EEvent::Counter:
 	{
-		const double HitTime = EventTime + (Event.Type == EEvent::Counter ? 0.2 : 0.0);
+		double HitTime = EventTime + (Event.Type == EEvent::Counter ? 0.2 : 0.0);
+		if (bOnBoard)
+		{
+			// Distance 2 is an archer volley, everything else a melee lunge.
+			HitTime = EventTime + (IronSim::HexMath::Distance(Event.From, Event.To) >= 2 ? IronHexViewDetail::BoardVolleyImpactSeconds : IronHexViewDetail::BoardMeleeImpactSeconds);
+			if (Event.Type == EEvent::Counter)
+			{
+				HitTime = FMath::Max(Now, HitTime - IronHexViewDetail::BoardHitOverhangSeconds);
+			}
+		}
 		const IronSim::FHex TargetHex = UnitHexOr(Event.Target, Event.To);
 		AddFx(EFxKind::Hit, TargetHex, HitTime, IronHexViewDetail::FxSeconds);
 		if (Event.Value > 0)
@@ -481,50 +582,56 @@ void SIronHexView::PlayEvent(const IronSim::FBattleEvent& Event)
 		break;
 	}
 	case EEvent::GateHit:
+	{
 		// To is the gate that was hit: great cities have two gates.
-		AddFx(EFxKind::Hit, Event.To, EventTime, IronHexViewDetail::FxSeconds);
+		const double GateHitTime = EventTime + (bOnBoard ? IronHexViewDetail::BoardMeleeImpactSeconds : 0.0);
+		AddFx(EFxKind::Hit, Event.To, GateHitTime, IronHexViewDetail::FxSeconds);
 		if (Event.Value > 0)
 		{
-			AddFloat(Event.To, FString::Printf(TEXT("-%d"), Event.Value), DamageColor, EventTime);
+			AddFloat(Event.To, FString::Printf(TEXT("-%d"), Event.Value), DamageColor, GateHitTime);
 		}
-		AddSound(TEXT("GateHit"), EventTime);
+		AddSound(TEXT("GateHit"), GateHitTime);
 		break;
+	}
 	case EEvent::GateBroken:
-		AddFx(EFxKind::Hit, Event.To, EventTime, 1.0f);
-		AddFloat(Event.To, IronUI::Loc("ui.battle.fx.gateBroken", "The gate is broken!").ToString(), IronStyle::Gold(), EventTime, 22.0f);
-		AddSound(TEXT("GateHit"), EventTime);
+	{
+		const double BreakTime = EventTime + (bOnBoard ? IronHexViewDetail::BoardGateBreakSeconds : 0.0);
+		AddFx(EFxKind::Hit, Event.To, BreakTime, 1.0f);
+		AddFloat(Event.To, IronUI::Loc("ui.battle.fx.gateBroken", "The gate is broken!").ToString(), IronStyle::Gold(), BreakTime, 22.0f);
+		AddSound(TEXT("GateHit"), BreakTime);
 		break;
+	}
 	case EEvent::Tactic:
 	{
 		const IronSim::FHex TargetHex = UnitHexOr(Event.Target, Event.To);
 		if (Event.Tactic == static_cast<int32>(IronSim::ETactic::Fire))
 		{
-			AddFx(EFxKind::Fire, TargetHex, EventTime, 0.9f);
+			AddFx(EFxKind::Fire, TargetHex, TacticTime, 0.9f);
 			if (Event.Value > 0)
 			{
-				AddFloat(TargetHex, FString::Printf(TEXT("-%d"), Event.Value), DamageColor, EventTime);
+				AddFloat(TargetHex, FString::Printf(TEXT("-%d"), Event.Value), DamageColor, TacticTime);
 			}
-			AddSound(TEXT("Fire"), EventTime);
+			AddSound(TEXT("Fire"), TacticTime);
 		}
 		else if (Event.Tactic == static_cast<int32>(IronSim::ETactic::Confuse))
 		{
-			AddFx(EFxKind::Confuse, TargetHex, EventTime, 0.9f);
-			AddFloat(TargetHex, IronUI::Loc("ui.battle.fx.confused", "Confused!").ToString(), TacticColor, EventTime);
-			AddSound(TEXT("Confuse"), EventTime);
+			AddFx(EFxKind::Confuse, TargetHex, TacticTime, 0.9f);
+			AddFloat(TargetHex, IronUI::Loc("ui.battle.fx.confused", "Confused!").ToString(), TacticColor, TacticTime);
+			AddSound(TEXT("Confuse"), TacticTime);
 		}
 		else if (Event.Tactic == static_cast<int32>(IronSim::ETactic::Rally))
 		{
-			AddFx(EFxKind::Rally, TargetHex, EventTime, 0.9f);
+			AddFx(EFxKind::Rally, TargetHex, TacticTime, 0.9f);
 			if (Event.Value > 0)
 			{
-				AddFloat(TargetHex, FString::Printf(TEXT("+%d"), Event.Value), GoodColor, EventTime);
+				AddFloat(TargetHex, FString::Printf(TEXT("+%d"), Event.Value), GoodColor, TacticTime);
 			}
-			AddSound(TEXT("Rally"), EventTime);
+			AddSound(TEXT("Rally"), TacticTime);
 		}
 		break;
 	}
 	case EEvent::TacticFailed:
-		AddFloat(UnitHexOr(Event.Target, Event.To), IronUI::Loc("ui.battle.fx.failed", "Failed").ToString(), MutedColor, EventTime);
+		AddFloat(UnitHexOr(Event.Target, Event.To), IronUI::Loc("ui.battle.fx.failed", "Failed").ToString(), MutedColor, TacticTime);
 		break;
 	case EEvent::Burn:
 	{
@@ -582,6 +689,11 @@ EActiveTimerReturnType SIronHexView::OnAnimationTick(double /*InCurrentTime*/, f
 	MoveAnims.RemoveAll([Now](const FMoveAnim& Anim) { return Now > Anim.Start + IronHexViewDetail::MoveSeconds; });
 	ActiveFx.RemoveAll([Now](const FHexFx& Effect) { return Now > Effect.Start + Effect.Duration; });
 	FloatingTexts.RemoveAll([Now](const FFloatText& Floating) { return Now > Floating.Start + Floating.Duration; });
+	if (IsBoardMode())
+	{
+		// The camera glides and units walk under a still cursor.
+		UpdateBoardHover(IronHexViewDetail::HexVec(GetTickSpaceGeometry().GetLocalSize()));
+	}
 	// Burning hexes flicker, confusion swirls bob and highlights pulse: keep repainting.
 	Invalidate(EInvalidateWidgetReason::Paint);
 	return EActiveTimerReturnType::Continue;
@@ -606,6 +718,17 @@ FReply SIronHexView::OnMouseButtonDown(const FGeometry& MyGeometry, const FPoint
 		}
 		return FReply::Handled().SetUserFocus(AsShared(), EFocusCause::Mouse);
 	}
+	if (IsBoardMode() && (MouseEvent.GetEffectingButton() == EKeys::LeftMouseButton || MouseEvent.GetEffectingButton() == EKeys::MiddleMouseButton))
+	{
+		// 3D: a left press clicks on release unless the cursor travels (then it pans); a middle drag always pans.
+		PressLocal = IronHexViewDetail::HexVec(MyGeometry.AbsoluteToLocal(MouseEvent.GetScreenSpacePosition()));
+		LastDragLocal = PressLocal;
+		MouseLocal = PressLocal;
+		bPanButtonDown = true;
+		bClickPending = MouseEvent.GetEffectingButton() == EKeys::LeftMouseButton;
+		bDragging = false;
+		return FReply::Handled().CaptureMouse(AsShared()).SetUserFocus(AsShared(), EFocusCause::Mouse);
+	}
 	if (MouseEvent.GetEffectingButton() == EKeys::LeftMouseButton)
 	{
 		const FVector2f LocalPos = IronHexViewDetail::HexVec(MyGeometry.AbsoluteToLocal(MouseEvent.GetScreenSpacePosition()));
@@ -620,14 +743,81 @@ FReply SIronHexView::OnMouseButtonDown(const FGeometry& MyGeometry, const FPoint
 	return FReply::Unhandled();
 }
 
+FReply SIronHexView::OnMouseButtonDoubleClick(const FGeometry& InMyGeometry, const FPointerEvent& InMouseEvent)
+{
+	// Slate sends the second press of a quick double click here: on the 3D board it is an ordinary press.
+	if (IsBoardMode())
+	{
+		return OnMouseButtonDown(InMyGeometry, InMouseEvent);
+	}
+	return SLeafWidget::OnMouseButtonDoubleClick(InMyGeometry, InMouseEvent);
+}
+
+FReply SIronHexView::OnMouseButtonUp(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent)
+{
+	const bool bPanButton = MouseEvent.GetEffectingButton() == EKeys::LeftMouseButton || MouseEvent.GetEffectingButton() == EKeys::MiddleMouseButton;
+	if (!bPanButtonDown || !bPanButton)
+	{
+		return SLeafWidget::OnMouseButtonUp(MyGeometry, MouseEvent);
+	}
+	const bool bClick = bClickPending && !bDragging && MouseEvent.GetEffectingButton() == EKeys::LeftMouseButton;
+	ResetPointerState();
+	if (bClick && IsBoardMode())
+	{
+		const IronSim::FHex Hex = PickBoardHex(PressLocal, IronHexViewDetail::HexVec(MyGeometry.GetLocalSize()));
+		if (Hex.Col >= 0 && OnHexClickedDelegate.IsBound())
+		{
+			OnHexClickedDelegate.Execute(Hex);
+		}
+	}
+	return FReply::Handled().ReleaseMouseCapture();
+}
+
 FReply SIronHexView::OnMouseMove(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent)
 {
 	MouseLocal = IronHexViewDetail::HexVec(MyGeometry.AbsoluteToLocal(MouseEvent.GetScreenSpacePosition()));
 	bMouseInside = true;
 	const FVector2f LocalSize = IronHexViewDetail::HexVec(MyGeometry.GetLocalSize());
+	if (AIronBattleBoard3D* ActiveBoard = GetActiveBoard())
+	{
+		if (bPanButtonDown && HasMouseCapture())
+		{
+			if (!bDragging && (MouseLocal - PressLocal).Size() > IronHexViewDetail::BoardDragThreshold)
+			{
+				bDragging = true;
+				bClickPending = false;
+				PushBoardHighlights();
+			}
+			if (bDragging)
+			{
+				const FVector2f PixelsPerLocal = ViewportPixelsPerLocal(LocalSize);
+				const FVector2f DeltaPixels = (MouseLocal - LastDragLocal) * PixelsPerLocal;
+				ActiveBoard->Pan(FVector2D(DeltaPixels.X, DeltaPixels.Y), FVector2D(LocalSize.X * PixelsPerLocal.X, LocalSize.Y * PixelsPerLocal.Y));
+				LastDragLocal = MouseLocal;
+				Invalidate(EInvalidateWidgetReason::Paint);
+				return FReply::Handled();
+			}
+		}
+		UpdateBoardHover(LocalSize);
+		Invalidate(EInvalidateWidgetReason::Paint);
+		return FReply::Unhandled();
+	}
 	HoveredHex = PickHex(MouseLocal, ComputeLayout(LocalSize));
 	Invalidate(EInvalidateWidgetReason::Paint);
 	return FReply::Unhandled();
+}
+
+FReply SIronHexView::OnMouseWheel(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent)
+{
+	AIronBattleBoard3D* ActiveBoard = GetActiveBoard();
+	if (ActiveBoard == nullptr)
+	{
+		return SLeafWidget::OnMouseWheel(MyGeometry, MouseEvent);
+	}
+	const FVector2f LocalPos = IronHexViewDetail::HexVec(MyGeometry.AbsoluteToLocal(MouseEvent.GetScreenSpacePosition()));
+	const FVector2f CursorPixel = LocalPos * ViewportPixelsPerLocal(IronHexViewDetail::HexVec(MyGeometry.GetLocalSize()));
+	ActiveBoard->Zoom(MouseEvent.GetWheelDelta(), FVector2D(CursorPixel.X, CursorPixel.Y));
+	return FReply::Handled();
 }
 
 void SIronHexView::OnMouseLeave(const FPointerEvent& MouseEvent)
@@ -635,7 +825,23 @@ void SIronHexView::OnMouseLeave(const FPointerEvent& MouseEvent)
 	SLeafWidget::OnMouseLeave(MouseEvent);
 	bMouseInside = false;
 	HoveredHex = IronSim::FHex{-1, -1};
+	PushBoardHighlights();
 	Invalidate(EInvalidateWidgetReason::Paint);
+}
+
+void SIronHexView::OnMouseCaptureLost(const FCaptureLostEvent& CaptureLostEvent)
+{
+	SLeafWidget::OnMouseCaptureLost(CaptureLostEvent);
+	ResetPointerState();
+}
+
+FCursorReply SIronHexView::OnCursorQuery(const FGeometry& MyGeometry, const FPointerEvent& CursorEvent) const
+{
+	if (bDragging)
+	{
+		return FCursorReply::Cursor(EMouseCursor::GrabHandClosed);
+	}
+	return SLeafWidget::OnCursorQuery(MyGeometry, CursorEvent);
 }
 
 FReply SIronHexView::OnKeyDown(const FGeometry& MyGeometry, const FKeyEvent& InKeyEvent)
@@ -644,7 +850,124 @@ FReply SIronHexView::OnKeyDown(const FGeometry& MyGeometry, const FKeyEvent& InK
 	{
 		return FReply::Handled();
 	}
+	if (InKeyEvent.GetKey() == EKeys::Home || InKeyEvent.GetKey() == EKeys::R)
+	{
+		if (AIronBattleBoard3D* ActiveBoard = GetActiveBoard())
+		{
+			// Back to the whole-board framing.
+			ActiveBoard->ResetView(false);
+			return FReply::Handled();
+		}
+	}
 	return SLeafWidget::OnKeyDown(MyGeometry, InKeyEvent);
+}
+
+void SIronHexView::ResetPointerState()
+{
+	const bool bWasDragging = bDragging;
+	bPanButtonDown = false;
+	bClickPending = false;
+	bDragging = false;
+	if (bWasDragging)
+	{
+		PushBoardHighlights();
+	}
+}
+
+// -------------------------------------------------------------------------------------------------
+// 3D board
+// -------------------------------------------------------------------------------------------------
+
+AIronBattleBoard3D* SIronHexView::GetActiveBoard() const
+{
+	AIronBattleBoard3D* ActiveBoard = Board.Get();
+	return (ActiveBoard != nullptr && ActiveBoard->IsBoardActive() && ActiveBoard->IsBuilt()) ? ActiveBoard : nullptr;
+}
+
+FVector2f SIronHexView::ViewportPixelsPerLocal(const FVector2f& LocalSize) const
+{
+	// The overlay covers the game viewport (SIronRoot fills it), so local (0, 0) is viewport pixel (0, 0) and the two
+	// differ only by the DPI scale.
+	const AIronBattleBoard3D* BoardActor = Board.Get();
+	UWorld* BoardWorld = BoardActor != nullptr ? BoardActor->GetWorld() : nullptr;
+	UGameViewportClient* GameViewport = BoardWorld != nullptr ? BoardWorld->GetGameViewport() : nullptr;
+	FVector2D ViewportSize = FVector2D::ZeroVector;
+	if (GameViewport != nullptr)
+	{
+		GameViewport->GetViewportSize(ViewportSize);
+	}
+	if (ViewportSize.X < 1.0 || ViewportSize.Y < 1.0 || LocalSize.X < 1.0f || LocalSize.Y < 1.0f)
+	{
+		return FVector2f(1.0f, 1.0f);
+	}
+	return FVector2f(static_cast<float>(ViewportSize.X) / LocalSize.X, static_cast<float>(ViewportSize.Y) / LocalSize.Y);
+}
+
+IronSim::FHex SIronHexView::PickBoardHex(const FVector2f& LocalPos, const FVector2f& LocalSize) const
+{
+	const IronSim::FHex NoHex = {-1, -1};
+	const AIronBattleBoard3D* ActiveBoard = GetActiveBoard();
+	if (ActiveBoard == nullptr || !Battle.IsValid())
+	{
+		return NoHex;
+	}
+	const FVector2f Pixel = LocalPos * ViewportPixelsPerLocal(LocalSize);
+	IronSim::FHex Picked = NoHex;
+	if (!ActiveBoard->PickHex(FVector2D(Pixel.X, Pixel.Y), Picked) || !Battle->InBounds(Picked))
+	{
+		return NoHex;
+	}
+	return Picked;
+}
+
+void SIronHexView::UpdateBoardHover(const FVector2f& LocalSize)
+{
+	AIronBattleBoard3D* ActiveBoard = GetActiveBoard();
+	if (ActiveBoard == nullptr)
+	{
+		return;
+	}
+	const IronSim::FHex NewHover = (bMouseInside && !bDragging) ? PickBoardHex(MouseLocal, LocalSize) : IronSim::FHex{-1, -1};
+	if (NewHover != HoveredHex)
+	{
+		HoveredHex = NewHover;
+		ActiveBoard->SetHoveredHex(HoveredHex);
+	}
+}
+
+void SIronHexView::PushBoardHighlights()
+{
+	AIronBattleBoard3D* ActiveBoard = GetActiveBoard();
+	if (ActiveBoard == nullptr)
+	{
+		return;
+	}
+	FIronBoardHighlights BoardHighlights;
+	BoardHighlights.Reachable = Highlights.Reachable;
+	BoardHighlights.AttackTargets = Highlights.AttackTargets;
+	BoardHighlights.TacticTargets = Highlights.TacticTargets;
+	BoardHighlights.DuelTargets = Highlights.DuelTargets;
+	BoardHighlights.SelectedUnit = Highlights.SelectedUnit;
+	BoardHighlights.HoveredHex = (bMouseInside && !bDragging && Battle.IsValid() && Battle->InBounds(HoveredHex)) ? HoveredHex : IronSim::FHex{-1, -1};
+	ActiveBoard->SetHighlights(BoardHighlights);
+}
+
+void SIronHexView::GetFreeArea(const FVector2f& LocalSize, FVector2f& OutMin, FVector2f& OutMax) const
+{
+	OutMin = FVector2f(0.0f, 0.0f);
+	OutMax = LocalSize;
+	if (!IsBoardMode())
+	{
+		return;
+	}
+	const FVector2f FreeMin(LocalSize.X * CoveredInsets.Left, LocalSize.Y * CoveredInsets.Top);
+	const FVector2f FreeMax(LocalSize.X * (1.0f - CoveredInsets.Right), LocalSize.Y * (1.0f - CoveredInsets.Bottom));
+	// Panels covering nearly everything (a tiny window): use the whole widget.
+	if (FreeMax.X - FreeMin.X >= 240.0f && FreeMax.Y - FreeMin.Y >= 160.0f)
+	{
+		OutMin = FreeMin;
+		OutMax = FreeMax;
+	}
 }
 
 // -------------------------------------------------------------------------------------------------
@@ -717,6 +1040,27 @@ void SIronHexView::DrawCenteredText(FSlateWindowElementList& OutDrawElements, in
 	FSlateDrawElement::MakeText(OutDrawElements, Layer + 1, Geometry.ToPaintGeometry(TextSize, FSlateLayoutTransform(TopLeft)), Text, Font, ESlateDrawEffect::None, Color);
 }
 
+void SIronHexView::DrawBanner(FSlateWindowElementList& OutDrawElements, int32 Layer, const FGeometry& Geometry, const FVector2f& AreaMin, const FVector2f& AreaMax, double Now) const
+{
+	namespace Detail = IronHexViewDetail;
+	const float BannerAge = static_cast<float>(Now - BannerStart);
+	if (BannerText.IsEmpty() || BannerAge < 0.0f || BannerAge >= Detail::BannerSeconds)
+	{
+		return;
+	}
+	const float FadeIn = FMath::Clamp(BannerAge / 0.15f, 0.0f, 1.0f);
+	const float FadeOut = FMath::Clamp((Detail::BannerSeconds - BannerAge) / 0.5f, 0.0f, 1.0f);
+	const float BannerAlpha = FMath::Min(FadeIn, FadeOut);
+	const float BandHeight = 64.0f;
+	const float BandWidth = AreaMax.X - AreaMin.X;
+	const float BandCenterY = AreaMin.Y + (AreaMax.Y - AreaMin.Y) * 0.42f;
+	const FVector2f BandPos(AreaMin.X, BandCenterY - BandHeight * 0.5f);
+	DrawRect(OutDrawElements, Layer, Geometry, BandPos, FVector2f(BandWidth, BandHeight), Detail::HexWithAlpha(IronStyle::Night(), 0.7f * BannerAlpha));
+	DrawRect(OutDrawElements, Layer, Geometry, BandPos, FVector2f(BandWidth, 2.0f), Detail::HexWithAlpha(IronStyle::Gold(), BannerAlpha));
+	DrawRect(OutDrawElements, Layer, Geometry, BandPos + FVector2f(0.0f, BandHeight - 2.0f), FVector2f(BandWidth, 2.0f), Detail::HexWithAlpha(IronStyle::Gold(), BannerAlpha));
+	DrawCenteredText(OutDrawElements, Layer + 1, Geometry, BannerText.ToString(), IronStyle::Heading(34.0f), FVector2f(AreaMin.X + BandWidth * 0.5f, BandCenterY), Detail::HexWithAlpha(IronStyle::Gold(), BannerAlpha));
+}
+
 void SIronHexView::BuildTooltipLines(TArray<FTipLine>& OutLines) const
 {
 	const FLinearColor Light = IronStyle::TextLight();
@@ -778,9 +1122,9 @@ void SIronHexView::BuildTooltipLines(TArray<FTipLine>& OutLines) const
 	}
 }
 
-int32 SIronHexView::DrawTooltip(FSlateWindowElementList& OutDrawElements, int32 Layer, const FGeometry& Geometry, const FVector2f& LocalSize) const
+int32 SIronHexView::DrawTooltip(FSlateWindowElementList& OutDrawElements, int32 Layer, const FGeometry& Geometry, const FVector2f& AreaMin, const FVector2f& AreaMax) const
 {
-	if (!bMouseInside || !Battle->InBounds(HoveredHex) || !FSlateApplication::IsInitialized())
+	if (!bMouseInside || bDragging || !Battle->InBounds(HoveredHex) || !FSlateApplication::IsInitialized())
 	{
 		return Layer;
 	}
@@ -810,16 +1154,16 @@ int32 SIronHexView::DrawTooltip(FSlateWindowElementList& OutDrawElements, int32 
 	}
 	const FVector2f BoxSize(Width + Padding * 2.0f, Height - LineGap + Padding * 2.0f);
 	FVector2f BoxPos = MouseLocal + FVector2f(22.0f, 22.0f);
-	if (BoxPos.X + BoxSize.X > LocalSize.X - 4.0f)
+	if (BoxPos.X + BoxSize.X > AreaMax.X - 4.0f)
 	{
 		BoxPos.X = MouseLocal.X - BoxSize.X - 12.0f;
 	}
-	if (BoxPos.Y + BoxSize.Y > LocalSize.Y - 4.0f)
+	if (BoxPos.Y + BoxSize.Y > AreaMax.Y - 4.0f)
 	{
-		BoxPos.Y = LocalSize.Y - BoxSize.Y - 4.0f;
+		BoxPos.Y = AreaMax.Y - BoxSize.Y - 4.0f;
 	}
-	BoxPos.X = FMath::Max(BoxPos.X, 4.0f);
-	BoxPos.Y = FMath::Max(BoxPos.Y, 4.0f);
+	BoxPos.X = FMath::Max(BoxPos.X, AreaMin.X + 4.0f);
+	BoxPos.Y = FMath::Max(BoxPos.Y, AreaMin.Y + 4.0f);
 
 	DrawRect(OutDrawElements, Layer, Geometry, BoxPos, BoxSize, IronHexViewDetail::HexWithAlpha(IronStyle::Night(), 0.94f));
 	TArray<FVector2f> Border;
@@ -844,8 +1188,13 @@ int32 SIronHexView::DrawTooltip(FSlateWindowElementList& OutDrawElements, int32 
 int32 SIronHexView::OnPaint(const FPaintArgs& /*Args*/, const FGeometry& AllottedGeometry, const FSlateRect& /*MyCullingRect*/, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& /*InWidgetStyle*/, bool /*bParentEnabled*/) const
 {
 	namespace Detail = IronHexViewDetail;
-	const FVector2f LocalSize = Detail::HexVec(AllottedGeometry.GetLocalSize());
 	const double Now = FPlatformTime::Seconds();
+	if (const AIronBattleBoard3D* ActiveBoard = GetActiveBoard())
+	{
+		// The 3D board draws the terrain, highlights, units and effects: this widget only adds the overlay.
+		return PaintBoardOverlay(*ActiveBoard, OutDrawElements, LayerId, AllottedGeometry, Now);
+	}
+	const FVector2f LocalSize = Detail::HexVec(AllottedGeometry.GetLocalSize());
 	const float Time = static_cast<float>(FMath::Fmod(Now, 3600.0));
 
 	const int32 BackgroundLayer = LayerId;
@@ -1120,19 +1469,122 @@ int32 SIronHexView::OnPaint(const FPaintArgs& /*Args*/, const FGeometry& Allotte
 	}
 
 	// Day banner.
-	const float BannerAge = static_cast<float>(Now - BannerStart);
-	if (!BannerText.IsEmpty() && BannerAge >= 0.0f && BannerAge < Detail::BannerSeconds)
+	DrawBanner(OutDrawElements, BannerLayer, AllottedGeometry, FVector2f(0.0f, 0.0f), LocalSize, Now);
+
+	return DrawTooltip(OutDrawElements, TooltipLayer, AllottedGeometry, FVector2f(0.0f, 0.0f), LocalSize);
+}
+
+int32 SIronHexView::PaintBoardOverlay(const AIronBattleBoard3D& ActiveBoard, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FGeometry& Geometry, double Now) const
+{
+	namespace Detail = IronHexViewDetail;
+	const FVector2f LocalSize = Detail::HexVec(Geometry.GetLocalSize());
+	const int32 PlateLayer = LayerId;
+	const int32 FloatLayer = LayerId + 5;
+	const int32 BannerLayer = LayerId + 7;
+	const int32 TooltipLayer = LayerId + 10;
+	FVector2f AreaMin(0.0f, 0.0f);
+	FVector2f AreaMax = LocalSize;
+	GetFreeArea(LocalSize, AreaMin, AreaMax);
+	if (!Battle.IsValid() || Battle->Cols() <= 0 || Battle->Rows() <= 0)
 	{
-		const float FadeIn = FMath::Clamp(BannerAge / 0.15f, 0.0f, 1.0f);
-		const float FadeOut = FMath::Clamp((Detail::BannerSeconds - BannerAge) / 0.5f, 0.0f, 1.0f);
-		const float BannerAlpha = FMath::Min(FadeIn, FadeOut);
-		const float BandHeight = 64.0f;
-		const FVector2f BandPos(0.0f, LocalSize.Y * 0.42f - BandHeight * 0.5f);
-		DrawRect(OutDrawElements, BannerLayer, AllottedGeometry, BandPos, FVector2f(LocalSize.X, BandHeight), Detail::HexWithAlpha(IronStyle::Night(), 0.7f * BannerAlpha));
-		DrawRect(OutDrawElements, BannerLayer, AllottedGeometry, BandPos, FVector2f(LocalSize.X, 2.0f), Detail::HexWithAlpha(IronStyle::Gold(), BannerAlpha));
-		DrawRect(OutDrawElements, BannerLayer, AllottedGeometry, BandPos + FVector2f(0.0f, BandHeight - 2.0f), FVector2f(LocalSize.X, 2.0f), Detail::HexWithAlpha(IronStyle::Gold(), BannerAlpha));
-		DrawCenteredText(OutDrawElements, BannerLayer + 1, AllottedGeometry, BannerText.ToString(), IronStyle::Heading(34.0f), FVector2f(LocalSize.X * 0.5f, LocalSize.Y * 0.42f), Detail::HexWithAlpha(IronStyle::Gold(), BannerAlpha));
+		return LayerId;
 	}
 
-	return DrawTooltip(OutDrawElements, TooltipLayer, AllottedGeometry, LocalSize);
+	// The board projects into game viewport pixels.
+	const FVector2f PixelsPerLocal = ViewportPixelsPerLocal(LocalSize);
+	const auto ViewportToLocal = [&PixelsPerLocal](const FVector2D& ViewportPixel)
+	{
+		return FVector2f(static_cast<float>(ViewportPixel.X) / PixelsPerLocal.X, static_cast<float>(ViewportPixel.Y) / PixelsPerLocal.Y);
+	};
+	float HexSize = ActiveBoard.GetHexPixelSize() / PixelsPerLocal.X;
+	if (HexSize < 8.0f)
+	{
+		HexSize = Detail::BoardNominalHexSize;
+	}
+	const float PlateScale = FMath::Clamp(HexSize / Detail::BoardNominalHexSize, 0.6f, 1.4f);
+
+	// Gate hit points (great cities have two gates).
+	for (int32 GateIndex = 0; GateIndex < Battle->GateCount() && Battle->GateMaxHp() > 0; ++GateIndex)
+	{
+		const IronSim::FHex GatePos = Battle->GateHexAt(GateIndex);
+		const int32 GateHitPoints = Battle->GateHpAt(GateIndex);
+		FVector2D GatePixel = FVector2D::ZeroVector;
+		if (GateHitPoints <= 0 || !Battle->InBounds(GatePos) || !ActiveBoard.ProjectToViewport(GatePos, Detail::BoardGateBarHeightM, GatePixel))
+		{
+			continue;
+		}
+		const float GateFraction = static_cast<float>(GateHitPoints) / static_cast<float>(Battle->GateMaxHp());
+		const FVector2f GateBarSize(FMath::Max(40.0f, HexSize * 0.55f), FMath::Max(4.0f, 6.0f * PlateScale));
+		DrawBar(OutDrawElements, PlateLayer + 1, Geometry, ViewportToLocal(GatePixel), GateBarSize, GateFraction, GateFraction > 0.3f ? IronStyle::Gold() : IronStyle::Danger());
+	}
+
+	// Unit plates above the animated models: name, troop bar on a side-coloured rim, troop count, commander star.
+	const IronSim::FBattleSetup& BattleSetup = Battle->GetSetup();
+	const float NameSize = FMath::Clamp(12.0f * PlateScale, 9.0f, 15.0f);
+	const FSlateFontInfo NameFont = IronStyle::BodyBold(NameSize);
+	const FSlateFontInfo CountFont = IronStyle::BodyBold(FMath::Clamp(10.5f * PlateScale, 8.0f, 13.0f));
+	TSharedPtr<FSlateFontMeasure> CountMeasure;
+	if (FSlateApplication::IsInitialized())
+	{
+		CountMeasure = FSlateApplication::Get().GetRenderer()->GetFontMeasureService();
+	}
+	const std::vector<IronSim::FBattleUnit>& AllUnits = Battle->Units();
+	for (int32 UnitIndex = 0; UnitIndex < static_cast<int32>(AllUnits.size()); ++UnitIndex)
+	{
+		const IronSim::FBattleUnit& BoardUnit = AllUnits[static_cast<size_t>(UnitIndex)];
+		FVector2D PlatePixel = FVector2D::ZeroVector;
+		if (!BoardUnit.IsActive() || !ActiveBoard.ProjectUnitToViewport(UnitIndex, PlatePixel, Detail::BoardPlateAboveModelM))
+		{
+			continue;
+		}
+		const FVector2f Anchor = ViewportToLocal(PlatePixel);
+		if (Anchor.X < -120.0f || Anchor.Y < -120.0f || Anchor.X > LocalSize.X + 120.0f || Anchor.Y > LocalSize.Y + 120.0f)
+		{
+			continue;
+		}
+		// Units that already acted this turn are dimmed, like the greyed figures of the 2D board.
+		const bool bDimmed = BoardUnit.bActed && BoardUnit.Side == Battle->ActiveSide() && !Battle->IsOver();
+		const float PlateAlpha = bDimmed ? 0.55f : 1.0f;
+		const float TroopFraction = BoardUnit.StartTroops > 0 ? static_cast<float>(BoardUnit.Troops) / static_cast<float>(BoardUnit.StartTroops) : 0.0f;
+		const FVector2f BarSize(FMath::Max(34.0f, HexSize * 0.42f), FMath::Max(4.0f, 5.0f * PlateScale));
+		const FVector2f Rim(3.0f, 3.0f);
+		DrawRect(OutDrawElements, PlateLayer, Geometry, Anchor - BarSize * 0.5f - Rim, BarSize + Rim * 2.0f, Detail::HexWithAlpha(IronBattleUI::SideColor(BattleSetup, BoardUnit.Side), 0.95f * PlateAlpha));
+		DrawBar(OutDrawElements, PlateLayer + 1, Geometry, Anchor, BarSize, TroopFraction, Detail::HexWithAlpha(Detail::TroopBarColor(TroopFraction), PlateAlpha));
+
+		const bool bSelected = UnitIndex == Highlights.SelectedUnit;
+		const FLinearColor NameColor = Detail::HexWithAlpha(bSelected ? IronStyle::Gold() : FLinearColor::White, PlateAlpha);
+		const FVector2f NameCenter = Anchor - FVector2f(0.0f, BarSize.Y * 0.5f + Rim.Y + 2.0f + NameSize * 0.75f);
+		DrawCenteredText(OutDrawElements, PlateLayer + 3, Geometry, IronUI::ToFString(IronBattleUI::UnitName(Session.Get(), BoardUnit)), NameFont, NameCenter, NameColor);
+		if (CountMeasure.IsValid() && PlateScale >= 0.75f)
+		{
+			const FString CountText = FString::FromInt(BoardUnit.Troops);
+			const FVector2f CountSize = Detail::HexVec(CountMeasure->Measure(CountText, CountFont));
+			DrawCenteredText(OutDrawElements, PlateLayer + 3, Geometry, CountText, CountFont, Anchor + FVector2f(BarSize.X * 0.5f + Rim.X + 3.0f + CountSize.X * 0.5f, 0.0f), Detail::HexWithAlpha(FLinearColor::White, PlateAlpha));
+		}
+		if (BoardUnit.bCommander)
+		{
+			const float StarRadius = FMath::Max(5.0f, 7.0f * PlateScale);
+			DrawStar(OutDrawElements, PlateLayer + 3, Geometry, Anchor - FVector2f(BarSize.X * 0.5f + Rim.X + 3.0f + StarRadius, 0.0f), StarRadius);
+		}
+	}
+
+	// Floating numbers and words, rising over their hexes.
+	for (const FFloatText& Floating : FloatingTexts)
+	{
+		const float Alpha = static_cast<float>((Now - Floating.Start) / FMath::Max(0.05f, Floating.Duration));
+		FVector2D FloatPixel = FVector2D::ZeroVector;
+		if (Alpha < 0.0f || Alpha > 1.0f || !Battle->InBounds(Floating.Hex) || !ActiveBoard.ProjectToViewport(Floating.Hex, Detail::BoardFloatHeightM, FloatPixel))
+		{
+			continue;
+		}
+		const float Rise = 22.0f * PlateScale * static_cast<float>(Floating.Stack) + Alpha * HexSize * 0.35f;
+		const FVector2f Center = ViewportToLocal(FloatPixel) - FVector2f(0.0f, Rise);
+		const FLinearColor TextColor = Detail::HexWithAlpha(Floating.Color, Floating.Color.A * (1.0f - Alpha * Alpha * Alpha));
+		const FSlateFontInfo FloatFont = IronStyle::BodyBold(FMath::Max(11.0f, Floating.FontSize * FMath::Clamp(PlateScale * 1.15f, 0.75f, 1.4f)));
+		DrawCenteredText(OutDrawElements, FloatLayer, Geometry, Floating.Text, FloatFont, Center, TextColor);
+	}
+
+	// Day banner and tooltip inside the part of the screen the panels leave free.
+	DrawBanner(OutDrawElements, BannerLayer, Geometry, AreaMin, AreaMax, Now);
+	return DrawTooltip(OutDrawElements, TooltipLayer, Geometry, AreaMin, AreaMax);
 }

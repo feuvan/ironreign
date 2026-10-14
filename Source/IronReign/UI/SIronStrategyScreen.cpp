@@ -15,6 +15,8 @@
 #include "UI/SIronRoot.h"
 #include "UI/SIronStrategyCommon.h"
 #include "UI/SIronStrategyDialogs.h"
+#include "World/IronBattleBoard3D.h"
+#include "World/IronWorldMap3D.h"
 
 #include "Framework/Application/SlateApplication.h"
 #include "InputCoreTypes.h"
@@ -42,6 +44,24 @@ namespace IronStrategyScreenDetail
 			return IronUI::LocF("ui.strategy.logDateDay", "{year}.{month}.{day}", {{"year", IronSim::ToText(Entry.Year)}, {"month", IronSim::ToText(Entry.Month)}, {"day", IronSim::ToText(Entry.Day)}});
 		}
 		return IronUI::LocF("ui.strategy.logDate", "{year}.{month}", {{"year", IronSim::ToText(Entry.Year)}, {"month", IronSim::ToText(Entry.Month)}});
+	}
+
+	/** Seconds of the camera blend when the 3D map comes back on screen from a nearby view (it cuts otherwise). */
+	constexpr float WorldMapBlendSeconds = 0.5f;
+
+	/**
+	 * Night backdrop behind a part of the screen. The screen's own backdrop turns transparent over the 3D map; these keep
+	 * the bars, panels and the gaps between them opaque, so the scene only shows through the map area.
+	 */
+	TSharedRef<SWidget> MakeBackdrop(const TSharedRef<SWidget>& Content, const FMargin& Padding)
+	{
+		return SNew(SBorder)
+			.BorderImage(IronStyle::WhiteBrush())
+			.BorderBackgroundColor(IronStyle::Night())
+			.Padding(Padding)
+			[
+				Content
+			];
 	}
 }
 
@@ -94,77 +114,102 @@ void SIronStrategyScreen::BuildLayout()
 	const FVector2f SavedCenter = bHadMap ? MapView->GetViewCenter() : FVector2f(0.0f, 0.0f);
 	const float SavedZoom = bHadMap ? MapView->GetZoom() : 1.0f;
 
+	// The same layout as a single padded row (4 px around and between the columns), built from backdrop pieces: over
+	// the 3D map the screen's backdrop is transparent and only the map area shows the scene.
 	ChildSlot
 	[
 		SNew(SBorder)
 		.BorderImage(IronStyle::WhiteBrush())
-		.BorderBackgroundColor(IronStyle::Night())
+		.BorderBackgroundColor_Lambda([this]()
+		{
+			return FSlateColor(bWorldMapShown ? FLinearColor::Transparent : IronStyle::Night());
+		})
 		.Padding(FMargin(0.0f))
 		[
 			SNew(SVerticalBox)
 			+ SVerticalBox::Slot()
 			.AutoHeight()
 			[
-				BuildTopBar()
+				IronStrategyScreenDetail::MakeBackdrop(BuildTopBar(), FMargin(0.0f))
 			]
 			+ SVerticalBox::Slot()
 			.FillHeight(1.0f)
-			.Padding(FMargin(4.0f))
 			[
 				SNew(SHorizontalBox)
 				+ SHorizontalBox::Slot()
 				.AutoWidth()
 				[
-					SNew(SBox)
-					.WidthOverride(380.0f)
-					[
-						SAssignNew(CityPanel, SIronCityPanel)
-						.Session(Session)
-						.City(SelectedCity)
-					]
+					IronStrategyScreenDetail::MakeBackdrop(
+						SNew(SBox)
+						.WidthOverride(380.0f)
+						[
+							SAssignNew(CityPanel, SIronCityPanel)
+							.Session(Session)
+							.City(SelectedCity)
+						],
+						FMargin(4.0f))
 				]
 				+ SHorizontalBox::Slot()
 				.FillWidth(1.0f)
-				.Padding(FMargin(4.0f, 0.0f))
 				[
 					SNew(SVerticalBox)
 					+ SVerticalBox::Slot()
+					.AutoHeight()
+					[
+						IronStrategyScreenDetail::MakeBackdrop(
+							SNew(SBox)
+							.HeightOverride(4.0f),
+							FMargin(0.0f))
+					]
+					+ SVerticalBox::Slot()
 					.FillHeight(1.0f)
 					[
+						// Gold frame around the 2D map; over the 3D map the map view draws the frame itself.
 						SNew(SBorder)
 						.BorderImage(IronStyle::WhiteBrush())
-						.BorderBackgroundColor(IronStyle::Gold().CopyWithNewOpacity(0.8f))
-						.Padding(FMargin(2.0f))
+						.BorderBackgroundColor_Lambda([this]()
+						{
+							return FSlateColor(bWorldMapShown ? FLinearColor::Transparent : IronStyle::Gold().CopyWithNewOpacity(0.8f));
+						})
+						.Padding_Lambda([this]()
+						{
+							return FMargin(bWorldMapShown ? 0.0f : 2.0f);
+						})
 						[
 							SAssignNew(MapView, SIronMapView)
 							.Session(Session)
 							.FractionalDay_Lambda([this]() { return GetFractionalDay(); })
 							.SelectedCity_Lambda([this]() { return SelectedCity; })
+							.SelectedArmy_Lambda([this]() { return SelectedArmyId; })
 							.OnCityClicked(FOnIronMapCityClicked::CreateSP(this, &SIronStrategyScreen::HandleCityClicked))
+							.OnArmyClicked(FOnIronMapArmyClicked::CreateSP(this, &SIronStrategyScreen::HandleArmyClicked))
 						]
 					]
 					+ SVerticalBox::Slot()
 					.AutoHeight()
-					.Padding(FMargin(0.0f, 4.0f, 0.0f, 0.0f))
 					[
-						SNew(SBox)
-						.HeightOverride(176.0f)
-						[
-							BuildLogPanel()
-						]
+						IronStrategyScreenDetail::MakeBackdrop(
+							SNew(SBox)
+							.HeightOverride(176.0f)
+							[
+								BuildLogPanel()
+							],
+							FMargin(0.0f, 4.0f))
 					]
 				]
 				+ SHorizontalBox::Slot()
 				.AutoWidth()
 				[
-					SNew(SBox)
-					.WidthOverride(370.0f)
-					[
-						SAssignNew(CommandPanel, SIronCommandPanel)
-						.Session(Session)
-						.Root(Root)
-						.City(SelectedCity)
-					]
+					IronStrategyScreenDetail::MakeBackdrop(
+						SNew(SBox)
+						.WidthOverride(370.0f)
+						[
+							SAssignNew(CommandPanel, SIronCommandPanel)
+							.Session(Session)
+							.Root(Root)
+							.City(SelectedCity)
+						],
+						FMargin(4.0f))
 				]
 			]
 		]
@@ -611,6 +656,16 @@ void SIronStrategyScreen::HandleStateChanged()
 		CommandPanel->Refresh();
 	}
 	RebuildLog();
+	if (bWorldMapShown)
+	{
+		if (AIronWorldMap3D* Map = WorldMap.Get())
+		{
+			// The map also follows the state each tick; this makes owners, armies and the season change at once (with
+			// the day fraction of the new day, so marching columns do not jump ahead for a frame).
+			Map->SetFractionalDay(GetFractionalDay());
+			Map->RefreshFromState();
+		}
+	}
 }
 
 void SIronStrategyScreen::HandleCultureChanged()
@@ -620,7 +675,14 @@ void SIronStrategyScreen::HandleCultureChanged()
 
 void SIronStrategyScreen::HandleCityClicked(int32 InCity)
 {
+	SelectedArmyId = -1;
 	SelectCity(InCity);
+}
+
+void SIronStrategyScreen::HandleArmyClicked(int32 ArmyId)
+{
+	// The panels stay on the selected city; the army gets the selection ring, its tag a frame and its target a ring.
+	SelectedArmyId = ArmyId;
 }
 
 void SIronStrategyScreen::SelectCity(int32 InCity)
@@ -743,6 +805,8 @@ EActiveTimerReturnType SIronStrategyScreen::HandleTick(double /*InCurrentTime*/,
 	{
 		AdvanceExecution(Delta);
 	}
+	// Before the map view paints (active timers run ahead of the widget's paint): picks the 2D or 3D map this frame.
+	UpdateWorldMap();
 	WatchSeconds += Delta;
 	if (WatchSeconds >= 0.25f)
 	{
@@ -1122,6 +1186,8 @@ void SIronStrategyScreen::StartPlayerBattle()
 	const IronSim::FBattleSetup Setup = Session->Game().MakeBattleSetup(*Pending);
 	Flow = EIronStrategyFlow::InBattle;
 	InBattleSeconds = 0.0f;
+	// The battle screen shows the 3D board (it activates it) or the 2D board over Slate only.
+	HideWorldMap();
 	RootPtr->ShowBattle(Setup, FOnIronBattleFinished::CreateSP(this, &SIronStrategyScreen::HandleBattleFinished));
 }
 
@@ -1381,4 +1447,105 @@ FReply SIronStrategyScreen::HandleSettings()
 		RootPtr->ShowSettings();
 	}
 	return FReply::Handled();
+}
+
+// -------------------------------------------------------------------------------------------------
+// Real-time 3D map
+// -------------------------------------------------------------------------------------------------
+
+AIronWorldMap3D* SIronStrategyScreen::FindWorldMap()
+{
+	if (!Session.IsValid() || !Session->HasGame() || !Session->Uses3DMap())
+	{
+		return nullptr;
+	}
+	AIronWorldMap3D* Map = WorldMap.Get();
+	if (Map == nullptr)
+	{
+		// Spawned by AIronReignPlayerController (respawned for another scenario): look it up again.
+		Map = AIronWorldMap3D::FindMap(Session->GetPresentationWorld());
+		WorldMap = Map;
+	}
+	return Map;
+}
+
+void SIronStrategyScreen::UpdateWorldMap()
+{
+	AIronWorldMap3D* Map = FindWorldMap();
+	bool bJustActivated = false;
+	if (Map != nullptr && !Map->IsMapActive() && !Map->HasFailed() && Map->IsSceneReady())
+	{
+		// Back from a 3D battle the board may still be up: switching scenes works in either order.
+		if (AIronBattleBoard3D* Board = AIronBattleBoard3D::FindBoard(Session->GetPresentationWorld()))
+		{
+			if (Board->IsBoardActive())
+			{
+				Board->SetActive(false);
+			}
+		}
+		// Makes the map's camera rig the view target and turns world rendering on (cuts unless the view is nearby).
+		Map->SetActive(true, IronStrategyScreenDetail::WorldMapBlendSeconds);
+		bJustActivated = true;
+	}
+
+	// The viewport drew this frame's scene before Slate paints (world rendering was still off): keep the 2D map for
+	// this one frame instead of showing an empty backdrop, the overlay takes over with the first rendered frame.
+	const bool bShown = Map != nullptr && Map->IsMapActive() && !bJustActivated;
+	if (bShown && !bWorldMapShown)
+	{
+		// The season and the targets are pushed afresh (SetActive already synced the state).
+		WorldMapMonth = 0;
+		WorldMapTargets.Reset();
+	}
+	bWorldMapShown = bShown;
+	if (MapView.IsValid())
+	{
+		MapView->SetWorldMap(bShown ? Map : nullptr);
+	}
+	if (!bShown)
+	{
+		return;
+	}
+
+	const IronSim::FGameState& GameState = Session->State();
+	Map->SetFractionalDay(GetFractionalDay());
+	if (GameState.Month != WorldMapMonth)
+	{
+		WorldMapMonth = GameState.Month;
+		Map->SetSeasonFromMonth(GameState.Month);
+	}
+
+	// March targets in vermilion: every army of the player with a target, and the selected army's.
+	TArray<int32> Targets;
+	for (const IronSim::FArmy& Army : GameState.Armies)
+	{
+		if (Army.Units.empty() || Army.Target < 0)
+		{
+			continue;
+		}
+		const bool bOwn = GameState.PlayerFaction >= 0 && Army.Faction == GameState.PlayerFaction;
+		if (bOwn || Army.Id == SelectedArmyId)
+		{
+			Targets.AddUnique(Army.Target);
+		}
+	}
+	if (Targets != WorldMapTargets)
+	{
+		WorldMapTargets = Targets;
+		Map->SetTargetCities(WorldMapTargets);
+	}
+}
+
+void SIronStrategyScreen::HideWorldMap()
+{
+	AIronWorldMap3D* Map = WorldMap.Get();
+	if (Map != nullptr && Map->IsMapActive())
+	{
+		Map->SetActive(false);
+	}
+	bWorldMapShown = false;
+	if (MapView.IsValid())
+	{
+		MapView->SetWorldMap(nullptr);
+	}
 }

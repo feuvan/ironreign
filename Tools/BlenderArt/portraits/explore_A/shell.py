@@ -47,8 +47,8 @@ def _gauss_sep(a, sy, sx):
 
 
 class Shell:
-    def __init__(self, surf, origin, az_step=1.5, el_min=-70.0, el_max=84.0, el_step=1.0,
-                 smooth=(2.5, 2.0)):
+    def __init__(self, surf, origin, az_step=1.5, el_min=-84.0, el_max=84.0, el_step=1.0,
+                 smooth=(2.5, 2.0), hull=True, hull_zmax=None):
         self.O = np.array(origin, np.float64)
         self.az = np.arange(-180.0, 180.0, az_step)
         self.el = np.arange(el_min, el_max + 1e-6, el_step)
@@ -59,9 +59,18 @@ class Shell:
         bvh = surf.bvh
         for i in range(D.shape[0]):
             for j in range(D.shape[1]):
-                loc, nrm, idx, dist = bvh.ray_cast(O, Vector(D[i, j]), 2.0)
-                if loc is not None:
-                    r[i, j] = dist
+                d = Vector(D[i, j])
+                loc, nrm, idx, dist = bvh.ray_cast(O, d, 2.0)
+                if loc is None:
+                    continue
+                r[i, j] = dist
+                if hull and (hull_zmax is None or loc.z < hull_zmax):
+                    # outermost surface along the ray (wraps arm + torso like a robe); start a
+                    # bounded distance out so the head/chin is never picked up
+                    far = min(0.5, dist * 3.0)
+                    loc2, n2, i2, d2 = bvh.ray_cast(O + d * far, -d, far)
+                    if loc2 is not None and (hull_zmax is None or loc2.z < hull_zmax):
+                        r[i, j] = max(dist, far - d2)
         # misses (below the crop / through the open neck top): extend columns
         for j in range(r.shape[1]):
             col = r[:, j]
@@ -82,7 +91,10 @@ class Shell:
                 col[bad] = np.interp(np.where(bad)[0], np.where(~bad)[0], col[~bad])
             r[:, j] = col
         self.r_raw = r
-        self.r = _blur2(r, smooth[0], smooth[1])
+        # smooth, but never inside the body (shoulder/arm peaks would otherwise poke through)
+        rb = _blur2(r, smooth[0], smooth[1])
+        self.r = _blur2(np.maximum(rb, r), smooth[0] * 0.5, smooth[1] * 0.5)
+        self.r = np.maximum(self.r, r)
         self.D = D
         self.P = self.O + D * self.r[..., None]
         self.Z = self.P[..., 2]

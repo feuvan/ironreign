@@ -1,0 +1,66 @@
+{
+ "id": "m_rogue_02",
+ "seed": 93345,
+ "gender": "m",
+ "age": 31,
+ "archetype": "rogue",
+ "expression": "stern",
+ "bg": "cool",
+ "notes": "Zhuo Hu, the Hired Tiger",
+ "hair": {
+  "style": "topknot",
+  "grey": 0.0,
+  "recede": 0.1
+ },
+ "skin": {
+  "weather": 0.8,
+  "scars": []
+ },
+ "camera": {
+  "yaw": 22.0,
+  "pitch": -3.0,
+  "head_frac": 0.42,
+  "eye_line": 0.39
+ },
+ "beard": {
+  "mustache": 1.0,
+  "soul": 0.0,
+  "tails": 0.8,
+  "gravity": 0.7,
+  "radius": 0.0001,
+  "frizz": 0.0014,
+  "must_len": 0.0423,
+  "chin": 0.0,
+  "jaw": 0.0,
+  "cheeks": 0.0,
+  "neck": 0.0,
+  "sideburns": 0.0,
+  "length": 0.02,
+  "count": 2500
+ },
+ "beard_grey": 0.0,
+ "outfit": {
+  "kind": "scholar",
+  "outer": [
+   0.06,
+   0.045,
+   0.03
+  ],
+  "mid": [
+   0.12,
+   0.1,
+   0.08
+  ],
+  "band": [
+   0.03,
+   0.025,
+   0.02
+  ],
+  "motif": null,
+  "depth": 0.18,
+  "fur": true
+ },
+ "headgear": {
+  "kind": "none"
+ }
+}

@@ -1,0 +1,34 @@
+{
+  "_about": "9-slice margins of the @2x masters (twice NineSlice.json).",
+  "Panel@2x.png": 48,
+  "PanelDark@2x.png": 48,
+  "Button@2x.png": [
+    40,
+    32
+  ],
+  "Button_Hover@2x.png": [
+    40,
+    32
+  ],
+  "Button_Pressed@2x.png": [
+    40,
+    32
+  ],
+  "Button_Disabled@2x.png": [
+    40,
+    32
+  ],
+  "Tab@2x.png": [
+    36,
+    28,
+    36,
+    20
+  ],
+  "Tab_Active@2x.png": [
+    36,
+    28,
+    36,
+    20
+  ],
+  "Scroll@2x.png": 160
+}

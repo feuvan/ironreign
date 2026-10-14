@@ -73,7 +73,7 @@ def hair_mats(spec, key_dir):
     grey = i.get("grey", 0.0)
     hm = HR.hair_material("Hair", melanin=mel, redness=red, grey=grey, roughness=g.get("rough", 0.36))
     bm = HR.hair_material("BeardHair", melanin=mel, redness=red, grey=min(1.0, grey * g.get("beard_grey", 1.2)),
-                          roughness=g.get("rough", 0.36) + 0.04)
+                          roughness=g.get("rough", 0.36) + 0.08, coat=0.0, random_color=0.05)
     br = HR.hair_material("BrowHair", melanin=min(1.0, mel + 0.03), redness=red,
                           grey=grey * g.get("brow_grey", 0.8), roughness=0.45)
     la = HR.hair_material("LashHair", melanin=1.0, redness=0.1, roughness=0.5)
@@ -86,11 +86,11 @@ def build(spec, preview=False, out=None):
     rig.reset()
     W, H = 384, 480
     ss = spec.get("ss", 2)
-    spp = spec.get("spp", 64)
+    spp = spec.get("spp", 40)
     if preview:
         ss, spp = 1, max(16, spp // 3)
     sc = rig.cycles(samples=spp, w=W, h=H, ss=ss, transparent=True,
-                    look=spec.get("look", "Medium Contrast"), exposure=spec.get("exposure", 0.0))
+                    look=spec.get("look", "Medium High Contrast"), exposure=spec.get("exposure", 0.0))
     ident = build_identity(spec["identity"])
     rng = np.random.default_rng(spec.get("seed", 1))
     col = bpy.context.scene.collection
@@ -106,7 +106,8 @@ def build(spec, preview=False, out=None):
     # materials for the head
     b["body"].data.materials.append(shading.skin(ident, kd))
     em = shading.eyes(ident, tex_path=os.path.join(mh.MH_DATA, "eyes/materials/brown_eye.png"))
-    cm = shading.cornea()
+    cdir = rig.screen_dir(cam, spec.get("catch_angle", 135.0), spec.get("catch_elev", 62.0))
+    cm = shading.cornea(catch_dir=tuple(cdir), catch_strength=spec.get("catch_strength", 6.0))
     for e in b["eyes"]:
         e.data.materials.append(em)
         e.data.materials.append(cm)
@@ -115,7 +116,7 @@ def build(spec, preview=False, out=None):
     times["head"] = time.time() - t0
     # body surface for fitting + collisions
     t1 = time.time()
-    ATTRS = ["z_beard", "z_moustache", "z_brow", "z_lash", "z_scalp", "z_scalp_low", "z_goatee"]
+    ATTRS = ["z_beard", "z_moustache", "z_brow", "z_brow_f", "z_lash", "z_scalp", "z_scalp_low", "z_goatee"]
     surf = HR.Surface([b["body"]], attrs=ATTRS)
     outfit = getattr(outfits, spec["outfit"]["builder"])
     cost = outfit(spec, b, surf, kd, rng, col)

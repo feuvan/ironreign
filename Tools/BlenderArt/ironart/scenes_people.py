@@ -106,14 +106,14 @@ class Skeleton:
         self.pelvis = hip
         bend, lean, twist = p.get("bend", 0), p.get("lean", 0), p.get("twist", 0)
         # torso frame: bend forward = rotate about X by -bend (towards -Y)
-        R = _rot("Z", twist) @ _rot("Y", lean) @ _rot("X", -bend)
+        R = _rot("Z", twist) @ _rot("Y", lean) @ _rot("X", bend)
         self.R = R
         up = R @ Vector((0, 0, 1))
         self.up = up
         self.chest = hip + up * B["spine"] * 0.62
         self.neck = hip + up * B["spine"]
         hp = p.get("head", (0, 0))
-        Rh = R @ _rot("Z", hp[1]) @ _rot("X", -hp[0])
+        Rh = R @ _rot("Z", hp[1]) @ _rot("X", hp[0])
         self.Rh = Rh
         self.head = self.neck + Rh @ Vector((0, 0, B["neck"] + B["head_r"] * 1.05))
         self.head_fwd = Rh @ Vector((0, -1, 0))
@@ -395,7 +395,7 @@ def figure(mb, rng, pose="stand", outfit="soldier", cloth=0, cloth2=1, height=1.
                         0.012 * s, "Plume", 4, radius_fn=lambda t: 1.0 - 0.7 * t)
     elif hat == "hood":
         c = sk.head + hup * hr * 0.15 + hfwd * -hr * 0.12
-        ellipsoid(mb, c, (hr * 1.18, hr * 1.25, hr * 1.25), C2, 12, 8, rot=Rh)
+        ellipsoid(mb, c, (hr * 1.08, hr * 1.12, hr * 1.14), C2, 12, 8, rot=Rh)
     if hair_long:
         b0 = sk.head - hfwd * hr * 0.7
         b1 = sk.neck - (R @ Vector((0, -1, 0))) * -0.0 + Vector((0, 0.10 * s, -0.12 * s))
@@ -416,8 +416,9 @@ def figure(mb, rng, pose="stand", outfit="soldier", cloth=0, cloth2=1, height=1.
             x = (u - 0.5) * (w - 1.0) * 0.35
             p = base + Vector((x, 0.0, 0.0)) - Vector((0, 0, 1)) * Lc * v
             # wind billow: push back (+y) and sideways, waves
-            p += Vector((wx * v * v * 0.5, (0.12 + wy) * v + 0.25 * v * v, 0.12 * v * v))
-            p += Vector((0, 0.07 * math.sin(u * 7 + ph + v * 3) * v, 0.04 * math.sin(u * 5 + v * 4 + ph) * v))
+            p += Vector((wx * v * v * 0.28, (0.1 + wy * 0.5) * v + 0.12 * v * v, 0.05 * v * v * abs(wx)))
+            p += Vector((0.02 * math.sin(u * 9 + ph) * v, 0.06 * math.sin(u * 8 + ph + v * 3) * v,
+                         0.03 * math.sin(u * 5 + v * 4 + ph) * v))
             return tuple(p)
         g = mb.grid(cp, nu, nv, C2, smooth=True)
         g2 = mb.grid(cp, nu, nv, C2, smooth=True, flip=True)
@@ -812,7 +813,7 @@ def materials(cloth=None, banners=None, skin="#B07A5A", armor="#3A3E44", armor_d
     m["Feather"] = M.principled("IRFeather", "#E8E2D6", 0.8)
     m["ShieldFace"] = M.principled("IRShield", "#5A2A1E", 0.5, vary=0.12, vary_scale=8.0)
     m["Hoof"] = M.principled("IRHoof", "#1E1A16", 0.6)
-    m["SleeveDark"] = M.principled("IRSleeveDark", "#120E0C", 0.9)
+    m["SleeveDark"] = M.principled("IRSleeveDark", "#2A221C", 0.9)
     for i, c in enumerate(horse_coats):
         m["HorseCoat%d" % i] = M.principled("IRHorse%d" % i, c, 0.5, specular=0.4, sheen=0.3)
     m["HorseCoat"] = m["HorseCoat0"]
@@ -849,8 +850,10 @@ def cloth_material(name, color, sheen=0.4, translucency=0.0, roughness=0.8):
     return _fin(mat, nb, sh)
 
 
-def flame_material(name="IRFlame", color="#FF9A3A", strength=18.0):
-    """Emissive flame: hot core to orange edges (facing ratio)."""
+def flame_material(name="IRFlame", color="#FF9A3A", strength=18.0, camera_only=True):
+    """Emissive flame: hot core to orange edges (facing ratio).  ``camera_only``: the flame is
+    seen but does not light the scene (pair it with a point light) - small bright emitters hit
+    by indirect rays are the main source of fireflies without a denoiser."""
     from .materials import new
     from .scenes_sky import G, lin4
     mat, nb, created = new(name)
@@ -863,14 +866,19 @@ def flame_material(name="IRFlame", color="#FF9A3A", strength=18.0):
     col = b.mix(lin4("#FFE6A0"), lin4(color), b.smooth(f, 0.1, 0.8))
     em = nb.node("ShaderNodeEmission")
     b.link(col, em.inputs["Color"])
-    b.link(b.math("MULTIPLY", b.math("SUBTRACT", 1.15, f), strength), em.inputs["Strength"])
+    k = b.math("MULTIPLY", b.math("SUBTRACT", 1.15, f), strength)
+    if camera_only:
+        lp = nb.node("ShaderNodeLightPath")
+        k = b.math("MULTIPLY", k, b.math("MAXIMUM", lp.outputs["Is Camera Ray"], lp.outputs["Is Transmission Ray"]))
+    b.link(k, em.inputs["Strength"])
     nb.output(em.outputs[0])
     mat["ir_fog"] = 1
     return mat
 
 
-def lantern_material(name, color="#D83A20", strength=6.0):
-    """Glowing red paper lantern (emission + a little diffuse so the ribs read)."""
+def lantern_material(name, color="#D83A20", strength=6.0, light=0.15):
+    """Glowing red paper lantern (emission + a little diffuse so the ribs read).  Only
+    ``light`` x the emission illuminates the scene (fireflies); the camera sees it all."""
     from .materials import new
     from .scenes_sky import G, lin4
     mat, nb, created = new(name)
@@ -885,8 +893,10 @@ def lantern_material(name, color="#D83A20", strength=6.0):
     k = b.math("MULTIPLY", b.math("ADD", 0.55, b.math("MULTIPLY", ribs, 0.45)),
                b.math("SUBTRACT", 1.1, b.math("MULTIPLY", lw.outputs["Facing"], 0.6)))
     em = nb.node("ShaderNodeEmission")
-    b.link(b.mix(lin4("#FFC070"), lin4(color), b.smooth(lw.outputs["Facing"], 0.0, 0.7)), em.inputs["Color"])
-    b.link(b.math("MULTIPLY", k, strength), em.inputs["Strength"])
+    b.link(b.mix(lin4("#FF9A50"), lin4(color), b.smooth(lw.outputs["Facing"], 0.0, 0.45)), em.inputs["Color"])
+    lp = nb.node("ShaderNodeLightPath")
+    vis = b.math("ADD", light, b.math("MULTIPLY", lp.outputs["Is Camera Ray"], 1.0 - light))
+    b.link(b.math("MULTIPLY", b.math("MULTIPLY", k, strength), vis), em.inputs["Strength"])
     nb.output(em.outputs[0])
     mat["ir_fog"] = 1
     return mat

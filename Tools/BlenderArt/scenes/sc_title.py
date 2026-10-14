@@ -24,9 +24,9 @@ from ironart import world_kit as WK
 from ironart.geometry import MeshBuilder
 
 SPEC = dict(name="Title", art="Art/UI/Title_Background.png", master="UI/Title_Background@2x.png",
-            size=(3840, 2160), ss=1, spp=64, preview_spp=16, seed=7)
+            size=(3840, 2160), ss=1, spp=8, preview_spp=16, seed=7, look="Medium High Contrast")
 
-SUN = (194.0, 13.0)
+SUN = (182.0, 12.0)
 CITY = (700.0, 2250.0)
 RIVER = [(-2600, 3700), (-1700, 3150), (-900, 2450), (-300, 1850), (250, 1560), (800, 1560),
          (1350, 1680), (2000, 1450), (2700, 1300), (3600, 1400)]
@@ -36,28 +36,22 @@ RIVER = [(-2600, 3700), (-1700, 3150), (-900, 2450), (-300, 1850), (250, 1560), 
 # terrain
 # ---------------------------------------------------------------------------------------------
 def massif(X, Y):
-    """The city hill: a rounded mountain (rounded summit, steepest mid-slope) carved into many
-    small terraces (9 m steps), a cliff under the pagoda knoll on the left."""
+    """The citadel hill: a rounded mountain (rounded summit, ~32 deg mid-slopes) with a broad
+    summit terrace for the palace, a knoll on the left shoulder for the pagoda and rock ribs."""
     cx, cy = CITY
     w = (T.fbm2(X, Y, 260.0, 3, seed=3) - 0.5)
-    dx = (X - cx) / 520.0
-    dy = (Y - cy) / 380.0
-    r = np.sqrt(dx * dx + dy * dy) + w * 0.18
-    prof = np.cos(np.clip(r, 0.0, 1.0) * math.pi / 2) ** 1.35
+    dx = (X - cx) / 470.0
+    dy = (Y - cy) / 350.0
+    r = np.sqrt(dx * dx + dy * dy) + w * 0.14
+    prof = np.cos(np.clip(r, 0.0, 1.0) * math.pi / 2) ** 1.25
     h = 250.0 * prof
-    # pagoda knoll on the left shoulder
-    kx, ky = 470.0, 2170.0
-    kd = ((X - kx) / 110.0) ** 2 + ((Y - ky) / 90.0) ** 2
-    h = np.maximum(h, 236.0 * np.exp(-kd * 1.2) + 0.0 * X)
-    # terraces: flat steps with short steep risers (retaining walls)
-    step = 9.0
-    t = h / step
-    fr = t - np.floor(t)
-    q = (np.floor(t) + T.smoothstep(0.78, 1.0, fr)) * step
-    city = T.smoothstep(1.0, 0.85, r)
-    h = q * 0.8 * city + h * (1 - 0.8 * city)
-    rk = T.ridged2(X, Y, 50.0, 3, seed=5)
-    h += (rk - 0.5) * 5.0 * (1 - city)
+    # summit terrace (palace) and the pagoda knoll
+    h = np.minimum(h, 232.0 + 0.1 * (h - 232.0))
+    kx, ky = 455.0, 2200.0
+    kd = ((X - kx) / 90.0) ** 2 + ((Y - ky) / 80.0) ** 2
+    h = np.maximum(h, 250.0 * np.exp(-kd * 1.6) + 0.0 * X)
+    rk = T.ridged2(X, Y, 70.0, 4, seed=5)
+    h += (rk - 0.5) * 7.0 * np.clip(prof * 3, 0, 1)
     return h
 
 
@@ -78,6 +72,12 @@ def height(X, Y):
         * T.smoothstep(-1300.0, -500.0, X) * T.smoothstep(1500.0, 700.0, X)
     rough = T.fbm2(X, Y, 40.0, 5, seed=9)
     h = np.maximum(h, fg * (282.0 + 10.0 * rough) - (1 - fg) * 40.0)
+    # dark forested ridge just below the viewpoint: frames the bottom edge, rises to the right
+    rx = (X + 120.0) * 0.167 + (Y + 150.0) * 0.986          # distance along the view axis
+    lat = (X + 120.0) * 0.986 - (Y + 150.0) * 0.167         # lateral (right +)
+    ridge = 246.0 - 0.09 * rx + 16.0 * T.smoothstep(0.0, 160.0, lat) + 10.0 * (T.fbm2(X, Y, 40.0, 4, seed=21) - 0.5)
+    band = T.smoothstep(150.0, 210.0, rx) * T.smoothstep(330.0, 260.0, rx)
+    h = np.maximum(h, ridge * band - 300.0 * (1 - band))
     # rocky promontory on the right of the viewpoint (frames the city)
     pd = ((X - 95.0) / 85.0) ** 2 + ((Y + 20.0) / 75.0) ** 2
     h = np.maximum(h, (262.0 + 30.0 * T.ridged2(X, Y, 35.0, 4, seed=13)) * np.exp(-pd * 1.6) * (pd < 2.2))
@@ -109,21 +109,26 @@ def fields(b, col, P, nz, z):
     """Farmland patchwork on the valley floor (Voronoi plots with darker bunds)."""
     from ironart.scenes_sky import lin4
     v = b.node("ShaderNodeTexVoronoi", voronoi_dimensions="2D", feature="F1")
-    v.inputs["Scale"].default_value = 0.011
+    v.inputs["Scale"].default_value = 0.024
     v.inputs["Randomness"].default_value = 0.85
     b.link(P, v.inputs["Vector"])
     r = b.sep(v.outputs["Color"])[0]
-    fc = b.ramp(r, [(0.0, lin4("#5E7034")), (0.22, lin4("#7E8A40")), (0.42, lin4("#A89A50")),
-                    (0.6, lin4("#8A7A4A")), (0.78, lin4("#6E7E3C")), (0.9, lin4("#B8A060"))],
+    fc = b.ramp(r, [(0.0, lin4("#46722A")), (0.18, lin4("#6A8E30")), (0.34, lin4("#8E9A3C")),
+                    (0.44, lin4("#527A2C")), (0.6, lin4("#7A9A36")), (0.76, lin4("#3A6024")),
+                    (0.9, lin4("#A09C40"))],
                 interpolation="CONSTANT")
     e = b.node("ShaderNodeTexVoronoi", voronoi_dimensions="2D", feature="DISTANCE_TO_EDGE")
-    e.inputs["Scale"].default_value = 0.011
+    e.inputs["Scale"].default_value = 0.024
     e.inputs["Randomness"].default_value = 0.85
     b.link(P, e.inputs["Vector"])
     edge = b.smooth(e.outputs["Distance"], 0.012, 0.0)
     m = b.math("MULTIPLY", b.smooth(z, 13.0, 7.0), b.smooth(nz, 0.975, 0.995))
-    col = b.mix(col, fc, b.math("MULTIPLY", m, 0.85))
-    col = b.mix(col, b.cmul(col, 0.62), b.math("MULTIPLY", edge, m))
+    n = b.node("ShaderNodeTexNoise")
+    n.inputs["Scale"].default_value = 0.05
+    n.inputs["Detail"].default_value = 4.0
+    b.link(P, n.inputs["Vector"])
+    col = b.mix(col, fc, b.math("MULTIPLY", m, b.maprange(n.outputs["Fac"], 0.35, 0.65, 0.25, 0.6)))
+    col = b.mix(col, b.cmul(col, 0.75), b.math("MULTIPLY", edge, b.math("MULTIPLY", m, 0.7)))
     return col
 
 
@@ -134,31 +139,29 @@ def build(r):
     rng = random.Random(7)
     # ---- sky --------------------------------------------------------------------------------
     S.build(dict(
-        stops=[(0.0, "#F2D2AE"), (0.035, "#EAC6A8"), (0.09, "#D2B8B8"), (0.2, "#A8B0C8"),
-               (0.42, "#7C94BC"), (1.0, "#4A6694")],
+        stops=[(0.0, "#D8D2D8"), (0.03, "#C8C8D8"), (0.07, "#AEBCD4"), (0.15, "#84A2D0"),
+               (0.35, "#5882C4"), (1.0, "#264E92")],
         strength=0.85,
-        glows=[dict(dir=SUN, color="#FFB066", lobes=[(3, 0.6), (16, 1.4), (300, 10.0)],
-                    horizon=(1.0, 0.07, 1.6))],
+        glows=[dict(dir=SUN, color="#FFA44A", lobes=[(2, 0.45), (10, 1.2), (300, 10.0)],
+                    horizon=(2.6, 0.07, 2.2))],
         discs=[dict(dir=SUN, radius_deg=0.55, color="#FFF2D8", strength=80.0)],
-        clouds=[dict(height=3000, scale=4200, coverage=0.40, softness=0.22, lit="#FFDAB0",
-                     shadow="#8E8494", rim_color="#FFE4B8", rim=1.6, rim_power=3.0, opacity=0.85,
-                     stretch=(1.0, 0.55), fade=0.16, shade=7.0, detail=7, seed=2.0, haze=0.6),
-                dict(height=8000, scale=9000, coverage=0.28, softness=0.32, lit="#FFE6CC",
-                     shadow="#B4A6B4", rim=0.8, rim_power=3.0, opacity=0.5, stretch=(1.0, 0.3),
-                     fade=0.2, detail=5, seed=7.0, haze=0.5)],
-        light=dict(strength=0.5, tint="#D0D8F0"),
-        fog=dict(haze=5.5e-5, haze_falloff=0.0006, haze_h0=0.0, haze_max=0.9, haze_tint="#C8C4C8",
-                 haze_zmax=0.1, mist=0.00045, mist_falloff=0.022, mist_h0=0.0, mist_max=0.55,
-                 mist_color="#C8BCB8", mist_strength=1.0),
+        clouds=[dict(height=1800, scale=2600, coverage=0.46, softness=0.16, lit="#FFD8A8",
+                     shadow="#727C98", rim_color="#FFE4B8", rim=2.0, rim_power=2.5, opacity=0.95,
+                     stretch=(1.0, 0.6), fade=0.1, shade=9.0, core_dark=0.45, detail=8, seed=2.0,
+                     haze=0.5)],
+        light=dict(strength=0.5, tint="#C8D4F0"),
+        fog=dict(haze=4.5e-5, haze_falloff=0.0006, haze_h0=0.0, haze_max=0.9, haze_tint="#C4C2CC",
+                 haze_zmax=0.1, mist=0.00035, mist_falloff=0.022, mist_h0=0.0, mist_max=0.5,
+                 mist_color="#C8BCB8", mist_strength=0.9),
     ))
-    S.sun(SUN[0], SUN[1], energy=6.5, color="#FFC890", angle_deg=0.8)
+    S.sun(SUN[0], SUN[1], energy=8.5, color="#FFC890", angle_deg=0.8)
     # ---- terrain ----------------------------------------------------------------------------
-    gm = T.terrain_material("TitleGround", grass=("#4E6634", "#7A7E3E"), dry="#A08A52",
-                            dirt="#7A6648", rock=("#6A645C", "#968E80"), slope=(0.72, 0.86),
-                            grass_scale=0.008, dry_amt=0.45, extra=fields)
+    gm = T.terrain_material("TitleGround", grass=("#3A6422", "#5E8A2E"), dry="#98904A",
+                            dirt="#7E6A4A", rock=("#6E665C", "#9A9082"), slope=(0.74, 0.88),
+                            grass_scale=0.008, dry_amt=0.18, extra=fields)
     step_v = 8.0 if pv else 4.0
     step_f = 4.0 if pv else 2.0
-    valley = T.field_from(height, -2400.0, 3600.0, 690.0, 4400.0, step_v)
+    valley = T.field_from(lambda X, Y: height(X, Y) - 0.2 * (Y < 702.0), -2400.0, 3600.0, 690.0, 4400.0, step_v)
     valley.build("Valley", gm)
     near = T.field_from(height, -1000.0, 1300.0, -320.0, 700.0, step_f)
     near.build("Near", gm)
@@ -188,12 +191,22 @@ def build(r):
     def gz(x, y):
         return valley.z(x, y)
 
+    def plinth(x, y, w, d, rz=0.0, extra=0.0):
+        """Stone platform under a building on the slope; returns its top z."""
+        ca, sa = math.cos(rz), math.sin(rz)
+        zs = [gz(x + ca * u - sa * v, y + sa * u + ca * v) for u in (-w / 2, 0, w / 2) for v in (-d / 2, 0, d / 2)]
+        top, bot = max(zs) + extra, min(zs)
+        s0 = city.n
+        city.box((0, 0, bot - 3.0), (w, d, top - bot + 3.0), "W_Stone", top_mat="W_Paving")
+        city.transform(s0, WK.T(x, y, 0.0, rz))
+        return top
+
     # outer wall ring (front gate at the south)
     ring = []
     for k in range(73):
         a = -math.pi / 2 + math.tau * k / 72
         rr = 1.0 + 0.06 * math.sin(3 * a + 1.0) + 0.04 * math.sin(5 * a)
-        ring.append((cx + math.cos(a) * 470 * rr, cy + math.sin(a) * 345 * rr))
+        ring.append((cx + math.cos(a) * 430 * rr, cy + math.sin(a) * 325 * rr))
     gate_i = 0
     for k in range(len(ring) - 1):
         (x0, y0), (x1, y1) = ring[k], ring[k + 1]
@@ -229,7 +242,7 @@ def build(r):
     inner = []
     for k in range(41):
         a = -math.pi / 2 + math.tau * k / 40
-        inner.append((cx + 40 + math.cos(a) * 170, cy + 60 + math.sin(a) * 120))
+        inner.append((cx + 15 + math.cos(a) * 135, cy + 30 + math.sin(a) * 100))
     for k in range(len(inner) - 1):
         (x0, y0), (x1, y1) = inner[k], inner[k + 1]
         if k in (0, 39):
@@ -248,24 +261,29 @@ def build(r):
                                                           steps=False, roof=WK.RoofSpec(mat="W_TileGold",
                                                           ridge_mat="W_RidgeGold", beasts=3)))
     # palace: main hall (double gilt roof, triple terrace) + flanking halls
-    px, py = cx + 40, cy + 110
-    WK.hall(city, (px, py, gz(px, py) - 1.0), WK.HallSpec(
+    px, py = cx + 15, cy + 55
+    pz = plinth(px, py, 92.0, 66.0, 0.0)
+    WK.hall(city, (px, py, pz - 0.2), WK.HallSpec(
         bays=(9, 5), bay=5.2, col_h=6.4, plat_h=2.2, tiers=3, balustrade=True, double=True,
         upper_h=3.6, roof=WK.RoofSpec(style="hip", mat="W_TileGold", ridge_mat="W_RidgeGold",
                                       beasts=5, overhang=1.8)))
     for sx in (-1, 1):
         hx, hy = px + sx * 95, py - 30
-        WK.hall(city, (hx, hy, gz(hx, hy) - 0.5), WK.HallSpec(
+        hz = plinth(hx, hy, 34.0, 24.0, sx * 0.12)
+        WK.hall(city, (hx, hy, hz - 0.2), WK.HallSpec(
             bays=(5, 3), bay=4.4, col_h=5.0, plat_h=1.4, double=False,
             roof=WK.RoofSpec(mat="W_TileGold", ridge_mat="W_RidgeGold", beasts=3)), rz=sx * 0.12)
     # mid-town halls (temples, yamen)
-    for (hx, hy, rz, bays) in ((cx - 170, cy - 90, 0.15, (5, 3)), (cx + 230, cy - 60, -0.2, (5, 3)),
-                               (cx - 40, cy - 150, 0.0, (7, 3)), (cx + 120, cy + 230, 0.1, (5, 3))):
-        WK.hall(city, (hx, hy, gz(hx, hy) - 0.5), WK.HallSpec(bays=bays, bay=4.0, col_h=4.6,
-                                                              plat_h=1.2, double=False), rz=rz)
+    for (hx, hy, rz, bays) in ((cx - 150, cy - 80, 0.3, (5, 3)), (cx + 200, cy - 60, -0.4, (5, 3)),
+                               (cx - 20, cy - 170, 0.0, (7, 3)), (cx + 120, cy + 190, 0.1, (5, 3)),
+                               (cx + 260, cy + 90, -0.9, (5, 2))):
+        hz = plinth(hx, hy, bays[0] * 4.0 + 6.0, bays[1] * 4.0 + 6.0, rz)
+        WK.hall(city, (hx, hy, hz - 0.2), WK.HallSpec(bays=bays, bay=4.0, col_h=4.6,
+                                                       plat_h=1.2, double=False), rz=rz)
     # pagoda on the left knoll
-    pgx, pgy = 430.0, 2180.0
-    WK.pagoda(city, (pgx, pgy, gz(pgx, pgy) - 1.0), tiers=13, R=5.2, base_h=6.5, tier_h=3.4)
+    pgx, pgy = 470.0, 2190.0
+    pgz = plinth(pgx, pgy, 22.0, 22.0, 0.0)
+    WK.pagoda(city, (pgx, pgy, pgz - 0.3), tiers=13, R=5.2, base_h=6.5, tier_h=3.4)
     cobj = A.wk_build(city, "City", mats)
     # houses: instanced prototypes on the terraces
     hb = []
@@ -283,29 +301,43 @@ def build(r):
     pts = []
     tries = 0
     hr = random.Random(11)
-    placed = []
-    while len(pts) < (260 if pv else 520) and tries < 20000:
+    placed = set()
+    plinths = []
+    while len(pts) < (800 if pv else 1800) and tries < 80000:
         tries += 1
         a = hr.uniform(0, math.tau)
-        rad = math.sqrt(hr.random())
-        x = cx + math.cos(a) * 440 * rad
-        y = cy + math.sin(a) * 320 * rad
-        if math.hypot((x - px) / 150, (y - py) / 110) < 1.0:
+        rad = math.sqrt(hr.random()) * 1.0
+        x = cx + math.cos(a) * 420 * rad
+        y = cy + math.sin(a) * 315 * rad
+        if math.hypot((x - px) / 120, (y - py) / 90) < 1.0:
             continue
-        if math.hypot(x - pgx, y - pgy) < 40:
+        if math.hypot(x - pgx, y - pgy) < 34:
             continue
-        if math.hypot((x - cx - 40) / 175, (y - cy - 60) / 125) < 1.0 and math.hypot((x - cx - 40) / 160, (y - cy - 60) / 112) > 0.86:
+        rin = math.hypot((x - cx - 15) / 135, (y - cy - 30) / 100)
+        if 0.92 < rin < 1.08:
             continue
-        nz = valley.nz_at(x, y, 3.0)
-        if nz < 0.93:
+        if math.hypot((x - gx) / 45, (y - gy) / 60) < 1.0:
             continue
-        if any((x - qx) ** 2 + (y - qy) ** 2 < 15.0 ** 2 for qx, qy in placed):
+        cell = (int(x // 13.0), int(y // 13.0))
+        if cell in placed:
             continue
-        z = gz(x, y)
-        placed.append((x, y))
-        rot = (math.pi if hr.random() < 0.15 else 0.0) + hr.uniform(-0.12, 0.12) + math.atan2(y - cy, x - cx) * 0.0
-        pts.append((x, y, z - 0.6, rot, hr.uniform(0.9, 1.1), hr.randrange(10)))
+        placed.add(cell)
+        # face downhill (outwards), snapped to the compass + jitter
+        out = math.atan2(x - cx, -(y - cy))
+        rot = round(out / (math.pi / 2)) * (math.pi / 2) + hr.uniform(-0.12, 0.12)
+        k = hr.randrange(10)
+        sc_ = hr.uniform(0.85, 1.1)
+        hw, hd = 7.0 * sc_, 4.5 * sc_
+        ca, sa = math.cos(rot), math.sin(rot)
+        zs = [gz(x + ca * u - sa * v, y + sa * u + ca * v) for u in (-hw, hw) for v in (-hd, hd)]
+        top, bot = max(zs), min(zs)
+        pts.append((x, y, top - 0.3, rot, sc_, k))
+        if top - bot > 0.8:
+            plinths.append((x, y, bot - 2.0, rot, (hw * 2.0 + 1.0, hd * 2.0 + 1.0, top - bot + 1.9), 0))
     F.instance("Houses", pts, hcol)
+    pcol = A.wk_prototypes([lambda mb: mb.box((0, 0, 0), (1.0, 1.0, 1.0), "W_StoneDark", top_mat="W_Paving")],
+                           mats, "TitlePlinth")
+    F.instance("Plinths", plinths, pcol)
     # ---- banners along the walls and on the palace ----------------------------------------
     bb = []
     for c in range(3):
@@ -326,8 +358,8 @@ def build(r):
     fm = {"Leaves": F.foliage_material("TLeaves", ("#3E5A2C", "#7A8A3E"), translucency=0.3),
           "LeavesCore": F.foliage_material("TLeavesCore", ("#2E4424", "#4E6230"), core=True, translucency=0.0),
           "Needles": F.foliage_material("TNeedles", ("#25382A", "#44583A"), translucency=0.2),
-          "NeedlesCore": F.foliage_material("TNeedlesCore", ("#1E2C22", "#33452E"), core=True, translucency=0.0),
-          "Bark": F.bark_material("TBark")}
+          "NeedlesCore": F.foliage_material("TNeedlesCore", ("#24402A", "#3E5A30"), core=True, translucency=0.0),
+          "Bark": F.bark_material("TBark", ("#2E2824", "#5A5048"))}
     tcol = F.prototypes([lambda mb: F.broadleaf(mb, random.Random(1), 14),
                          lambda mb: F.broadleaf(mb, random.Random(2), 11),
                          lambda mb: F.chinese_pine(mb, random.Random(3), 15),
@@ -339,9 +371,11 @@ def build(r):
     # forests on the hills (left, behind, right) and along the river banks
     def dens(x, y):
         z = valley.z(x, y)
-        d_city = math.hypot((x - cx) / 520, (y - cy) / 390)
+        d_city = math.hypot((x - cx) / 430, (y - cy) / 325)
+        if d_city < 0.82:
+            return 0.4
         if d_city < 1.0:
-            return 0.04
+            return 0.05
         hill = min(1.0, max(0.0, (z - 25.0) / 60.0))
         n = T.fbm2(np.array([x]), np.array([y]), 260.0, 3, seed=44)[0]
         return hill * (0.25 + 0.75 * (n > 0.45)) + 0.95 * (n > 0.66)
@@ -350,16 +384,24 @@ def build(r):
                        zmin=6.0, density=dens)
     # foreground hill: scattered pines and broadleaf, kept off the left calm zone
     tp += F.scatter_on(near, 500 if pv else 1400, trng, (-1000, 1300), (180, 700),
-                       [(0, 2), (2, 3), (3, 1)], scale=(0.8, 1.2), min_nz=0.7,
+                       [(0, 2), (1, 1), (2, 3)], scale=(0.8, 1.2), min_nz=0.7,
                        density=lambda x, y: 0.15 + 0.85 * T.smoothstep(-200, 500, x))
+    # the dark forested ridge across the bottom of the frame
+    tp += F.scatter_on(near, 1300 if pv else 3600, trng, (-450, 650), (-40, 230),
+                       [(0, 3), (1, 3), (2, 4)], scale=(0.9, 1.4), min_nz=0.5, zmin=180.0)
+    # trees between the houses on the citadel slopes
+    tp += F.scatter_on(valley, 700 if pv else 1600, trng, (cx - 420, cx + 420), (cy - 320, cy + 320),
+                       [(0, 2), (1, 2), (2, 1)], scale=(0.55, 0.85), min_nz=0.45, zmin=15.0,
+                       mask=lambda x, y: math.hypot((x - cx) / 420, (y - cy) / 315) < 0.95
+                       and (int(x // 13.0), int(y // 13.0)) not in placed)
     F.instance("Trees", tp, tcol)
     # hero pine framing the right edge + rocks
     hp = MeshBuilder()
-    F.chinese_pine(hp, random.Random(77), 24.0, leaves=90, leaf=0.9)
+    F.fine_pine(hp, random.Random(77), 21.0, tufts=60 if not pv else 30)
     hpo = hp.build("HeroPine", fm, auto_smooth_deg=None)
-    hx, hy = -24.0, -40.0
+    hx, hy = -40.0, -18.0
     hpo.location = (hx, hy, near.z(hx, hy) - 0.5)
-    hpo.rotation_euler = (0.0, 0.08, 2.4)
+    hpo.rotation_euler = (0.0, -0.1, 0.3)
     rm = T.rock_material("TitleRock", ("#5A5550", "#8A8276"), scale=0.15, strata=0.25,
                          moss="#5A6A3A", moss_amt=0.6, vertical=False)
     rb = MeshBuilder()
@@ -385,6 +427,6 @@ def build(r):
     return dict(camera=cam, beams=tuple(S.dir_from(*SUN) * 30000.0),
                 beams_cfg=dict(ray_length=0.22, strength=0.22, threshold=1.4),
                 glow=dict(threshold=1.2, mix=-0.85, size=8),
-                grade=dict(saturation=1.06, contrast=1.05, shadows=(0.0, 0.004, 0.02),
-                           highlights=(0.025, 0.008, -0.02), clarity=0.12, vignette=0.22,
-                           vignette_center=(0.55, 0.5), canvas=0.018, sharpen=0.25))
+                grade=dict(saturation=1.14, contrast=1.12, lift=(0.018, 0.02, 0.03), shadows=(-0.005, 0.004, 0.025),
+                           highlights=(0.04, 0.016, -0.03), clarity=0.14, vignette=0.22,
+                           vignette_center=(0.55, 0.5), canvas=0.012, sharpen=0.25))

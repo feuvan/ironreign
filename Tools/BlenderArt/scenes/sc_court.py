@@ -22,7 +22,8 @@ from ironart import world_kit as WK
 from ironart.geometry import MeshBuilder
 
 SPEC = dict(name="Court", art="Art/Events/Court.png", master="Events/Court@2x.png",
-            size=(1280, 720), ss=1, spp=160, preview_spp=24, seed=11)
+            size=(1280, 720), ss=1, spp=32, preview_spp=12, seed=11,
+            light_paths=dict(max_bounces=5, diffuse_bounces=3))
 
 HW = 19.0          # half width of the hall interior
 LEN = 64.0         # hall length (y from 0)
@@ -52,7 +53,7 @@ def floor_material():
     b.link(P_, br.inputs["Vector"])
     n = noise(nb, P_, 0.8, 4, 0.6)
     col = b.mix(br.outputs["Color"], b.cmul(br.outputs["Color"], 1.25), b.smooth(n, 0.4, 0.7))
-    rough = b.maprange(n, 0.3, 0.7, 0.08, 0.22)
+    rough = b.maprange(n, 0.3, 0.7, 0.16, 0.3)
     p = b.principled(Base_Color=col, Roughness=rough, Specular_IOR_Level=0.55,
                      Normal=b.bump(br.outputs["Fac"], 0.2, 0.01))
     return _fin(mat, nb, p.outputs[0])
@@ -105,6 +106,37 @@ def screen_material():
     return _fin(mat, nb, p.outputs[0])
 
 
+def beam_material():
+    """God-ray prism: additive warm emission fading along the beam (UV v) and towards the prism
+    edges (facing ratio), with drifting dust; transparent otherwise."""
+    from ironart.scenes_sky import G, lin4
+    from ironart.scenes_terrain import noise
+    mat, nb, created = M.new("IR_NoFogBeam")
+    if not created:
+        return mat
+    mat.blend_method = "BLEND"
+    b = G(nb.tree)
+    tc = nb.node("ShaderNodeTexCoord")
+    v = b.sep(tc.outputs["UV"])[1]
+    lw = nb.node("ShaderNodeLayerWeight")
+    lw.inputs["Blend"].default_value = 0.5
+    core = b.math("POWER", b.math("SUBTRACT", 1.0, lw.outputs["Facing"]), 1.6)
+    along = b.math("MULTIPLY", b.smooth(v, 0.0, 0.12), b.smooth(v, 1.0, 0.55))
+    P_ = nb.node("ShaderNodeNewGeometry").outputs["Position"]
+    dust = b.maprange(noise(nb, P_, 0.35, 4, 0.6), 0.3, 0.7, 0.55, 1.15)
+    k = b.math("MULTIPLY", b.math("MULTIPLY", core, along), dust)
+    em = nb.node("ShaderNodeEmission")
+    em.inputs["Color"].default_value = lin4("#FFD9A6")
+    b.link(b.math("MULTIPLY", k, 0.28), em.inputs["Strength"])
+    tp = nb.node("ShaderNodeBsdfTransparent")
+    ad = nb.node("ShaderNodeAddShader")
+    b.link(tp.outputs[0], ad.inputs[0])
+    b.link(em.outputs[0], ad.inputs[1])
+    nb.output(ad.outputs[0])
+    mat["ir_fog"] = 1
+    return mat
+
+
 def build(r):
     import bpy
     pv = r["preview"]
@@ -113,7 +145,8 @@ def build(r):
     S.build(dict(stops=[(0.0, "#C8D4E0"), (0.3, "#9AB0CC"), (1.0, "#6A88B0")], strength=1.2,
                  glows=[dict(dir=SUN, color="#FFE8C8", lobes=[(8, 1.0)])],
                  light=dict(strength=0.9, tint="#B8C8E8"),
-                 fog=dict(haze=0.0, mist=0.0)))
+                 fog=dict(haze=0.006, haze_falloff=0.0, haze_max=0.45, haze_tint="#7A5A48",
+                          haze_zmax=0.3, mist=0.0)))
     sun = S.sun(SUN[0], SUN[1], energy=9.0, color="#FFDDB0", angle_deg=0.6)
     wk = A.wk_materials()
     pm = P.materials(cloth=["#7A1E1A", "#2A3A5E", "#2E4A3A", "#1E1C1A", "#6A4A2A", "#D6C8A8",
@@ -245,20 +278,29 @@ def build(r):
                  cloth2=9, hat="official", weapon=None)
         crowd.extend(f, Matrix.Translation((sx * 3.2, 45.5, 0.0)) @ Matrix.Rotation(math.pi + sx * 0.5, 4, "Z"))
     crowd.build("Court", mats)
-    # ---- haze volume (light shafts) + lights -----------------------------------------------
-    vm = bpy.data.materials.new("IR_NoFogHaze")
-    vm.use_nodes = True
-    nt = vm.node_tree
-    nt.nodes.clear()
-    vol = nt.nodes.new("ShaderNodeVolumePrincipled")
-    vol.inputs["Color"].default_value = (1.0, 0.92, 0.82, 1)
-    vol.inputs["Density"].default_value = 0.022
-    vol.inputs["Anisotropy"].default_value = 0.35
-    out = nt.nodes.new("ShaderNodeOutputMaterial")
-    nt.links.new(vol.outputs[0], out.inputs["Volume"])
-    mb = MeshBuilder()
-    mb.box((0, LEN / 2 - 3, 0.02), (HW * 2 - 0.2, LEN + 5, H - 0.7), "Haze")
-    hz = mb.build("Haze", {"Haze": vm})
+    # ---- light shafts: emissive, transparent prisms from each left window along the sun ray
+    #      (a painter's god rays: noise-free, unlike a sparse sunlit volume) -------------------
+    bm = beam_material()
+    from mathutils import Vector as V
+    d = -S.dir_from(*SUN)
+    beams = MeshBuilder()
+    for wy in win_y:
+        x0 = -HW - 0.4
+        quad = [V((x0, wy - 2.0, 7.2)), V((x0, wy + 2.0, 7.2)), V((x0, wy + 2.0, 13.4)), V((x0, wy - 2.0, 13.4))]
+        # extrude until the floor (length from the top edge)
+        Lb = 13.4 / -d.z * 1.02
+        far = [q + d * Lb for q in quad]
+        ids0 = [beams.v(tuple(q)) for q in quad]
+        ids1 = [beams.v(tuple(q)) for q in far]
+        for k in range(4):
+            j = (k + 1) % 4
+            beams.face((ids0[k], ids0[j], ids1[j], ids1[k]), "Beam",
+                       [(0, 0), (1, 0), (1, 1), (0, 1)])
+    bo = beams.build("Beams", {"Beam": bm}, auto_smooth_deg=None)
+    bo.visible_shadow = False
+    bo.visible_diffuse = False
+    bo.visible_glossy = False
+    bo.visible_transmission = False
     # warm candle / lantern glows near the dais, cool fill from the doorway
     for sx in (-1, 1):
         S.point((sx * 6.0, 49.5, 3.6), 600.0, "#FFB060", 0.4)
@@ -270,4 +312,4 @@ def build(r):
                 glow=dict(threshold=1.0, mix=-0.8, size=8),
                 grade=dict(saturation=1.04, contrast=1.06, shadows=(0.01, 0.0, -0.005),
                            highlights=(0.02, 0.01, -0.015), clarity=0.14, vignette=0.28,
-                           canvas=0.018, sharpen=0.3))
+                           canvas=0.012, sharpen=0.3))

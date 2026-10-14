@@ -139,13 +139,40 @@ def _eye_centres(Vb_proxy):
     return out
 
 
-def build(idn, subdiv=2, collection=None):
+def adduct_arms(V, base, angle_deg=24.0):
+    """Swing the A-pose arms down toward the body (smoothly weighted rotation about each
+    shoulder joint), so busts have relaxed, sloping shoulders and garments can wrap the arms."""
+    V = V.copy()
+    for side, g_sh, g_el in ((1, "joint-l-shoulder", "joint-l-elbow"), (-1, "joint-r-shoulder", "joint-r-elbow")):
+        J = V[base.group_verts(g_sh)].mean(0)
+        E = V[base.group_verts(g_el)].mean(0)
+        a = E - J
+        L = np.linalg.norm(a)
+        a /= L
+        body = np.arange(mh.N_BODY)
+        rel = V[body] - J
+        t = rel @ a / L
+        w = np.clip((t + 0.28) / 0.6, 0, 1)
+        w = w * w * (3 - 2 * w)
+        w *= (V[body, 0] * side > J[0] * side - 0.6)  # only the arm side
+        # rotate toward -Y(MH up axis) in the arm/vertical plane: about the MH z axis
+        th = np.radians(angle_deg) * w * side
+        c, s_ = np.cos(th), np.sin(th)
+        x, y = rel[:, 0], rel[:, 1]
+        V[body, 0] = J[0] + c * x + s_ * y
+        V[body, 1] = J[1] - s_ * x + c * y
+    return V
+
+
+def build(idn, subdiv=2, collection=None, arms=24.0):
     import regions
     base = mh.load_base()
     V_rest = mh.apply_targets(base.verts, idn.target_weights(expression=False))
     full = idn.target_weights()
     expr = {k: v for k, v in full.items() if k.startswith("expression/")}
     V = mh.apply_targets(V_rest, expr)
+    if arms:
+        V = adduct_arms(V, base, arms)
     masks = region_masks()
     Vb_all = mh.to_blender(V)
     # rest-face coordinates (features painted in fc ride with the skin under expressions)
@@ -195,7 +222,9 @@ def build(idn, subdiv=2, collection=None):
     lm["eye_radius"] = float(np.linalg.norm(pv[left] - eye_l, axis=1).max())
     # ---- skin mesh: body faces above the crop line
     body_faces = base.group_faces("body")
-    keep = [i for i in body_faces if min(V[j, 1] for j in base.faces[i]) > CROP_Y]
+    # identity independent (UV raster cache): bust above CROP_Y, arms cut above the elbow
+    keep = [i for i in body_faces if min(base.verts[j, 1] for j in base.faces[i]) > CROP_Y
+            and max(abs(base.verts[j, 0]) for j in base.faces[i]) < 2.0]
     used = np.array(sorted({j for i in keep for j in base.faces[i]}), np.int64)
     remap = np.full(len(V), -1, np.int64)
     remap[used] = np.arange(len(used))

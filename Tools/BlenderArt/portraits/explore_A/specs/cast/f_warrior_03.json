@@ -1,0 +1,41 @@
+{
+ "id": "f_warrior_03",
+ "seed": 527,
+ "gender": "f",
+ "age": 23,
+ "archetype": "warrior",
+ "expression": "stern",
+ "bg": "cool",
+ "notes": "Lin Shuangyue, the Frost Moon",
+ "hair": {
+  "style": "topknot",
+  "grey": 0.0,
+  "recede": 0.1
+ },
+ "skin": {
+  "weather": 0.8,
+  "scars": []
+ },
+ "camera": {
+  "yaw": -18.0,
+  "pitch": -3.0,
+  "head_frac": 0.42,
+  "eye_line": 0.39
+ },
+ "outfit": {
+  "kind": "armour",
+  "silk": [
+   0.02,
+   0.05,
+   0.16
+  ],
+  "trim": [
+   0.66,
+   0.5,
+   0.2
+  ]
+ },
+ "headgear": {
+  "kind": "none"
+ }
+}

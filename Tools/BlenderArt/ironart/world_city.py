@@ -55,7 +55,7 @@ def p_house_hip(w=11.0, d=7.0, roof="W_Tile", ridge="W_Ridge", wall="W_Plaster",
                     wall_mat=wall, front="lattice", front_inset=0.8, brackets=False,
                     beam_mat="W_BeamPaint",
                     roof=K.RoofSpec(style="hip_gable", overhang=1.2, lift=0.45, flare=0.25, thick=0.24,
-                                    pitch=0.6, tile_seg=4, tile_faces=2, nv=5, mat=roof, ridge_mat=ridge,
+                                    pitch=0.7, tile_seg=4, tile_faces=2, nv=5, mat=roof, ridge_mat=ridge,
                                     ridge_h=0.45))
     K.hall(mb, (0, 0, 0), hs)
     return mb
@@ -93,8 +93,6 @@ def p_wall(L, H, T, mat="W_Stone", par="W_Brick", earth=False):
 def p_corner_tower(S, H, roof="W_TileDark", double=False, mat="W_Stone"):
     """Corner bastion (S x S, a little above the wall walk) with crenels and a watch pavilion."""
     mb = MeshBuilder()
-    K.gate_base(mb, S, S, H + 0.4, 0.1, 0.1, mat=mat, doors=False, crenels=True) if False else None
-    s = mb.n
     mb.box((0, 0, -2.0), (S, S, H + 2.4), mat, taper=(0.5, 0.5), top_mat="W_Paving", skip=("bottom",))
     # crenels all around
     top = H + 0.4
@@ -110,7 +108,7 @@ def p_corner_tower(S, H, roof="W_TileDark", double=False, mat="W_Stone"):
     bw = S * 0.52
     K.hall(mb, (0, 0, top), K.HallSpec(
         bays=(3, 3), bay=bw / 3, col_h=3.4, col_r=0.22, plat_h=0.0, steps=False, wall_mat="W_RedWall",
-        front="lattice", front_inset=0.0, brackets=True, bracket_k=0.6, double=double, upper_h=2.4,
+        front="lattice", front_inset=0.0, brackets=False, bracket_k=0.6, double=double, upper_h=2.4,
         roof=K.RoofSpec(style="hip_gable", overhang=1.3, lift=0.6, flare=0.3, thick=0.26, pitch=0.55,
                         tile_seg=4, tile_faces=2, nv=5, mat=roof, ridge_h=0.5)), roof_h=bw * 0.42)
     return mb
@@ -200,8 +198,8 @@ def p_hall(bays=(5, 3), bay=4.0, col_h=5.0, plat_h=1.2, roof="W_TileDark", ridge
         bays=bays, bay=bay, col_h=col_h, col_r=0.3, plat_h=plat_h, plat_margin=2.0, plat_mat=plat_mat,
         steps=True, wall_mat=wall, front="lattice", front_inset=1.0, brackets=True, bracket_k=bracket_k,
         double=double, upper_h=col_h * 0.65, tiers=tiers, balustrade=balustrade,
-        roof=K.RoofSpec(style=style, overhang=overhang, lift=0.75, flare=0.4, thick=0.32, pitch=0.6,
-                        tile_seg=5, tile_faces=3, nv=6, mat=roof, ridge_mat=ridge, beasts=beasts)),
+        roof=K.RoofSpec(style=style, overhang=overhang, lift=0.75, flare=0.4, thick=0.32, pitch=0.62,
+                        tile_seg=4, tile_faces=2, nv=6, mat=roof, ridge_mat=ridge, beasts=beasts)),
            roof_h=roof_h)
     return mb
 
@@ -238,7 +236,7 @@ def p_red_wall(L=8.0, h=6.0, t=1.8, cap="W_TileGold", ridge="W_RidgeGold"):
     mb.box((0, 0, -1.5), (L, t + 0.3, 2.1), "W_Marble", skip=("bottom",))
     mb.box((0, 0, 0.6), (L, t, h - 0.6), "W_RedWall", skip=("bottom",))
     K.roof(mb, (0, 0, h), L, t, 0.9, K.RoofSpec(style="gable", overhang=0.5, lift=0.0, flare=0.0, thick=0.15,
-                                                pitch=0.5, tile_seg=2, tile_faces=2, nv=2, ridge_h=0.3,
+                                                pitch=0.5, tiles=False, nv=1, barge=False, nu_min=2, ridge_h=0.3,
                                                 ridge_ends="plain", mat=cap, ridge_mat=ridge,
                                                 fascia_mat="W_Fascia"))
     return mb
@@ -488,7 +486,7 @@ def tier3(seed=303):
     """Imperial capital (~120 m)."""
     P = {
         "wall": lambda: p_wall(8.0, 10.0, 8.0, mat="W_StoneDark"),
-        "corner_tower": lambda: p_corner_tower(13.0, 10.0, double=True, mat="W_StoneDark"),
+        "corner_tower": lambda: p_corner_tower(13.0, 10.0, double=False, mat="W_StoneDark"),
         "gate": lambda: p_gate(30.0, 17.0, 11.0, 5.4, 7.6, n_arches=3, mat="W_StoneDark", tower=(7, 3), bay=3.9,
                                col_h=5.0, beasts=4),
         "arrow": lambda: p_arrow_tower(24.0, 10.0, 10.0),
@@ -496,17 +494,15 @@ def tier3(seed=303):
         "redwall": p_red_wall,
         "pgate": lambda: p_gate(20.0, 10.0, 6.5, 3.6, 5.0, n_arches=3, mat="W_RedWall", tower=(5, 2), bay=3.4,
                                 col_h=4.0, roof="W_TileGold", ridge="W_RidgeGold", beasts=4),
-        "throne": lambda: p_hall(bays=(7, 4), bay=4.0, col_h=5.6, plat_h=1.5, roof="W_TileGold", ridge="W_RidgeGold",
-                                 style="hip", double=True, tiers=3, balustrade=True, wall="W_RedWall", beasts=6,
+        "throne": lambda: p_hall(bays=(7, 3), bay=4.0, col_h=5.6, plat_h=1.5, roof="W_TileGold", ridge="W_RidgeGold",
+                                 style="hip", double=True, tiers=2, balustrade=True, wall="W_RedWall", beasts=6,
                                  bracket_k=0.9, overhang=2.1, roof_h=7.2),
-        "phall": lambda: p_hall(bays=(5, 3), bay=3.8, col_h=4.8, plat_h=1.2, roof="W_TileGold", ridge="W_RidgeGold",
-                                style="hip_gable", wall="W_RedWall", beasts=4, balustrade=True, bracket_k=0.75),
         "pside": lambda: p_hall(bays=(5, 2), bay=3.4, col_h=4.0, plat_h=0.8, roof="W_TileGold", ridge="W_RidgeGold",
                                 style="hip_gable", wall="W_RedWall", beasts=2, bracket_k=0.6, overhang=1.5),
         "bell": lambda: p_drum_tower(roof="W_TileGreen", W=17.0, D=17.0, H=8.0),
         "pagoda9": lambda: p_pagoda(9, 3.8),
         "pagoda7r": lambda: p_pagoda(7, 3.2, body="W_PlasterWarm", roof="W_TileGreen", ridge="W_RidgeGreen"),
-        "temple": lambda: p_hall(bays=(5, 3), bay=3.4, col_h=4.2, plat_h=1.0, roof="W_TileGreen", ridge="W_RidgeGreen",
+        "temple": lambda: p_hall(bays=(3, 2), bay=4.2, col_h=4.2, plat_h=1.0, roof="W_TileGreen", ridge="W_RidgeGreen",
                                  style="hip_gable", wall="W_RedWall", beasts=2, plat_mat="W_Stone", bracket_k=0.6,
                                  overhang=1.6),
         "house_a": lambda: p_house(9.0, 5.6, pitch=0.7),
@@ -525,7 +521,7 @@ def tier3(seed=303):
     cx, cy = wall_ring(lay, P, hx, hy, T, 30.0, 13.0, gate_proto="gate")
     ix, iy = hx - T, hy - T
     # barbican in front of the main gate: two flanking walls and the arrow tower
-    bx, byf = 17.0, -hy - 13.0
+    bx, byf = 17.0, -hy - 16.0
     lay.span("bwall", 8.0, (-bx, byf + 3.0), (-bx, -hy + 1.0), -R90)
     lay.span("bwall", 8.0, (bx, -hy + 1.0), (bx, byf + 3.0), R90)
     lay.span("bwall", 8.0, (-bx + 3.0, byf), (-12.0, byf), 0.0)
@@ -541,17 +537,15 @@ def tier3(seed=303):
     lay.span("redwall", 8.0, (px1, py1), (px0, py1), math.pi)
     lay.span("redwall", 8.0, (px0, py1), (px0, py0), -R90)
     lay.put("pgate", 0.0, py0, 0.0)
-    lay.put("throne", 0.0, 22.5, 0.0)
-    lay.put("phall", 0.0, 6.5, 0.0, sx=0.92, sy=0.92, sz=0.92) if False else None
-    lay.put("pside", -15.5, 11.0, -R90)
-    lay.put("pside", 15.5, 11.0, R90)
+    lay.put("throne", 0.0, 26.0, 0.0)
+    lay.put("pside", -17.5, 4.5, -R90)
+    lay.put("pside", 17.5, 4.5, R90)
     lay.paved.append((px0, py0, px1, py1))
-    for (x, y) in ((-19.0, 33.0), (19.0, 33.0), (-19.0, 3.0), (19.0, 3.0)):
-        lay.tree("pine", x, y, 0.34)
+    for (x, y) in ((-21.0, 33.5), (21.0, 33.5), (-8.0, 14.0), (8.0, 14.0)):
+        lay.tree("pine", x, y, 0.32)
     # canal (golden water) across the city in front of the palace, with bridges
     ycan = -9.5
     lay.span("canal", 8.0, (-ix, ycan), (-12.0, ycan), 0.0)
-    lay.span("canal", 8.0, (-4.0, ycan), (4.0, ycan), 0.0) if False else None
     lay.span("canal", 8.0, (12.0, ycan), (ix, ycan), 0.0)
     lay.span("canal", 8.0, (-12.0, ycan), (12.0, ycan), 0.0)
     lay.wet.append((-ix, ycan - 4.0, ix, ycan + 4.0))
@@ -566,7 +560,6 @@ def tier3(seed=303):
     lay.put("bell", 0.0, -27.0, 0.0)
     lay.street(-ix, -29.5, ix, -24.5)
     lay.paved.append(("ell", 0.0, -27.0, 13.0, 10.0))
-    lay.put("paifang", 0.0, -40.0 + 2.0, 0.0) if False else None
     # temples: west 9-tier pagoda (back-left), east 7-tier
     lay.put("pagoda9", -36.5, 27.0, 0.0)
     lay.put("temple", -37.5, 12.5, 0.0)
@@ -575,18 +568,17 @@ def tier3(seed=303):
     lay.put("temple", 38.0, 23.0, 0.0)
     lay.paved.append(("ell", 37.5, 16.0, 6.0, 11.0))
     # compounds south of the canal
-    for (x, y, rich) in ((-37.0, -33.0, True), (-15.0, -36.0, False), (15.0, -36.0, False), (37.0, -33.0, True),
-                         (-16.5, -18.0, True), (16.5, -18.0, False)):
-        lay.compound(x, y, 18.0 if abs(x) < 20 else 14.0, 13.0, 0.0, rich=rich)
+    for k, (x, y, rich) in enumerate(((-37.0, -33.0, True), (-15.0, -36.0, False), (15.0, -36.0, False),
+                                      (37.0, -33.0, True), (-16.5, -18.0, True), (16.5, -18.0, False))):
+        lay.compound(x, y, 18.0 if abs(x) < 20 else 14.0, 13.0, 0.0, rich=rich, trees=k % 2 == 0)
     for (x, y, rz) in ((-38.0, -19.0, 0.0), (38.0, -19.0, 0.0)):
         lay.put("row", x, y, rz, sx=0.8)
     # compounds north of the canal outside the palace
     lay.compound(-36.0, 0.5, 13.0, 11.0, 0.0)
     lay.compound(36.0, 34.0, 13.0, 12.0, 0.0)
     lay.put("house_a", -36.5, 37.0, math.pi)
-    for (x, y, s) in ((-27.0, -38.0, 0.42), (27.0, -38.0, 0.4), (-8.0, -38.0, 0.38), (8.5, -37.5, 0.4),
-                      (-29.5, 4.0, 0.42), (29.5, 30.0, 0.42), (-6.5, -18.5, 0.36), (6.5, -18.5, 0.36),
-                      (-28.0, 36.5, 0.4), (28.0, 4.5, 0.38)):
+    for (x, y, s) in ((-27.0, -38.0, 0.42), (27.0, -38.0, 0.4), (-29.5, 4.0, 0.42), (29.5, 30.0, 0.42),
+                      (-6.5, -18.5, 0.36)):
         lay.green.append(("ell", x, y, 3.0, 3.0))
         lay.tree("broad", x, y, s)
     for e in ((-ix, -iy, -ix + 2.5, iy), (ix - 2.5, -iy, ix, iy), (-ix, iy - 2.5, ix, iy)):
@@ -609,19 +601,25 @@ def ground_mask(lay, size, path, seed=0):
     ys = gy - (np.arange(H) + 0.5) / H * 2 * gy
     xs = -gx + (np.arange(W) + 0.5) / W * 2 * gx
     X, Y = np.meshgrid(xs, ys)
+    from .post import fbm
+    # domain warp: garden patches get ragged organic edges, streets only a slight wobble
+    wx = (fbm(H, W, size / 10.0, 4, 0.5, seed + 1) - 0.5) * 2.0
+    wy = (fbm(H, W, size / 10.0, 4, 0.5, seed + 2) - 0.5) * 2.0
+    grain = fbm(H, W, size / 40.0, 3, 0.5, seed + 3) - 0.5
     out = np.zeros((H, W, 3), np.float32)
-    for ch, strokes in ((0, lay.paved), (1, lay.green), (2, lay.wet)):
+    for ch, strokes, warp in ((0, lay.paved, 0.25), (1, lay.green, 2.2), (2, lay.wet, 0.4)):
+        Xw, Yw = X + wx * warp, Y + wy * warp
         m = np.zeros((H, W), np.float32)
         for s in strokes:
             if s[0] == "ell":
                 _, cx, cy, rx, ry = s
-                d = ((X - cx) / rx) ** 2 + ((Y - cy) / ry) ** 2
-                m = np.maximum(m, np.clip((1.15 - d) / 0.3, 0, 1))
+                d = ((Xw - cx) / rx) ** 2 + ((Yw - cy) / ry) ** 2
+                m = np.maximum(m, np.clip((1.1 - d + grain * (0.8 if ch == 1 else 0.2)) / 0.35, 0, 1))
             else:
                 x0, y0, x1, y1 = s
-                dx = np.minimum(X - x0, x1 - X)
-                dy = np.minimum(Y - y0, y1 - Y)
-                m = np.maximum(m, np.clip(np.minimum(dx, dy) / 0.6 + 0.5, 0, 1))
+                dx = np.minimum(Xw - x0, x1 - Xw)
+                dy = np.minimum(Yw - y0, y1 - Yw)
+                m = np.maximum(m, np.clip(np.minimum(dx, dy) / 0.6 + 0.5 + grain * (1.5 if ch == 1 else 0.2), 0, 1))
         out[..., ch] = m
     # soften
     from .post import gaussian
@@ -630,7 +628,7 @@ def ground_mask(lay, size, path, seed=0):
     return path
 
 
-def ground_plate(name, lay, res=48):
+def ground_plate(name, lay, res=8):
     """Flat ground grid over the plate (z = 0.04), GroundUV = UV0 = 0..1 planar."""
     import bpy
     gx, gy = lay.half

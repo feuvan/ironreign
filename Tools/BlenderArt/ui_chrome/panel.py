@@ -20,7 +20,7 @@ from ironart import ui_chrome_sdf as S
 from ironart.ui_chrome_maps import Maps, L
 
 NAME = "Panel"
-SPEC = dict(size=(128, 128), ss=4, spp=64, margins=(24, 24, 24, 24), seed=11)
+SPEC = dict(size=(128, 128), ss=4, spp=48, margins=(24, 24, 24, 24), seed=11)
 W = H = 128
 M = 24
 #: albedo multiplier so the rendered flat field lands on Paper (measured, see build QA)
@@ -96,6 +96,9 @@ def build(G, variant=None):
     z = z * (1 - gm) + np.maximum(z, 2.95 + gz) * gm
     m.paint(gm, "gold_satin")
     m.tint(gm, kit.recess_shade(gz, G.ss))
+    wf, wr = kit.edge_wear(gz, G.ss)
+    m.tint(gm, wf)
+    m.rough = m.rough + wr * gm
     m.tint(gm * ge, 0.6)
     m.paint(gm * ge, rough=0.5)
     m.paint(gb, rough=0.18)

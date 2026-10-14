@@ -2,11 +2,14 @@
 
 #include "CoreMinimal.h"
 #include "Sim/IronBattle.h"
+#include "UObject/WeakObjectPtr.h"
+#include "UObject/WeakObjectPtrTemplates.h"
 #include "Widgets/DeclarativeSyntaxSupport.h"
 #include "Widgets/SCompoundWidget.h"
 
 #include <string>
 
+class AIronWorldMap3D;
 class FIronSession;
 class SIronRoot;
 class SIronMapView;
@@ -37,6 +40,14 @@ enum class EIronStrategyFlow : uint8
  * (bottom). Drives the turn flow: End Turn -> FGame::EndPlanning -> FGame::Step at the session's days-per-second,
  * player battles (Command opens the tactical screen through SIronRoot::ShowBattle, Delegate auto-resolves), month end
  * (autosave, events, prisoners) and game over.
+ *
+ * Real-time 3D map (DESIGN.md section 12): when the session presents the map in 3D (FIronSession::Uses3DMap) and the
+ * AIronWorldMap3D spawned by AIronReignPlayerController has its scene ready, the screen activates it and the map view
+ * becomes a transparent overlay over the centre: the screen's backdrop turns transparent there (the panels keep their
+ * own backdrops, so the 3D scene only shows through the map area), and every frame the screen feeds the map the day
+ * fraction, the month's season and the march targets (the map view pushes hover and selection). Until the scene is
+ * ready, without assets or in 2D mode the painted 2D map is shown exactly as before. Opening a player battle hides the
+ * map (the battle screen shows its own scene or the 2D board); coming back re-activates it.
  */
 class IRONREIGN_API SIronStrategyScreen : public SCompoundWidget
 {
@@ -81,7 +92,16 @@ private:
 	void HandleStateChanged();
 	void HandleCultureChanged();
 	void HandleCityClicked(int32 InCity);
+	void HandleArmyClicked(int32 ArmyId);
 	EActiveTimerReturnType HandleTick(double InCurrentTime, float InDeltaTime);
+
+	// Real-time 3D map
+	/** Activates the 3D map once its scene is ready, hands it to the map view and feeds it the game state. */
+	void UpdateWorldMap();
+	/** The world's AIronWorldMap3D when the session presents the map in 3D (it may still be loading), else nullptr. */
+	AIronWorldMap3D* FindWorldMap();
+	/** Hides the 3D map (before the battle screen opens); the next frame on this screen shows it again. */
+	void HideWorldMap();
 
 	// Turn flow
 	void SyncFlowWithGame();
@@ -129,7 +149,17 @@ private:
 	FDelegateHandle StateChangedHandle;
 	FDelegateHandle CultureChangedHandle;
 
+	/** The 3D campaign map (spawned and destroyed by AIronReignPlayerController). */
+	TWeakObjectPtr<AIronWorldMap3D> WorldMap;
+	/** The 3D map is active and the map view is its overlay (the backdrop behind the map area is transparent). */
+	bool bWorldMapShown = false;
+	/** Month whose season the 3D map shows, and the march target cities last sent to it. */
+	int32 WorldMapMonth = 0;
+	TArray<int32> WorldMapTargets;
+
 	int32 SelectedCity = -1;
+	/** FArmy::Id selected on the 3D map (-1 for none). */
+	int32 SelectedArmyId = -1;
 	EIronStrategyFlow Flow = EIronStrategyFlow::Planning;
 	/** 0 = paused, 1 = 1x, 2 = 2x, 3 = 4x. */
 	int32 SpeedIndex = 1;

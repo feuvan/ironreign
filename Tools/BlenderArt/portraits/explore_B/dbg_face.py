@@ -29,7 +29,7 @@ cm = shading.cornea()
 for e in b["eyes"]:
     e.data.materials.append(em); e.data.materials.append(cm)
 if cfg.get("brows", True):
-    surf = hair.Surface([b["body"]], attrs=["z_brow", "z_lash", "z_scalp"])
+    surf = hair.Surface([b["body"]], attrs=["z_brow", "z_brow_f", "z_lash", "z_scalp"])
     rng = np.random.default_rng(1)
     hm = hair.hair_material("H", melanin=0.97, redness=0.1, roughness=0.45)
     hair.make("Brows", hair.brows(surf, lm, rng, **cfg.get("brows_kw", {})), hm)

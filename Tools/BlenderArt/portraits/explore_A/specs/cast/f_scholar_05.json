@@ -1,0 +1,56 @@
+{
+ "id": "f_scholar_05",
+ "seed": 59493,
+ "gender": "f",
+ "age": 25,
+ "archetype": "scholar",
+ "expression": "serene",
+ "bg": "jade",
+ "notes": "Ning Shuyu, Jade of the Library",
+ "hair": {
+  "style": "lady",
+  "grey": 0.0,
+  "recede": 0.1,
+  "count": 10000,
+  "bun": 0.031038545407198897,
+  "puff": 0.016
+ },
+ "skin": {
+  "weather": 0.2,
+  "scars": [],
+  "huadian": true
+ },
+ "camera": {
+  "yaw": -18.0,
+  "pitch": -3.0,
+  "head_frac": 0.42,
+  "eye_line": 0.39
+ },
+ "outfit": {
+  "kind": "lady",
+  "outer": [
+   0.04,
+   0.12,
+   0.05
+  ],
+  "mid": [
+   0.32,
+   0.03,
+   0.04
+  ],
+  "band": [
+   0.3,
+   0.03,
+   0.035
+  ],
+  "motif": "lattice",
+  "earrings": true,
+  "shawl": false
+ },
+ "headgear": {
+  "kind": "pins"
+ },
+ "identity": {
+  "makeup": 0.74
+ }
+}

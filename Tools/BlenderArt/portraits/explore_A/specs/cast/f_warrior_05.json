@@ -1,0 +1,41 @@
+{
+ "id": "f_warrior_05",
+ "seed": 97079,
+ "gender": "f",
+ "age": 20,
+ "archetype": "warrior",
+ "expression": "stern",
+ "bg": "jade",
+ "notes": "Jiang Xiaoman, the Wildcat",
+ "hair": {
+  "style": "topknot",
+  "grey": 0.0,
+  "recede": 0.1
+ },
+ "skin": {
+  "weather": 0.8,
+  "scars": []
+ },
+ "camera": {
+  "yaw": 22.0,
+  "pitch": -3.0,
+  "head_frac": 0.42,
+  "eye_line": 0.39
+ },
+ "outfit": {
+  "kind": "armour",
+  "silk": [
+   0.04,
+   0.12,
+   0.05
+  ],
+  "trim": [
+   0.7,
+   0.52,
+   0.22
+  ]
+ },
+ "headgear": {
+  "kind": "none"
+ }
+}

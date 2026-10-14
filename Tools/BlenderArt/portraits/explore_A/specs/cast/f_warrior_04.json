@@ -1,0 +1,41 @@
+{
+ "id": "f_warrior_04",
+ "seed": 63326,
+ "gender": "f",
+ "age": 24,
+ "archetype": "warrior",
+ "expression": "proud",
+ "bg": "cool",
+ "notes": "Cheng Lanyin, the Orchid Blade",
+ "hair": {
+  "style": "topknot",
+  "grey": 0.0,
+  "recede": 0.1
+ },
+ "skin": {
+  "weather": 0.8,
+  "scars": []
+ },
+ "camera": {
+  "yaw": 20.0,
+  "pitch": -3.0,
+  "head_frac": 0.42,
+  "eye_line": 0.39
+ },
+ "outfit": {
+  "kind": "armour",
+  "silk": [
+   0.015,
+   0.1,
+   0.1
+  ],
+  "trim": [
+   0.6,
+   0.6,
+   0.62
+  ]
+ },
+ "headgear": {
+  "kind": "none"
+ }
+}

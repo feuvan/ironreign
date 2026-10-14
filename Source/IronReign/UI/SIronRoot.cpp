@@ -76,7 +76,11 @@ void SIronRoot::Construct(const FArguments& InArgs)
 		[
 			SAssignNew(ScreenHost, SBorder)
 			.BorderImage(IronStyle::WhiteBrush())
-			.BorderBackgroundColor(IronStyle::Night())
+			// Transparent while a 3D scene (strategy map, battle board) renders behind the screens.
+			.BorderBackgroundColor_Lambda([this]()
+			{
+				return FSlateColor((Session.IsValid() && Session->IsWorldRendered()) ? FLinearColor::Transparent : IronStyle::Night());
+			})
 			.Padding(FMargin(0.0f))
 		]
 		+ SOverlay::Slot()

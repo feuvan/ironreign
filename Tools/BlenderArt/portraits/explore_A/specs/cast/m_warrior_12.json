@@ -1,0 +1,80 @@
+{
+ "id": "m_warrior_12",
+ "seed": 64530,
+ "gender": "m",
+ "age": 40,
+ "archetype": "warrior",
+ "expression": "stern",
+ "bg": "cool",
+ "notes": "Qin Shouzheng, the Azure Shield",
+ "hair": {
+  "style": "helmet",
+  "grey": 0.0,
+  "recede": 0.1
+ },
+ "skin": {
+  "weather": 0.8,
+  "scars": [
+   [
+    [
+     0.74,
+     0.46
+    ],
+    [
+     1.06,
+     -0.29
+    ]
+   ]
+  ]
+ },
+ "camera": {
+  "yaw": -18.0,
+  "pitch": -3.0,
+  "head_frac": 0.42,
+  "eye_line": 0.39
+ },
+ "beard": {
+  "mustache": 1.0,
+  "soul": 0.8,
+  "tails": 0.8,
+  "gravity": 0.7,
+  "radius": 0.0001,
+  "frizz": 0.0014,
+  "must_len": 0.0383,
+  "chin": 1.0,
+  "jaw": 0.0,
+  "cheeks": 0.0,
+  "neck": 0.0,
+  "sideburns": 0.0,
+  "length": 0.072,
+  "taper": 0.5,
+  "count": 4500
+ },
+ "beard_grey": 0.0,
+ "outfit": {
+  "kind": "armour",
+  "silk": [
+   0.02,
+   0.05,
+   0.16
+  ],
+  "trim": [
+   0.66,
+   0.5,
+   0.2
+  ]
+ },
+ "headgear": {
+  "kind": "helmet",
+  "tassel": [
+   0.03,
+   0.06,
+   0.2
+  ],
+  "trim": [
+   0.66,
+   0.5,
+   0.2
+  ]
+ }
+}

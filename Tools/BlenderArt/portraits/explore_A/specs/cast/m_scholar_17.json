@@ -1,0 +1,51 @@
+{
+ "id": "m_scholar_17",
+ "seed": 78520,
+ "gender": "m",
+ "age": 18,
+ "archetype": "scholar",
+ "expression": "serene",
+ "bg": "warm",
+ "notes": "Wen Ruoshui, Still Water",
+ "hair": {
+  "style": "topknot",
+  "grey": 0.0,
+  "recede": 0.1
+ },
+ "skin": {
+  "weather": 0.2,
+  "scars": []
+ },
+ "camera": {
+  "yaw": 18.0,
+  "pitch": -3.0,
+  "head_frac": 0.42,
+  "eye_line": 0.39
+ },
+ "beard": null,
+ "beard_grey": 0.0,
+ "outfit": {
+  "kind": "scholar",
+  "outer": [
+   0.02,
+   0.05,
+   0.16
+  ],
+  "band": [
+   0.04,
+   0.035,
+   0.03
+  ],
+  "motif": "roundels",
+  "depth": 0.13
+ },
+ "headgear": {
+  "kind": "guan",
+  "rgb": [
+   0.015,
+   0.013,
+   0.012
+  ],
+  "size": 1.1
+ }
+}

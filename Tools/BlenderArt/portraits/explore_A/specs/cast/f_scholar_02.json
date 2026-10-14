@@ -1,0 +1,56 @@
+{
+ "id": "f_scholar_02",
+ "seed": 70652,
+ "gender": "f",
+ "age": 27,
+ "archetype": "scholar",
+ "expression": "stern",
+ "bg": "cool",
+ "notes": "Xu Mochou, the Untroubled",
+ "hair": {
+  "style": "lady",
+  "grey": 0.0,
+  "recede": 0.1,
+  "count": 10000,
+  "bun": 0.03209715805737453,
+  "puff": 0.016
+ },
+ "skin": {
+  "weather": 0.2,
+  "scars": [],
+  "huadian": false
+ },
+ "camera": {
+  "yaw": -18.0,
+  "pitch": -3.0,
+  "head_frac": 0.42,
+  "eye_line": 0.39
+ },
+ "outfit": {
+  "kind": "lady",
+  "outer": [
+   0.015,
+   0.1,
+   0.1
+  ],
+  "mid": [
+   0.32,
+   0.03,
+   0.04
+  ],
+  "band": [
+   0.05,
+   0.05,
+   0.06
+  ],
+  "motif": "clouds",
+  "earrings": true,
+  "shawl": true
+ },
+ "headgear": {
+  "kind": "pins"
+ },
+ "identity": {
+  "makeup": 0.7
+ }
+}

@@ -1,0 +1,63 @@
+{
+ "id": "f_warrior_01",
+ "seed": 99538,
+ "gender": "f",
+ "age": 22,
+ "archetype": "warrior",
+ "expression": "stern",
+ "bg": "smoke",
+ "notes": "Yan Hongying, Red Tassel",
+ "hair": {
+  "style": "helmet",
+  "grey": 0.0,
+  "recede": 0.1
+ },
+ "skin": {
+  "weather": 0.8,
+  "scars": [
+   [
+    [
+     0.57,
+     0.23
+    ],
+    [
+     0.92,
+     -0.17
+    ]
+   ]
+  ]
+ },
+ "camera": {
+  "yaw": -20.0,
+  "pitch": -3.0,
+  "head_frac": 0.42,
+  "eye_line": 0.39
+ },
+ "outfit": {
+  "kind": "armour",
+  "silk": [
+   0.2,
+   0.016,
+   0.012
+  ],
+  "trim": [
+   0.62,
+   0.42,
+   0.16
+  ],
+  "fur": true
+ },
+ "headgear": {
+  "kind": "helmet",
+  "tassel": [
+   0.22,
+   0.008,
+   0.006
+  ],
+  "trim": [
+   0.62,
+   0.42,
+   0.16
+  ]
+ }
+}

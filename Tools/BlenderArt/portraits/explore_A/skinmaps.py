@@ -97,17 +97,20 @@ def make(b, idn, style, res=2048, seed=0):
 
     def nz(cell, octaves=1, gain=0.5):
         # value noise in texel space (sampled at the covered texels)
-        return T.noise_at(xx.astype(np.float32), yy.astype(np.float32), cell, rng, octaves, gain)
+        return T.noise_at(xx.astype(np.float32), yy.astype(np.float32), max(1.0, cell * res / 2048.0), rng, octaves, gain)
 
     # ------------------------------------------------------------------ pigment
     light = _srgb((0.87, 0.70, 0.58))
     dark = _srgb((0.68, 0.47, 0.35))
     tone = light + (dark - light) * idn.skin_tone
     col = np.tile(tone, (n, 1))
+    # the torso UV island has ~3x lower texel density: damp texel-space noise there
+    head_w = R.sstep(F.chin_y - 1.3, F.chin_y - 0.55, y)
+    nw = 0.3 + 0.7 * head_w
     m1 = nz(90.0, 3) - 0.5
     m2 = nz(14.0, 2) - 0.5
     m3 = nz(3.0, 1) - 0.5
-    col *= (1.0 + 0.10 * m1 + 0.05 * m2 + 0.025 * m3)[:, None]
+    col *= (1.0 + (0.10 * m1 + 0.05 * m2 + 0.025 * m3) * nw)[:, None]
     hue = nz(60.0, 2) - 0.5
     col += np.outer(hue, np.array([0.03, -0.004, -0.03], np.float32))
     fore = R.sstep(F.brow_y + 0.1, F.brow_y + 0.6, y) * R.sstep(-1.2, -0.4, z)
@@ -125,7 +128,7 @@ def make(b, idn, style, res=2048, seed=0):
     lip = np.clip(np.maximum(M["m_lip_u"], M["m_lip_l"]) * 1.5, 0, 1)
     lip = R.sstep(0.45, 0.85, lip)
     if idn.female and idn.makeup > 0:
-        lipc = _srgb((0.70, 0.38, 0.36)) + (_srgb((0.66, 0.12, 0.14)) - _srgb((0.70, 0.38, 0.36))) * idn.makeup
+        lipc = _srgb((0.70, 0.38, 0.36)) + (_srgb((0.62, 0.20, 0.20)) - _srgb((0.70, 0.38, 0.36))) * idn.makeup
     else:
         lipc = _srgb((0.66, 0.38, 0.33)) * (1.0 - 0.1 * old)
     col = T.mix(col, lipc * (0.92 + 0.16 * nz(4.0, 1))[:, None], lip * 0.9)
@@ -156,14 +159,19 @@ def make(b, idn, style, res=2048, seed=0):
     # make-up: blush, eye shadow, powder, forehead ornament (huadian)
     if idn.female and idn.makeup > 0:
         mk = idn.makeup
-        col = T.mix(col, _srgb((0.92, 0.80, 0.74)), 0.22 * mk)
+        col = T.mix(col, _srgb((0.92, 0.80, 0.74)), 0.10 * mk)
         bl = M["m_cheek"] * R.sstep(-0.8, -0.2, z)
         col = T.mix(col, _srgb((0.88, 0.48, 0.48)), bl * 0.38 * mk)
         es = R.sstep(F.lid_top - 0.04, F.lid_top + 0.04, y) * R.sstep(F.brow_y + 0.05, F.lid_top + 0.1, y)
         es *= R.sstep(F.eye_in - 0.05, F.eye_in + 0.15, ax) * R.sstep(F.eye_out + 0.25, F.eye_out + 0.02, ax)
         es2 = R.sstep(0.12, 0.0, np.abs(y - (F.lid_top + 0.02))) * R.sstep(F.eye_out - 0.25, F.eye_out + 0.08, ax) * R.sstep(F.eye_out + 0.22, F.eye_out + 0.05, ax)
         col = T.mix(col, _srgb((0.78, 0.36, 0.32)), np.clip(es * 0.5 + es2 * 0.4, 0, 1) * mk)
-        # liner flick at the outer corner
+        # eyeliner along the upper lid margin with a short wing past the outer corner
+        span = np.clip((ax - F.eye_in) / (F.eye_out - F.eye_in), -0.2, 1.3)
+        ylid = F.lid_top * np.clip(np.sin(np.clip(span, 0, 1) * np.pi), 0, 1) ** 0.7 + 0.04 * np.clip(span - 0.85, 0, 1) * 3
+        liner = R.sstep(0.035, 0.0, np.abs(y - ylid - 0.012)) * R.sstep(-0.05, 0.1, span) * R.sstep(1.35, 1.1, span)
+        liner *= R.sstep(-0.5, 0.0, z)
+        col = T.mix(col, _srgb((0.12, 0.07, 0.06)), np.clip(liner * 0.7 * mk, 0, 1))
         if style.get("huadian", False):
             hd = R.sstep(0.035, 0.02, np.sqrt((x * 1.5) ** 2 + (y - (F.brow_y + 0.12)) ** 2))
             hd = np.maximum(hd, R.sstep(0.02, 0.008, np.abs(x)) * R.sstep(0.09, 0.07, np.abs(y - (F.brow_y + 0.18))))
@@ -176,8 +184,8 @@ def make(b, idn, style, res=2048, seed=0):
     h = np.zeros(n, np.float32)
     pores = (nz(1.0, 1) - 0.5) * 0.6 + (nz(2.5, 1) - 0.5) * 0.4
     pore_amt = 0.25 + 0.5 * np.maximum(M["m_nose"], M["m_cheek"]) * (1 - lip)
-    h += pores * pore_amt * (0.5 + 0.5 * old)
-    h += (nz(12.0, 2) - 0.5) * 0.35
+    h += pores * pore_amt * (0.5 + 0.5 * old) * nw
+    h += (nz(12.0, 2) - 0.5) * 0.35 * nw * nw
     wr = np.zeros(n, np.float32)
     weather = style.get("weather", 0.0)
     age_w = np.clip(old * 1.2 + weather * 0.4, 0, 1.3)
@@ -192,7 +200,7 @@ def make(b, idn, style, res=2048, seed=0):
     xxf, yyf = xx[fi].astype(np.float32), yy[fi].astype(np.float32)
 
     def nzf(cell, octaves=1, gain=0.5):
-        return T.noise_at(xxf, yyf, cell, rng, octaves, gain)
+        return T.noise_at(xxf, yyf, max(1.0, cell * res / 2048.0), rng, octaves, gain)
 
     # forehead lines
     nf = 3 + int(old * 3)
@@ -265,7 +273,9 @@ def make(b, idn, style, res=2048, seed=0):
     wr[fi] += wr_f
     h[fi] += h_f
     h -= wr * 1.0
-    col = T.mix(col, col * _srgb((0.74, 0.62, 0.58)), np.clip(wr * 0.55, 0, 0.6))
+    # painters' creases: darker and warmer for weathered faces so they survive the paint-over
+    crease_dark = 0.55 + 0.35 * min(1.0, weather + old)
+    col = T.mix(col, col * _srgb((0.66, 0.52, 0.46)), np.clip(wr * crease_dark, 0, 0.7))
     # ------------------------------------------------------------------ roughness
     tz = np.maximum(M["m_nose"], fore * 0.8)
     rough = 0.50 + 0.06 * old - 0.13 * tz - (0.22 if idn.female and idn.makeup > 0 else 0.16) * lip
@@ -273,6 +283,12 @@ def make(b, idn, style, res=2048, seed=0):
     if style.get("scalp", True):
         rough = T.mix(rough[:, None], np.full((n, 1), 0.7, np.float32), R.scalp(fcp, F, style.get("recede", 0.0))[:, None] * 0.8)[:, 0]
     # ------------------------------------------------------------------ scatter back into images
+    bad = ~np.isfinite(col).all(1) | ~np.isfinite(h) | ~np.isfinite(rough)
+    if bad.any():
+        print("[skinmaps] WARNING %d non-finite texels repaired" % int(bad.sum()))
+        col[bad] = tone
+        h[bad] = 0.0
+        rough[bad] = 0.5
     A = np.zeros((res, res, 4), np.float32)
     A[..., :3] = tone
     A[..., 3] = 1

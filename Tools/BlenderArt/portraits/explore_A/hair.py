@@ -17,8 +17,44 @@ import regions as R
 from nodes import NB, sock
 
 # ---------------------------------------------------------------------------------- materials
+def _melanin_rgb(melanin, redness):
+    """Approximate linear albedo of natural hair for a melanin amount (0 white .. 1 black)."""
+    import math
+    m = max(0.0, min(1.0, melanin))
+    dark = math.exp(-7.5 * m) * 0.75 + 0.008
+    return (dark * (1.0 + 0.5 * redness), dark * (0.82 + 0.1 * redness), dark * 0.66)
+
+
 def hair_material(name, melanin=0.9, redness=0.3, grey=0.0, roughness=0.32, radial=0.3,
-                  random_color=0.15, random_rough=0.1, coat=0.0, tint=None):
+                  random_color=0.15, random_rough=0.1, coat=0.0, tint=None, physical=False):
+    """Strand shading.  Default: a Principled BSDF 'painter's hair' (diffuse + glossy sheen +
+    coat glints, per-strand value jitter, salt-and-pepper grey) - it converges ~4x faster than the
+    Principled Hair BSDF on light/grey hair, and the paint-over cannot tell them apart at bust
+    scale.  ``physical=True`` keeps the Chiang hair model."""
+    if not physical:
+        m = bpy.data.materials.new(name)
+        nb = NB(m)
+        info = nb.node("ShaderNodeHairInfo")
+        rnd = info.outputs["Random"]
+        base = _melanin_rgb(melanin, redness)
+        white = (0.62, 0.60, 0.57)
+        jit = nb.math("ADD", 0.75, nb.math("MULTIPLY", rnd, 0.5))
+        col = nb.mix(tuple(base), tuple(c * 1.6 for c in base), nb.math("FRACT", nb.math("MULTIPLY", rnd, 7.31)))
+        if grey > 0:
+            wsel = nb.math("LESS_THAN", nb.math("FRACT", nb.math("MULTIPLY", rnd, 3.17)), grey)
+            col = nb.mix(col, white, wsel)
+        col = nb.mix((0, 0, 0), col, nb.math("MINIMUM", jit, 1.2), blend="ADD")
+        col = nb.hsv(col, v=1.0, fac=0.0)
+        p = nb.principled(Base_Color=col, Roughness=roughness + 0.08, Specular_IOR_Level=0.55,
+                          Sheen_Weight=0.35, Sheen_Roughness=0.4, Coat_Weight=0.25, Coat_Roughness=0.2)
+        nb.output(p.outputs[0])
+        return m
+    return _hair_material_physical(name, melanin, redness, grey, roughness, radial, random_color,
+                                   random_rough, coat, tint)
+
+
+def _hair_material_physical(name, melanin=0.9, redness=0.3, grey=0.0, roughness=0.32, radial=0.3,
+                            random_color=0.15, random_rough=0.1, coat=0.0, tint=None):
     """Principled Hair (Chiang).  ``grey`` mixes in unpigmented strands per strand (salt and
     pepper) via the Random input."""
     m = bpy.data.materials.new(name)
@@ -101,7 +137,7 @@ class Surface:
     def roots(self, count, density_fn, rng):
         return H.sample_surface(self.P, self.T, self.N, self.A, count, density_fn, rng)
 
-    def push_out(self, pts, offset, roots_fixed=1, iters=1):
+    def push_out(self, pts, offset, roots_fixed=1, iters=1, propagate=False):
         """Move points that are closer than ``offset`` to the skin (or inside it) out along the
         surface normal.  pts (N,K,3) modified in place; first ``roots_fixed`` points untouched."""
         N, K, _ = pts.shape
@@ -120,10 +156,14 @@ class Surface:
                         d = p - loc
                         side = d.dot(nrm)
                         if side < o:
-                            p = loc + nrm * o
+                            p = p + nrm * (o - side)
                             moved = True
                     if moved:
-                        pts[i, k] = p
+                        delta = np.array(p) - pts[i, k]
+                        if propagate:
+                            pts[i, k:] += delta
+                        else:
+                            pts[i, k] = p
         return pts
 
 
@@ -175,7 +215,7 @@ def frizz(strands, rng, amount, freq=3.0):
 
 # -------------------------------------------------------------------------------------- brows
 def brows(surf, b, mat, rng, count=900, thick=1.0, arch=1.0, length=1.0, angle=0.0, hair_len=0.009,
-          lift=0.0, droop=0.0, coll=None):
+          lift=0.0, droop=0.0, coll=None, radius=0.00006):
     """Eyebrows: short strands lying on the skin, inner hairs rising, the body sweeping outward.
     ``droop`` > 0 grows long trailing hairs at the tail (old sages' 'longevity brows')."""
     F = b["F"]
@@ -210,7 +250,7 @@ def brows(surf, b, mat, rng, count=900, thick=1.0, arch=1.0, length=1.0, angle=0
         g = -ez[None, None, :] * (s ** 2) * L[..., None] * 0.6 * droop * np.clip(tt[..., None] - 0.5, 0, 1) * 2
         pts += g
     pts = frizz(pts, rng, 0.0003)
-    return curves_object("Brows", pts, 0.00006, 0.000015, mat, coll, pass_index=8)
+    return curves_object("Brows", pts, radius, radius * 0.25, mat, coll, pass_index=8)
 
 
 # ------------------------------------------------------------------------------------- lashes
@@ -314,7 +354,10 @@ def beard(surf, b, style, mat, rng, count=9000, coll=None, push=True):
     d_must = _norm(down * 0.9 + out_ * (0.55 + 0.4 * R.sstep(0.0, F.mouth_w, ax))[:, None] + fwd[None] * 0.25)
     d_beard = _norm(down * 1.0 + fwd[None] * (0.35 + style.get("spread", 0.3)) - out_ * 0.08)
     d = d_must * must[:, None] + d_beard * (1 - must[:, None])
-    d = _norm(d + nrm * 0.25)
+    # grow along the skin (tangent) with only a slight lift; sideburns hug the face
+    d = d - nrm * (d * nrm).sum(1, keepdims=True)
+    lift_n = 0.22 * (1 - R.sstep(0.8, 1.15, ax))[:, None] + 0.04
+    d = _norm(_norm(d) + nrm * lift_n)
     K = int(style.get("points", 14))
     grav = style.get("gravity", 0.6)
     pts = np.zeros((n, K, 3))
@@ -341,7 +384,7 @@ def beard(surf, b, style, mat, rng, count=9000, coll=None, push=True):
     pts = frizz(pts, rng, style.get("frizz", 0.0012) * (L[:, None, None] / max(L_chin, 1e-3)) ** 0.5, 2.5)
     if push:
         offs = np.linspace(0.0005, 0.0045, K)
-        surf.push_out(pts, offs, roots_fixed=1)
+        surf.push_out(pts, offs, roots_fixed=1, propagate=True)
     rad = np.full(n, style.get("radius", 0.000075))
     return curves_object("Beard", pts, rad, style.get("radius", 0.000075) * 0.3, mat, coll)
 
@@ -360,7 +403,7 @@ def skull_frame(surf, b):
 
 def comb(surf, b, mat, rng, waypoints_fn, count=7000, K=18, recede=0.0, lift=0.0016, volume=0.004,
          density_fn=None, coll=None, name="Hair", radius=0.00006, clump_n=None, clump_amt=0.35,
-         push=True):
+         push=True, frizz_amt=0.0005):
     """Scalp hair combed along spherical paths through per-strand waypoints.
 
     ``waypoints_fn(root_pos, root_fc, centre)`` -> list of (N,3) world points the strands pass
@@ -400,7 +443,7 @@ def comb(surf, b, mat, rng, waypoints_fn, count=7000, K=18, recede=0.0, lift=0.0
     pts = pts + radial * off[..., None] * np.clip(tt * 6, 0, 1)[None, :, None]
     if clump_n:
         pts = clump(pts, rng, clump_n, clump_amt, power=0.7)
-    pts = frizz(pts, rng, 0.0005, 2.0)
+    pts = frizz(pts, rng, frizz_amt, 2.0)
     if push:
         surf.push_out(pts, np.linspace(0.0008, lift + 0.0005, Kp), roots_fixed=1)
     rad = np.full(n, radius)

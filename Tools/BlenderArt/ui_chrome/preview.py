@@ -20,7 +20,7 @@ sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.dirname(HERE))
 
 import numpy as np  # noqa: E402
-from PIL import Image, ImageDraw, ImageFilter, ImageFont  # noqa: E402
+from PIL import Image, ImageDraw, ImageFont  # noqa: E402
 
 from ironart import REPO_DIR, post  # noqa: E402
 
@@ -44,9 +44,16 @@ def load(name, two=False):
     return Image.open(p).convert("RGBA")
 
 
+DEFAULT_NINE = {"Panel": 24, "PanelDark": 24, "Button": [20, 16], "Tab": [18, 14, 18, 10],
+                "Scroll": 80}
+
+
 def margins():
-    with open(os.path.join(ART, "NineSlice.json"), encoding="utf-8") as f:
-        js = json.load(f)
+    p = os.path.join(ART, "NineSlice.json")
+    js = DEFAULT_NINE
+    if os.path.exists(p):
+        with open(p, encoding="utf-8") as f:
+            js = json.load(f)
     out = {}
     for k, v in js.items():
         if k.startswith("_"):
@@ -159,11 +166,16 @@ def nineslice_sheet(out):
                     fill=GOLD if k == active else TEXT_LIGHT, anchor="mm")
             x += w + 2
         # the panel the tabs sit on
-        pd = nine(load("PanelDark"), ms["PanelDark"], (5 * (w + 2), 22))
-        bg.alpha_composite(pd.crop((0, 11, pd.width, 22)), (40, y + h))
+        pd = nine(load("PanelDark"), ms["PanelDark"], (5 * (w + 2), 60))
+        bg.alpha_composite(pd.crop((0, 0, pd.width, 12)), (40, y + h))
         y += h + 40
     bg.save(os.path.join(out, "nineslice_Tab.png"))
     sheets["Tab"] = bg
+    return sheets
+
+
+def scroll_sheet(out):
+    ms = margins()
     # scroll at three sizes (dialog widths ~1040)
     im = load("Scroll")
     for k, size in enumerate([(1040, 720), (900, 560), (1200, 860)]):
@@ -191,7 +203,6 @@ def nineslice_sheet(out):
         sl = load("Seal").resize((84, 84), Image.LANCZOS)
         bg.alpha_composite(sl, (40 + size[0] - 220, 40 + size[1] - 190))
         bg.save(os.path.join(out, "nineslice_Scroll_%d.png" % k))
-    return sheets
 
 
 def divider_sheet(out):
@@ -266,16 +277,16 @@ def contact(out):
 def main(out=None):
     out = out or os.path.join(os.environ.get("IRONART_OUT", "/tmp/ironart"), "ui_chrome")
     os.makedirs(out, exist_ok=True)
-    nineslice_sheet(out)
-    divider_sheet(out)
-    frame_sheet(out)
-    logo_sheet(out)
-    contact(out)
+    for fn in (nineslice_sheet, scroll_sheet, divider_sheet, frame_sheet, logo_sheet, contact):
+        try:
+            fn(out)
+        except FileNotFoundError as e:          # a piece not built yet
+            print("[ui_chrome] preview %s skipped: %s" % (fn.__name__, e))
     try:
         import mock
         mock.main(out)
-    except ImportError:
-        pass
+    except FileNotFoundError as e:
+        print("[ui_chrome] mock skipped: %s" % e)
     print("[ui_chrome] previews ->", out)
 
 

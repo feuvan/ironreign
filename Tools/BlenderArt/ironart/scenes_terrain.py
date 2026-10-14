@@ -314,6 +314,10 @@ def rock_material(name="Rock", colors=("#5E5A54", "#8C8578"), scale=0.08, strata
     st = w.outputs["Fac"]
     col = b.mix(col, b.cmul(col, 0.62), b.math("MULTIPLY", b.smooth(st, 0.6, 0.95), strata))
     col = b.mix(col, b.cmul(col, 1.18), b.math("MULTIPLY", b.smooth(n2, 0.6, 0.8), 0.6))
+    # broad dark weathering streaks (water stains running down)
+    sv = (scale * 1.5, scale * 1.5, scale * 0.12) if vertical else (scale * 0.3, scale * 0.3, scale * 2.0)
+    stn = noise(nb, b.vmath("MULTIPLY", P, b.vec(sv)).outputs[0], 1.0, 5, 0.6, 0.4)
+    col = b.mix(col, b.cmul(col, 0.55), b.math("MULTIPLY", b.smooth(stn, 0.5, 0.75), strata))
     if moss and moss_amt > 0:
         mm = b.math("MULTIPLY", b.smooth(b.math("ADD", nz, b.math("MULTIPLY", n2, 0.3)), 0.75, 1.0), moss_amt)
         col = b.mix(col, lin4(moss), mm)

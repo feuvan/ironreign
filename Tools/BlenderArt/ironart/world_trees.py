@@ -38,8 +38,8 @@ TAU = math.tau
 LEAF_KINDS = {
     # colours: (dark, mid, light) albedo sRGB, underside tint
     "broad": dict(cols=("#3E5A2A", "#58773A", "#7E9748"), under="#8EA070", twig="#4A3A2A"),
-    "pine": dict(cols=("#24392A", "#36553A", "#5E7A44"), under="#6E8460", twig="#4E3A2A"),
-    "bamboo": dict(cols=("#47662E", "#64863C", "#8DA352"), under="#9AAE74", twig="#7A8A44"),
+    "pine": dict(cols=("#2E4A30", "#446642", "#6E8E4E"), under="#728864", twig="#4E3A2A"),
+    "bamboo": dict(cols=("#3E5E2A", "#577A36", "#7E9A48"), under="#8EA46C", twig="#6E7E3E"),
     "shrub": dict(cols=("#3A552C", "#4F6E36", "#728C44"), under="#86986A", twig="#4A3A2A"),
 }
 
@@ -125,11 +125,11 @@ def _cell_pine(mb, rng, cx, cy, R=0.47):
     the twig skeleton."""
     tufts = []
     for k in range(rng.randint(5, 7)):
-        a = rng.uniform(0, TAU)
-        r = R * rng.uniform(0.0, 0.48)
-        tufts.append((cx + math.cos(a) * r, cy + math.sin(a) * r, R * rng.uniform(0.26, 0.36)))
-    # skeleton: from the cell edge to each tuft centre
-    entry = (cx - R * 0.95, cy - R * 0.2 + rng.uniform(-0.1, 0.1), 0.0)
+        a = TAU * k / 6 + rng.uniform(-0.4, 0.4)
+        r = R * rng.uniform(0.12, 0.36) if k else 0.0
+        tufts.append((cx + math.cos(a) * r, cy + math.sin(a) * r, R * rng.uniform(0.3, 0.38)))
+    # skeleton: from the pad centre-left to each tuft centre (hidden under the needles)
+    entry = (cx - R * 0.35, cy + rng.uniform(-0.08, 0.08), 0.0)
     for (tx, ty, tr) in tufts:
         mid = ((entry[0] + tx) / 2 + rng.uniform(-0.05, 0.05), (entry[1] + ty) / 2 + rng.uniform(-0.05, 0.05), 0.01)
         _twig(mb, [entry, mid, (tx, ty, 0.02)], 0.016)
@@ -601,7 +601,7 @@ def broadleaf(tb, rng, H=22.0, crown=0.66, lobes=7, cards_per=30, card=(3.0, 4.4
     return crown_c
 
 
-def pine(tb, rng, H=26.0, sides=7, tiers=8, card=(3.6, 5.2)):
+def pine(tb, rng, H=26.0, sides=7, tiers=6, card=(3.4, 4.8)):
     """Chinese pine (Pinus tabuliformis): tall, slightly bent trunk; near-horizontal limbs in
     loose tiers getting shorter upwards (an umbrella / flat top); layered needle-pad clouds of
     horizontal cards at the limb ends and along them."""
@@ -614,7 +614,7 @@ def pine(tb, rng, H=26.0, sides=7, tiers=8, card=(3.6, 5.2)):
     az = rng.uniform(0, TAU)
     for t in range(tiers):
         f = t / max(1, tiers - 1)
-        z = H * (0.36 + 0.54 * f)
+        z = H * (0.4 + 0.5 * f)
         i = min(7, int(z / (H * 0.9) * 8))
         base = trunk[i].lerp(trunk[i + 1], max(0.0, min(1.0, (z - trunk[i].z) / max(1e-3, trunk[i + 1].z - trunk[i].z))))
         nb = 3 if t < tiers - 2 else 2
@@ -632,12 +632,12 @@ def pine(tb, rng, H=26.0, sides=7, tiers=8, card=(3.6, 5.2)):
     centre = Vector((0, 0, H * 0.72))
     for (c, R) in pads:
         c = Vector(c)
-        n_cards = 4 + int(R * 1.6)
+        n_cards = 4 + int(R * 1.3)
         for q in range(n_cards):
-            off = Vector((rng.gauss(0, 0.45), rng.gauss(0, 0.45), 0.0)) * R
-            off.z = rng.gauss(0, 0.12) * R + 0.25 * R * (1.0 - min(1.0, off.length / R))
+            off = Vector((rng.gauss(0, 0.42), rng.gauss(0, 0.42), 0.0)) * R
+            off.z = rng.gauss(0, 0.05) * R + 0.18 * R * (1.0 - min(1.0, off.length / R))
             p = c + off
-            n = Vector((rng.uniform(-0.3, 0.3), rng.uniform(-0.3, 0.3), 1.0)).normalized()
+            n = Vector((rng.uniform(-0.18, 0.18), rng.uniform(-0.18, 0.18), 1.0)).normalized()
             if q % 5 == 4:
                 out = Vector((off.x, off.y, 0)).normalized() if off.length > 1e-3 else Vector((1, 0, 0))
                 n = (out + Vector((0, 0, 1.0))).normalized()
@@ -647,7 +647,7 @@ def pine(tb, rng, H=26.0, sides=7, tiers=8, card=(3.6, 5.2)):
     return centre
 
 
-def bamboo(tb, rng, H=18.0, culms=22, radius=1.8, card=(3.0, 4.2), sides=5, segs=7):
+def bamboo(tb, rng, H=18.0, culms=20, radius=1.3, card=(2.4, 3.4), sides=5, segs=7):
     """Bamboo clump: culms leaning out from a root circle and arching at the top, dense drooping
     leaf sprays along the upper two thirds and a crown at each tip."""
     centre = Vector((0, 0, H * 0.65))
@@ -656,25 +656,26 @@ def bamboo(tb, rng, H=18.0, culms=22, radius=1.8, card=(3.0, 4.2), sides=5, segs
         rr = radius * math.sqrt(rng.random())
         base = Vector((math.cos(a) * rr, math.sin(a) * rr, -0.6))
         h = H * rng.uniform(0.7, 1.0)
-        out = Vector((math.cos(a), math.sin(a), 0)) * (rr / radius + 0.35)
-        lean = (Vector((0, 0, 1)) + out * 0.14 + Vector((rng.uniform(-0.05, 0.05), rng.uniform(-0.05, 0.05), 0))).normalized()
-        pts = _curve(base, lean, h, segs, out * 0.35, None)
+        out = Vector((math.cos(a), math.sin(a), 0)) * (rr / radius + 0.3)
+        lean = (Vector((0, 0, 1)) + out * 0.08 + Vector((rng.uniform(-0.04, 0.04), rng.uniform(-0.04, 0.04), 0))).normalized()
+        pts = _curve(base, lean, h, segs, out * 0.22, None)
         r = rng.uniform(0.09, 0.13) * H / 18.0
         tb.limb(pts, [r * (1.0 - 0.45 * i / segs) for i in range(segs + 1)], sides)
-        for k in range(rng.randint(10, 13)):
-            t = 0.32 + 0.68 * k / 12 + rng.uniform(-0.03, 0.03)
+        for k in range(rng.randint(9, 12)):
+            t = 0.5 + 0.5 * k / 11 + rng.uniform(-0.03, 0.03)
             i = min(segs - 1, int(t * segs))
             p = pts[i].lerp(pts[i + 1], min(1.0, t * segs - i))
             az = a + rng.uniform(-1.8, 1.8)
             dirh = Vector((math.cos(az), math.sin(az), 0))
             sz = rng.uniform(*card) * (0.7 + 0.4 * t)
-            cpos = p + dirh * sz * 0.42 - Vector((0, 0, sz * 0.18))
-            n = (dirh * 0.75 + Vector((0, 0, 1)) + Vector((rng.uniform(-0.3, 0.3), rng.uniform(-0.3, 0.3), 0))).normalized()
+            cpos = p + dirh * sz * 0.38 - Vector((0, 0, sz * 0.15))
+            n = (dirh * 0.9 + Vector((0, 0, 0.8)) + Vector((rng.uniform(-0.3, 0.3), rng.uniform(-0.3, 0.3), 0))).normalized()
             tb.card(cpos, n, sz, rng.uniform(0, TAU), (rng.randint(0, 1), rng.randint(0, 1)),
                     bend_center=Vector((0, 0, p.z - 3.0)), bend=0.55, up_bias=0.25)
         tipd = (pts[-1] - pts[-2]).normalized()
         for k in range(3):
-            n = (Vector((0, 0, 1)) + tipd * 0.7 + Vector((rng.uniform(-0.5, 0.5), rng.uniform(-0.5, 0.5), 0))).normalized()
+            hd = Vector((tipd.x, tipd.y, 0)).normalized() if Vector((tipd.x, tipd.y, 0)).length > 1e-3 else Vector((1, 0, 0))
+            n = (hd + Vector((0, 0, 0.35)) + Vector((rng.uniform(-0.5, 0.5), rng.uniform(-0.5, 0.5), 0))).normalized()
             tb.card(pts[-1] + tipd * 0.6 - Vector((0, 0, 0.6 * k)), n, rng.uniform(*card), rng.uniform(0, TAU),
                     (rng.randint(0, 1), rng.randint(0, 1)), bend_center=centre, bend=0.5, up_bias=0.2)
     return centre

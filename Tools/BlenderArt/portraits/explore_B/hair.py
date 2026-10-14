@@ -163,7 +163,7 @@ def hair_material(name, melanin=0.9, redness=0.2, grey=0.0, grey_melanin=0.08, r
         # grey more at the strand tips? no: per-strand (salt and pepper), slight extra on the
         # per-curve attribute 'greyness' if present (temples / chin go grey first)
         ga = nb.attr("greyness")
-        r = nb.math("ADD", info.outputs["Random"], nb.math("MULTIPLY", ga, 0.6))
+        r = nb.math("ADD", info.outputs["Random"], nb.math("MULTIPLY", ga, 0.3))
         sw = nb.math("GREATER_THAN", r, 1.0 - grey)
         mix = nb.node("ShaderNodeMixShader")
         nb.set(mix.inputs[0], sw)
@@ -317,10 +317,10 @@ def moustache(surf, lm, rng, length=0.045, droop=0.6, density=1.0, P=10, clumpin
 
 
 def brows(surf, lm, rng, length=0.010, density=1.0, P=6, lift=0.15, droop=0.0, tail_len=1.0,
-          r_root=0.00014, r_tip=0.00005, count=1500, thickness=1.0, angle=0.0):
+          r_root=0.00014, r_tip=0.00005, count=1500, thickness=1.0, angle=0.0, mask="z_brow"):
     """Brow strands lie along the skin: medial ones point up, the body points lateral, the tail
     slightly down.  ``angle`` > 0 raises the lateral end (fierce), < 0 drops it (worried/sage)."""
-    w = surf.A["z_brow"] * thickness
+    w = surf.A[mask] * thickness
     n = int(count * density)
     smp = surf.sample(w, n, rng)
     if smp is None:

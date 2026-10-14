@@ -1,0 +1,62 @@
+{
+ "id": "m_rogue_09",
+ "seed": 51262,
+ "gender": "m",
+ "age": 28,
+ "archetype": "rogue",
+ "expression": "serene",
+ "bg": "warm",
+ "notes": "Sha Wuying, the Shadowless",
+ "hair": {
+  "style": "topknot",
+  "grey": 0.0,
+  "recede": 0.1
+ },
+ "skin": {
+  "weather": 0.8,
+  "scars": [
+   [
+    [
+     0.49,
+     0.36
+    ],
+    [
+     0.99,
+     -0.2
+    ]
+   ]
+  ]
+ },
+ "camera": {
+  "yaw": -18.0,
+  "pitch": -3.0,
+  "head_frac": 0.42,
+  "eye_line": 0.39
+ },
+ "beard": null,
+ "beard_grey": 0.0,
+ "outfit": {
+  "kind": "scholar",
+  "outer": [
+   0.06,
+   0.045,
+   0.03
+  ],
+  "mid": [
+   0.12,
+   0.1,
+   0.08
+  ],
+  "band": [
+   0.03,
+   0.025,
+   0.02
+  ],
+  "motif": null,
+  "depth": 0.18,
+  "fur": true
+ },
+ "headgear": {
+  "kind": "none"
+ }
+}

@@ -1,0 +1,73 @@
+{
+ "id": "m_scholar_15",
+ "seed": 44306,
+ "gender": "m",
+ "age": 45,
+ "archetype": "scholar",
+ "expression": "serene",
+ "bg": "warm",
+ "notes": "Qian Wantong, the Thrice-Bankrupt",
+ "hair": {
+  "style": "topknot",
+  "grey": 0.36,
+  "recede": 0.1
+ },
+ "skin": {
+  "weather": 0.2,
+  "scars": []
+ },
+ "camera": {
+  "yaw": -18.0,
+  "pitch": -3.0,
+  "head_frac": 0.42,
+  "eye_line": 0.39
+ },
+ "beard": {
+  "mustache": 1.0,
+  "soul": 0.8,
+  "tails": 0.8,
+  "gravity": 0.7,
+  "radius": 0.0001,
+  "frizz": 0.0014,
+  "must_len": 0.0439,
+  "chin": 1.0,
+  "jaw": 1.0,
+  "cheeks": 0.0,
+  "neck": 0.6,
+  "sideburns": 1.0,
+  "length": 0.09,
+  "cheek_len": 0.03,
+  "taper": 0.3,
+  "count": 9000
+ },
+ "beard_grey": 0.46,
+ "outfit": {
+  "kind": "scholar",
+  "outer": [
+   0.18,
+   0.09,
+   0.02
+  ],
+  "band": [
+   0.04,
+   0.035,
+   0.03
+  ],
+  "motif": "roundels",
+  "depth": 0.13,
+  "motif_rgb": [
+   0.7,
+   0.5,
+   0.15
+  ]
+ },
+ "headgear": {
+  "kind": "guan",
+  "rgb": [
+   0.015,
+   0.013,
+   0.012
+  ],
+  "size": 1.1
+ }
+}

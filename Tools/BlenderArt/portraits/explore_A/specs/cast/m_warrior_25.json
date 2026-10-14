@@ -1,0 +1,81 @@
+{
+ "id": "m_warrior_25",
+ "seed": 92206,
+ "gender": "m",
+ "age": 34,
+ "archetype": "warrior",
+ "expression": "stern",
+ "bg": "warm",
+ "notes": "Chilu Han, the Red Hawk",
+ "hair": {
+  "style": "helmet",
+  "grey": 0.0,
+  "recede": 0.1
+ },
+ "skin": {
+  "weather": 0.8,
+  "scars": [
+   [
+    [
+     0.47,
+     0.35
+    ],
+    [
+     1.0,
+     -0.59
+    ]
+   ]
+  ]
+ },
+ "camera": {
+  "yaw": -20.0,
+  "pitch": -3.0,
+  "head_frac": 0.42,
+  "eye_line": 0.39
+ },
+ "beard": {
+  "mustache": 1.0,
+  "soul": 0.8,
+  "tails": 0.8,
+  "gravity": 0.7,
+  "radius": 0.0001,
+  "frizz": 0.0014,
+  "must_len": 0.0378,
+  "chin": 1.0,
+  "jaw": 0.0,
+  "cheeks": 0.0,
+  "neck": 0.0,
+  "sideburns": 0.0,
+  "length": 0.0612,
+  "taper": 0.5,
+  "count": 4500
+ },
+ "beard_grey": 0.0,
+ "outfit": {
+  "kind": "armour",
+  "silk": [
+   0.12,
+   0.1,
+   0.07
+  ],
+  "trim": [
+   0.5,
+   0.42,
+   0.3
+  ],
+  "fur": true
+ },
+ "headgear": {
+  "kind": "helmet",
+  "tassel": [
+   0.15,
+   0.1,
+   0.05
+  ],
+  "trim": [
+   0.5,
+   0.42,
+   0.3
+  ]
+ }
+}

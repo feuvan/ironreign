@@ -1,0 +1,56 @@
+{
+ "id": "f_scholar_06",
+ "seed": 2274,
+ "gender": "f",
+ "age": 27,
+ "archetype": "scholar",
+ "expression": "serene",
+ "bg": "smoke",
+ "notes": "Yao Su, the Barefoot Physician",
+ "hair": {
+  "style": "lady",
+  "grey": 0.0,
+  "recede": 0.1,
+  "count": 10000,
+  "bun": 0.033623877506407475,
+  "puff": 0.016
+ },
+ "skin": {
+  "weather": 0.2,
+  "scars": [],
+  "huadian": true
+ },
+ "camera": {
+  "yaw": -20.0,
+  "pitch": -3.0,
+  "head_frac": 0.42,
+  "eye_line": 0.39
+ },
+ "outfit": {
+  "kind": "lady",
+  "outer": [
+   0.05,
+   0.05,
+   0.06
+  ],
+  "mid": [
+   0.32,
+   0.03,
+   0.04
+  ],
+  "band": [
+   0.16,
+   0.03,
+   0.02
+  ],
+  "motif": "roundels",
+  "earrings": true,
+  "shawl": true
+ },
+ "headgear": {
+  "kind": "pins"
+ },
+ "identity": {
+  "makeup": 0.76
+ }
+}

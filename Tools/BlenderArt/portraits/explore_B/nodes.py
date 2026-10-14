@@ -165,6 +165,23 @@ class NB:
         self.set(n.inputs["Color"], col)
         return n.outputs[0]
 
+    def fcurve(self, value, pts, interp="AUTO"):
+        """Float curve through ``pts`` [(x, y), ...] with x, y in [0, 1]."""
+        n = self.node("ShaderNodeFloatCurve")
+        cv = n.mapping.curves[0]
+        while len(cv.points) > 2:
+            cv.points.remove(cv.points[1])
+        cv.points[0].location = pts[0]
+        cv.points[-1].location = pts[-1]
+        for x, y in pts[1:-1]:
+            cv.points.new(x, y)
+        for p in cv.points:
+            p.handle_type = interp
+        n.mapping.update()
+        n.inputs["Factor"].default_value = 1.0
+        self.set(n.inputs["Value"], value)
+        return n.outputs[0]
+
     def aov(self, name, value, color=False):
         n = self.node("ShaderNodeOutputAOV")
         n.name = name  # 4.0: the AOV name property shadows the node name

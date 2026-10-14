@@ -1,0 +1,56 @@
+{
+ "id": "f_scholar_03",
+ "seed": 20896,
+ "gender": "f",
+ "age": 38,
+ "archetype": "scholar",
+ "expression": "serene",
+ "bg": "cool",
+ "notes": "Shen Yuzhu, the Pearl Ledger",
+ "hair": {
+  "style": "lady",
+  "grey": 0.0,
+  "recede": 0.1,
+  "count": 10000,
+  "bun": 0.030023769837606084,
+  "puff": 0.016
+ },
+ "skin": {
+  "weather": 0.2,
+  "scars": [],
+  "huadian": false
+ },
+ "camera": {
+  "yaw": -18.0,
+  "pitch": -3.0,
+  "head_frac": 0.42,
+  "eye_line": 0.39
+ },
+ "outfit": {
+  "kind": "lady",
+  "outer": [
+   0.015,
+   0.1,
+   0.1
+  ],
+  "mid": [
+   0.32,
+   0.03,
+   0.04
+  ],
+  "band": [
+   0.05,
+   0.05,
+   0.06
+  ],
+  "motif": "lattice",
+  "earrings": true,
+  "shawl": true
+ },
+ "headgear": {
+  "kind": "pins"
+ },
+ "identity": {
+  "makeup": 0.67
+ }
+}

@@ -168,7 +168,7 @@ def backdrop(h, w, rng, scheme="warm"):
         "cool": ((0.06, 0.07, 0.08), (0.32, 0.33, 0.33), (0.13, 0.14, 0.16)),
         "jade": ((0.05, 0.075, 0.065), (0.30, 0.36, 0.30), (0.12, 0.15, 0.13)),
         "crimson": ((0.10, 0.04, 0.035), (0.42, 0.24, 0.17), (0.20, 0.10, 0.08)),
-        "smoke": ((0.07, 0.065, 0.06), (0.36, 0.33, 0.29), (0.16, 0.15, 0.14)),
+        "smoke": ((0.07, 0.065, 0.06), (0.44, 0.40, 0.35), (0.16, 0.15, 0.14)),
     }
     dark, lite, mid = (np.array(c, np.float32) for c in schemes.get(scheme, schemes["warm"]))
     y, x = np.mgrid[0:h, 0:w].astype(np.float32)
@@ -178,7 +178,7 @@ def backdrop(h, w, rng, scheme="warm"):
     n2 = smooth_noise(h, w, w * 0.12, rng, 3)
     g = np.clip(glow * (0.75 + 0.5 * (n1 - 0.5)), 0, 1)
     col = dark[None, None] + (lite - dark)[None, None] * g[..., None]
-    col = col * (1 + 0.25 * (n2 - 0.5))[..., None]
+    col = col * (1 + 0.14 * (n2 - 0.5))[..., None]
     col = col + (mid - col) * (0.25 * smooth_noise(h, w, w * 0.25, rng, 2))[..., None]
     # darken toward the bottom and the right (away from the key)
     col *= (1 - 0.45 * np.clip(v - 0.55, 0, 1) / 0.45)[..., None]
@@ -225,10 +225,11 @@ def unsharp(img, sigma, amount):
 
 
 def finish(render_dir, tag, out2x, scheme="warm", seed=0, params=None):
-    P = dict(r_skin=2.6, r_eye=1.2, r_hair=3.6, r_cloth=4.6, r_metal=3.8, r_bg=9.0, stroke=0.07,
+    P = dict(r_skin=2.4, r_eye=1.2, r_hair=3.0, r_cloth=2.6, r_metal=2.4, r_bg=6.0, stroke=0.06,
              impasto=0.05, grain=0.035, sat=1.0, warm=0.035, cool=0.045, contrast=1.08,
              vignette=0.32, edge_break=1.0, fade_bottom=0.55, eye_detail=0.75, denoise=1.0,
-             skin_stroke=0.15, bg_stroke=0.35)
+             skin_stroke=0.15, bg_stroke=0.25, skin_detail=0.45, bloom=0.07, accent=0.8,
+             final_sharpen=0.35)
     P.update(params or {})
     rng = np.random.default_rng(seed)
     base = load(os.path.join(render_dir, tag + "_raw.png"))
@@ -247,8 +248,23 @@ def finish(render_dir, tag, out2x, scheme="warm", seed=0, params=None):
         hm_ = load(os.path.join(render_dir, "%s_m_hair0001.png" % tag), "L")
         fm_ = load(os.path.join(render_dir, "%s_m_fur0001.png" % tag), "L")
         bm_ = load(os.path.join(render_dir, "%s_m_brow0001.png" % tag), "L")
-        dmask = np.clip(alpha - np.clip(hm_ + fm_ + bm_ * 1.5, 0, 1) * 0.85, 0, 1) * P["denoise"]
-        fg = joint_bilateral(fg, [(nrm, 0.08), (alb, 0.06)], dmask, radius=3, sigma_s=1.8, sigma_r=0.1)
+        em_ = load(os.path.join(render_dir, "%s_m_eyes0001.png" % tag), "L")
+        dmask = np.clip(alpha - np.clip(hm_ + fm_ + bm_ * 1.5 + em_ * 2, 0, 1), 0, 1) * P["denoise"]
+        dmask = ndi.minimum_filter(dmask, 3)
+        # demodulate: shading = beauty / albedo (noise-free albedo pass), denoise the shading
+        # with a wide cross-bilateral guided by normals and albedo, then re-modulate.
+        al = srgb_to_lin(alb)
+        bl = srgb_to_lin(fg)
+        floor = 0.03
+        shade = bl / np.maximum(al, floor)
+        med = np.stack([ndi.median_filter(shade[..., c], size=3) for c in range(3)], -1)
+        shade = shade + (med - shade) * dmask[..., None]
+        logs = np.log(shade + 0.02)
+        sm = joint_bilateral(logs, [(nrm, 0.10), (alb, 0.08)], dmask, radius=4, sigma_s=2.6, sigma_r=0.6)
+        shade2 = np.exp(sm) - 0.02
+        rec = lin_to_srgb(np.clip(shade2 * np.maximum(al, floor), 0, None))
+        dm = (dmask * (al.max(-1) > floor * 1.5))[..., None]
+        fg = np.clip(fg * (1 - dm) + rec * dm, 0, 1)
     skin, eyes, hairm, metal, cloth = m("skin"), m("eyes"), m("hair"), m("metal"), m("cloth")
     fur, orn, brow = m("fur"), m("orn"), m("brow")
     # --- 1/2 backdrop + composite with broken edges
@@ -267,7 +283,7 @@ def finish(render_dir, tag, out2x, scheme="warm", seed=0, params=None):
     img = fg * a[..., None] + bg * (1 - a[..., None])
     # --- 3 Kuwahara with a per-pixel radius
     lum = luma(img)
-    tx, ty, A = structure(lum, 1.0, 2.5 * W / 768)
+    tx, ty, A = structure(lum, 1.2, 4.5 * W / 768)
     sc = W / 768.0
     # backdrop flow: broad diagonal strokes with a slow wander instead of noise-driven swirls
     wander = (smooth_noise(H, W, W * 0.3, rng, 2) - 0.5) * 1.6
@@ -305,12 +321,26 @@ def finish(render_dir, tag, out2x, scheme="warm", seed=0, params=None):
     hx = ndi.sobel(st, 1)
     hy = ndi.sobel(st, 0)
     relief = (-hx * 0.7 - hy * 0.7) * 0.25  # light from the upper left
-    kw = kw + relief[..., None] * P["impasto"] * (1 - 0.85 * skin)[..., None]
+    kw = kw + relief[..., None] * P["impasto"] * ((1 - 0.85 * skin) * (1 - bgw * (1 - P["bg_stroke"])))[..., None]
+    # --- skin texture: transfer some high-frequency detail (pores, creases) back from the render
+    hp = img - ndi.gaussian_filter(img, (1.6 * sc, 1.6 * sc, 0))
+    kw = kw + hp * (skin * P["skin_detail"])[..., None]
     # --- 5 crisp eyes / brows / lips: restore render detail and sharpen
     detail = np.clip(eyes_d * P["eye_detail"] + ndi.gaussian_filter(brow, 1.0) * 0.35, 0, 1)
     kw = kw * (1 - detail[..., None]) + img * detail[..., None]
     sharp_m = np.clip(eyes_d * 1.0 + brow * 0.6 + skin * 0.25, 0, 1)
     kw = kw + (unsharp(kw, 1.2 * sc, 0.8) - kw) * sharp_m[..., None]
+    # --- painter's accents: XDoG dark lines where the form turns (lids, nostrils, lip line,
+    # plate edges), strongest on the face, plus a crisp highlight pop
+    Lk = luma(kw)
+    g1 = ndi.gaussian_filter(Lk, 0.9 * sc)
+    g2 = ndi.gaussian_filter(Lk, 1.6 * 0.9 * sc)
+    dog = g1 - 0.98 * g2
+    acc_line = np.clip(-dog * 18.0, 0, 1) ** 1.2
+    acc_w = (P["accent"] * (0.35 + 0.65 * np.clip(face_core * 1.5 + eyes_d + brow, 0, 1)) * fgm)
+    kw = kw * (1 - (acc_line * acc_w)[..., None] * 0.5)
+    hl = np.clip((Lk - 0.6) / 0.4, 0, 1)
+    kw = kw + (unsharp(kw, 1.0 * sc, 0.6) - kw) * (hl * fgm)[..., None]
     # --- 6 grade
     x = np.clip(kw, 0, 1)
     L = luma(x)
@@ -331,6 +361,10 @@ def finish(render_dir, tag, out2x, scheme="warm", seed=0, params=None):
     y2, x2 = np.mgrid[0:H, 0:W].astype(np.float32)
     d = np.sqrt(((x2 / W - 0.45) / 0.75) ** 2 + ((y2 / H - 0.40) / 0.8) ** 2)
     x = x * (1 - P["vignette"] * np.clip(d - 0.35, 0, 1) ** 1.5)[..., None]
+    # bloom: soft glow around the brightest highlights (metal glints, lit skin)
+    Lb = luma(x)
+    glow = ndi.gaussian_filter(np.clip(Lb - 0.72, 0, 1), 6 * sc)
+    x = x + glow[..., None] * P["bloom"] * 4 * np.array([1.0, 0.92, 0.8], np.float32)
     # --- 7 canvas
     cv = canvas(H, W, rng)
     x = x * (1 + cv[..., None] * P["grain"])
@@ -360,6 +394,8 @@ def main():
     H, W = img.shape[:2]
     out = out[:-4] if out.endswith(".png") else out
     x1 = downsample(img, (W // 2, H // 2))
+    fs = (params or {}).get("final_sharpen", 0.35)
+    x1 = np.clip(x1 + (x1 - ndi.gaussian_filter(x1, (0.7, 0.7, 0))) * fs, 0, 1)
     save(x1, out + ".png")
     x2 = downsample(x1, (W // 4, H // 4))
     save(x2, out + "_192.png")

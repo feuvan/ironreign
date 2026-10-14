@@ -26,7 +26,7 @@ else:
 b["body"].data.materials.append(m)
 m2, nb2 = nodes.material("EyeClay")
 nodes.output(nb2, nodes.principled(nb2, Base_Color="#DDDDDD", Roughness=0.2))
-b["eyes"].data.materials.append(m2)
+for e in b["eyes"]: e.data.materials.append(m2)
 t = time.time()
 sc.render.filepath = os.path.join(out, "head_%s_%s.png" % (mask or "clay", os.environ.get("YAW","22")))
 bpy.ops.render.render(write_still=True)

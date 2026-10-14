@@ -39,8 +39,10 @@ def foliage_material(name="Leaves", colors=("#3E5A2C", "#6E8A3C"), translucency=
         col = b.mix(col, lin4(autumn), b.math("MULTIPLY", b.smooth(rnd, 0.6, 0.9), 0.8))
     if core:
         col = b.cmul(col, 0.55)
-    p = b.principled(Base_Color=col, Roughness=roughness, Specular_IOR_Level=0.25,
-                     Sheen_Weight=sheen, Sheen_Roughness=0.4)
+    kw = dict(Normal=b.bump(n, 0.6, 0.3)) if core else {}
+    p = b.principled(Base_Color=col, Roughness=0.95 if core else roughness,
+                     Specular_IOR_Level=0.08 if core else 0.25,
+                     Sheen_Weight=0.0 if core else sheen, Sheen_Roughness=0.4, **kw)
     sh = p.outputs[0]
     if translucency > 0:
         tr = nb.node("ShaderNodeBsdfTranslucent")
@@ -105,17 +107,104 @@ def _leaf_cluster(mb, center, radius, rng, mat, n_leaves=40, leaf=0.32, flat=1.0
         mb.face(idx, mat, smooth=False)
 
 
+def _needle_pad(mb, center, radius, rng, mat, tufts=140, needle=0.32, flat=0.32,
+                core_mat=None):
+    """Fine pine foliage pad: many needle tufts (fans of thin needles) over a flat ellipsoid,
+    tips pointing out and up, around a darker core - reads as soft bristly foliage up close."""
+    from .geometry import _lumpy
+    cx, cy, cz = center
+    if core_mat:
+        mb.sphere((cx, cy, cz), radius * 0.82, core_mat, 10, 6, scale=(1, 1, flat * 0.9),
+                  displace=_lumpy(rng, 0.2, 2.5))
+    for _ in range(tufts):
+        u = rng.uniform(-0.15, 1.0)
+        a = rng.uniform(0, TAU)
+        sxy = math.sqrt(max(0.0, 1 - u * u))
+        nrm = Vector((sxy * math.cos(a), sxy * math.sin(a), u))
+        rr = radius * rng.uniform(0.82, 1.02)
+        base = Vector((cx, cy, cz)) + Vector((nrm.x * rr, nrm.y * rr, nrm.z * rr * flat))
+        out = (nrm + Vector((0, 0, 0.6))).normalized()
+        t1 = out.cross(Vector((0, 0, 1)))
+        if t1.length < 1e-3:
+            t1 = Vector((1, 0, 0))
+        t1.normalize()
+        t2 = out.cross(t1).normalized()
+        L = needle * rng.uniform(0.7, 1.2)
+        for k in range(6):
+            ang = TAU * k / 6 + rng.uniform(-0.3, 0.3)
+            d = (out * 1.0 + (t1 * math.cos(ang) + t2 * math.sin(ang)) * 0.75).normalized()
+            side = d.cross(out)
+            if side.length < 1e-4:
+                side = t1
+            side = side.normalized() * L * 0.035
+            tip = base + d * L
+            i0 = mb.v(tuple(base - side))
+            i1 = mb.v(tuple(base + side))
+            i2 = mb.v(tuple(tip))
+            mb.face((i0, i1, i2), mat, smooth=False)
+
+
+def _cloud_pad(mb, center, radius, rng, mat, core_mat, tufts=36, needle=0.3, flat=0.5, n_sub=None):
+    """A pine 'cloud': several lumpy flattened sub-clumps in a disc (irregular outline, denser
+    and higher in the middle), each bristling with needle tufts."""
+    from .geometry import _lumpy
+    cx, cy, cz = center
+    n = n_sub or rng.randint(13, 18)
+    for k in range(n):
+        a = rng.uniform(0, TAU)
+        d = radius * math.sqrt(rng.uniform(0.0, 1.0)) * 0.78
+        rr = radius * rng.uniform(0.3, 0.45) * (1.15 - 0.35 * d / radius)
+        c = (cx + math.cos(a) * d, cy + math.sin(a) * d, cz + (1.0 - d / radius) * radius * 0.12
+             + rng.uniform(-0.05, 0.05) * radius)
+        mb.sphere(c, rr * 0.92, core_mat, 9, 6, scale=(1, 1, flat), displace=_lumpy(rng, 0.3, 3.0))
+        _needle_pad(mb, c, rr * 0.98, rng, mat, tufts, max(needle, rr * 0.38), flat=flat)
+
+
+def fine_pine(mb, rng, height=20.0, mat="Needles", core="NeedlesCore", bark="Bark", pads=None,
+              tufts=60, needle=0.32):
+    """Hero (close-up) Huangshan pine: gnarled leaning trunk with a root flare, long horizontal
+    limbs, foliage in layered flat 'clouds' (:func:`_cloud_pad`)."""
+    pts = []
+    lean = Vector((rng.uniform(0.18, 0.3), rng.uniform(-0.08, 0.08), 0))
+    ph = rng.uniform(0, 3)
+    for i in range(12):
+        t = i / 11
+        x = lean.x * height * t ** 1.3 + 0.045 * height * math.sin(t * 6.0 + ph)
+        y = lean.y * height * t + 0.03 * height * math.cos(t * 4.5 + ph)
+        pts.append(Vector((x, y, height * 0.8 * t)))
+    r0 = height * 0.036
+    mb.tube([tuple(p) for p in pts], r0, bark, 10, caps=False,
+            radius_fn=lambda t: (1.0 - 0.6 * t) * (1.0 + 0.5 * max(0.0, 0.12 - t) / 0.12))
+    n = pads or rng.randint(7, 9)
+    for k in range(n):
+        t = 0.34 + 0.64 * k / max(1, n - 1)
+        base = pts[min(11, int(t * 11))]
+        a = (math.pi * 0.95 + rng.uniform(-0.5, 0.5)) if k % 2 == 0 else rng.uniform(-0.7, 0.7)
+        reach = height * (0.5 * (1 - t) + 0.16) * rng.uniform(0.85, 1.15)
+        end = base + Vector((math.cos(a) * reach, math.sin(a) * reach * 0.6, rng.uniform(-0.05, 0.05) * height))
+        m1 = base + (end - base) * 0.3 + Vector((0, 0, height * 0.05)) + Vector((rng.uniform(-1, 1), rng.uniform(-1, 1), 0)) * height * 0.03
+        m2 = base + (end - base) * 0.7 + Vector((0, 0, height * 0.02)) + Vector((rng.uniform(-1, 1), rng.uniform(-1, 1), 0)) * height * 0.03
+        mb.tube([tuple(base), tuple(m1), tuple(m2), tuple(end)], r0 * 0.42, bark, 7, caps=False,
+                radius_fn=lambda t: 1.0 - 0.65 * t)
+        pr = height * rng.uniform(0.24, 0.3) * (1.15 - 0.4 * t)
+        _cloud_pad(mb, tuple(end + Vector((0, 0, pr * 0.12))), pr, rng, mat, core, tufts, needle)
+    tip = pts[-1]
+    _cloud_pad(mb, tuple(tip + Vector((0, 0, height * 0.04))), height * 0.22, rng, mat, core, tufts,
+               needle)
+
+
 def broadleaf(mb, rng, height=12.0, crown=0.45, mat="Leaves", core="LeavesCore", bark="Bark",
-              clumps=None, leaves=40, leaf=0.45, lean=0.08):
-    """Deciduous tree ~``height`` m: bent trunk, a few limbs, leaf-polygon clumps."""
-    trunk_h = height * rng.uniform(0.38, 0.5)
+              clumps=None, leaves=40, leaf=0.45, lean=0.08, trunk=None):
+    """Deciduous tree ~``height`` m: bent trunk, a few limbs, leaf-polygon clumps.
+    ``trunk`` = fraction of the height that is bare trunk (forest trees ~0.6)."""
+    trunk_h = height * (trunk if trunk else rng.uniform(0.38, 0.5))
     lean_v = Vector((rng.uniform(-lean, lean), rng.uniform(-lean, lean), 1.0)).normalized()
     pts = []
     for i in range(6):
         t = i / 5
         off = Vector((math.sin(t * 2.5 + rng.uniform(0, 3)) * 0.04 * height, 0, 0))
         pts.append(lean_v * trunk_h * t + off)
-    r0 = height * 0.03
+    r0 = height * (0.03 if not trunk else 0.016)
     mb.tube([tuple(p) for p in pts], r0, bark, 7, caps=False, radius_fn=lambda t: 1.0 - 0.45 * t)
     top = pts[-1]
     cr = height * crown
@@ -134,6 +223,52 @@ def broadleaf(mb, rng, height=12.0, crown=0.45, mat="Leaves", core="LeavesCore",
                       flat=0.8, core_mat=core)
     _leaf_cluster(mb, (top.x, top.y, ccz + cr * 0.35), cr * 0.55, rng, mat, leaves, leaf,
                   flat=0.75, core_mat=core)
+
+
+def willow(mb, rng, height=10.0, mat="Leaves", core="LeavesCore", bark="Bark", limbs=None,
+           strands=7, leaf=0.16, droop=0.55):
+    """Weeping willow: short stout trunk, a few arching limbs, curtains of hanging strands
+    (chains of narrow leaves) falling from the limb tips, with a small dark core per limb so the
+    crown reads as a soft mass from afar."""
+    trunk_h = height * rng.uniform(0.28, 0.36)
+    r0 = height * 0.035
+    lean = Vector((rng.uniform(-0.12, 0.12), rng.uniform(-0.12, 0.12), 1.0)).normalized()
+    top = lean * trunk_h
+    mb.tube([(0, 0, 0), tuple(top * 0.5 + Vector((0.08 * height * rng.uniform(-0.3, 0.3), 0, 0))), tuple(top)],
+            r0, bark, 7, caps=False, radius_fn=lambda t: 1.0 - 0.35 * t)
+    n = limbs or rng.randint(6, 9)
+    for k in range(n):
+        a = TAU * k / n + rng.uniform(-0.3, 0.3)
+        reach = height * rng.uniform(0.25, 0.42)
+        rise = height * rng.uniform(0.32, 0.55)
+        tip = top + Vector((math.cos(a) * reach, math.sin(a) * reach, rise))
+        mid = top + Vector((math.cos(a) * reach * 0.4, math.sin(a) * reach * 0.4, rise * 0.75))
+        mb.tube([tuple(top), tuple(mid), tuple(tip)], r0 * 0.5, bark, 5, caps=False,
+                radius_fn=lambda t: 1.0 - 0.7 * t)
+        if core:
+            from .geometry import _lumpy
+            cc = tip + Vector((math.cos(a) * reach * 0.12, math.sin(a) * reach * 0.12, -height * 0.12))
+            mb.sphere(tuple(cc), height * 0.12, core, 7, 4, scale=(1, 1, 1.5), displace=_lumpy(rng, 0.25, 2.5))
+        # hanging strands from around the tip and along the outer limb
+        for s in range(strands * 3):
+            t = rng.uniform(0.45, 1.0)
+            base = (mid * (1 - t) + tip * t) if t < 1 else tip
+            base = base + Vector((rng.uniform(-0.6, 0.6), rng.uniform(-0.6, 0.6), rng.uniform(-0.3, 0.3))) * height * 0.08
+            length = height * droop * rng.uniform(0.55, 1.0) * (0.6 + 0.4 * t)
+            out = Vector((math.cos(a), math.sin(a), 0.0)) * rng.uniform(0.04, 0.16) * height
+            sway = Vector((rng.uniform(-0.05, 0.05), rng.uniform(-0.05, 0.05), 0.0)) * height
+            nl = max(4, int(length / (leaf * 1.6)))
+            for i in range(nl):
+                u = i / nl
+                # arc: out first, then straight down
+                p = base + out * math.sin(min(u * 3.0, 1.0) * math.pi / 2) + sway * u + Vector((0, 0, -length * u))
+                L = leaf * rng.uniform(0.8, 1.25) * (1.0 - 0.35 * u)
+                W = L * 0.28
+                ang = rng.uniform(0, TAU)
+                ax = Vector((math.cos(ang) * 0.35, math.sin(ang) * 0.35, -1.0)).normalized()
+                ay = Vector((-math.sin(ang), math.cos(ang), 0.0))
+                pts = [p, p + ay * W * 0.5 + ax * L * 0.5, p + ax * L, p - ay * W * 0.5 + ax * L * 0.5]
+                mb.face([mb.v(tuple(q)) for q in pts], mat, smooth=False)
 
 
 def chinese_pine(mb, rng, height=14.0, mat="Needles", core="NeedlesCore", bark="Bark",
@@ -368,3 +503,37 @@ def scatter_on(field, n, rng, x_range, y_range, kinds, scale=(0.8, 1.2), min_nz=
             pts.append((x, y, z - sink * s, rng.uniform(0, TAU), s, kind))
             break
     return pts
+
+
+def plum_tree(mb, rng, height=5.0, bark="Bark", blossom="Leaves", depth=4, density=1.0):
+    """Flowering plum (meihua): dark angular zig-zag branches, small pink blossom clusters along
+    the outer twigs (no leaves) - reads as a classic painted plum against a sunset."""
+    clusters = []
+
+    def branch(p, d, length, r, lvl):
+        pts = [p]
+        q = p
+        segs = 3
+        for k in range(segs):
+            jitter = Vector((rng.uniform(-0.35, 0.35), rng.uniform(-0.35, 0.35), rng.uniform(-0.15, 0.25)))
+            dd = (d + jitter).normalized()
+            q = q + dd * (length / segs)
+            pts.append(q)
+        mb.tube([tuple(x) for x in pts], r, bark, 6, caps=False, radius_fn=lambda t: 1.0 - 0.45 * t)
+        if lvl >= 2:
+            for x in pts[1:]:
+                clusters.append(x)
+        if lvl >= depth:
+            return
+        for _ in range(rng.randint(2, 3)):
+            nd = (d + Vector((rng.uniform(-1.0, 1.0), rng.uniform(-1.0, 1.0), rng.uniform(-0.2, 0.7)))).normalized()
+            branch(q, nd, length * rng.uniform(0.55, 0.75), r * 0.55, lvl + 1)
+
+    base = Vector((0, 0, 0))
+    lean = Vector((rng.uniform(0.3, 0.6), rng.uniform(-0.2, 0.2), 1.0)).normalized()
+    branch(base, lean, height * 0.45, height * 0.05, 0)
+    for c in clusters:
+        for _ in range(int(3 * density)):
+            o = Vector((rng.uniform(-0.25, 0.25), rng.uniform(-0.25, 0.25), rng.uniform(-0.15, 0.2))) * height * 0.06
+            _leaf_cluster(mb, tuple(c + o), height * rng.uniform(0.025, 0.045), rng, blossom, 12,
+                          height * 0.022, flat=1.0, up_bias=-1.0)

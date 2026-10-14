@@ -21,7 +21,7 @@ from ironart import scenes_terrain as T
 from ironart.geometry import MeshBuilder
 
 SPEC = dict(name="Bandits", art="Art/Events/Bandits.png", master="Events/Bandits@2x.png",
-            size=(1280, 720), ss=1, spp=160, preview_spp=20, seed=61)
+            size=(1280, 720), ss=1, spp=28, preview_spp=12, seed=61)
 
 GLOW = (92.0, -1.0)
 ROAD = [(0, -20), (2, 20), (-4, 60), (6, 110), (0, 170), (10, 260), (4, 400)]
@@ -52,7 +52,7 @@ def ground_material():
     n2 = noise(nb, P_, 2.0, 3, 0.6)
     floor = b.mix(lin4("#2E2A1E"), lin4("#4A4228"), b.smooth(n1, 0.3, 0.7))
     floor = b.mix(floor, lin4("#3A4A26"), b.math("MULTIPLY", b.smooth(n2, 0.5, 0.75), 0.6))
-    road = b.mix(lin4("#5E5038"), lin4("#7A6A4C"), b.smooth(n2, 0.3, 0.7))
+    road = b.mix(lin4("#7A684A"), lin4("#9A8662"), b.smooth(n2, 0.3, 0.7))
     # road mask from an attribute written per vertex
     rm = nb.node("ShaderNodeAttribute", attribute_name="road").outputs["Fac"]
     col = b.mix(floor, road, rm)
@@ -105,7 +105,7 @@ def build(r):
                      shadow="#2A2A44", rim=1.5, rim_power=6.0, opacity=0.85, stretch=(1, 0.5),
                      fade=0.1, shade=6.0, seed=5.0)],
         light=dict(strength=0.55, tint="#7088C8"),
-        fog=dict(haze=0.0035, haze_falloff=0.02, haze_max=0.85, haze_zmax=0.06, haze_tint="#8090B0",
+        fog=dict(haze=0.0026, haze_falloff=0.02, haze_max=0.85, haze_zmax=0.06, haze_tint="#8090B0",
                  mist=0.02, mist_falloff=0.5, mist_h0=0.0, mist_max=0.5, mist_color="#38425E"),
     ))
     S.sun(GLOW[0], 4.0, energy=0.35, color="#FF9A60", angle_deg=4.0, name="Afterglow")
@@ -120,8 +120,10 @@ def build(r):
           "Needles": F.foliage_material("BNeedles", ("#141E18", "#26322A"), translucency=0.1),
           "NeedlesCore": F.foliage_material("BNeedlesCore", ("#0E1410", "#1A221C"), core=True, translucency=0.0),
           "Bark": F.bark_material("BBark", ("#2A221C", "#4A3E34"), scale=4.0)}
-    tcol = F.prototypes([lambda mb: F.broadleaf(mb, random.Random(1), 22, crown=0.38, lean=0.04),
-                         lambda mb: F.broadleaf(mb, random.Random(2), 18, crown=0.4, lean=0.06),
+    tcol = F.prototypes([lambda mb: F.broadleaf(mb, random.Random(1), 22, crown=0.22, lean=0.04, trunk=0.6,
+                                                leaves=60, leaf=0.3),
+                         lambda mb: F.broadleaf(mb, random.Random(2), 18, crown=0.24, lean=0.06, trunk=0.55,
+                                                leaves=60, leaf=0.3),
                          lambda mb: F.fir(mb, random.Random(3), 26, width=0.2),
                          lambda mb: F.chinese_pine(mb, random.Random(4), 20),
                          lambda mb: F.bush(mb, random.Random(5), 2.2),
@@ -131,11 +133,11 @@ def build(r):
         x = rng.uniform(-60, 60)
         y = rng.uniform(-15, 420)
         d = road_d(np.array([x]), np.array([y]))[0]
-        if d < 5.5:
+        if d < 8.5:
             continue
-        k = rng.choices([0, 1, 2, 3, 4, 5], weights=[4, 4, 3, 2, 3, 3])[0]
-        if k >= 4 and d < 6.5:
-            continue
+        k = rng.choices([0, 1, 2, 3, 4, 5], weights=[2, 2, 6, 2, 3, 3])[0]
+        if k < 4 and d < 11.0:
+            k = rng.choice([4, 5])
         tp.append((x, y, g.z(x, y) - 0.2, rng.uniform(0, math.tau), rng.uniform(0.8, 1.25), k))
     F.instance("Forest", tp, tcol)
     # ---- people + cart ------------------------------------------------------------------------
@@ -145,16 +147,16 @@ def build(r):
     mats["Canvas"] = M.principled("BCanvas", "#A89878", 0.9, vary=0.1, vary_scale=3.0)
     mats["Crate"] = M.principled("BCrate", "#5A4430", 0.8, vary=0.1)
     ppl = MeshBuilder()
-    cart(ppl, (1.5, 34.0, g.z(1.5, 34.0)), 0.12)
+    cart(ppl, (1.2, 17.0, g.z(1.2, 17.0)), 0.12)
     h = MeshBuilder()
     P.horse(h, random.Random(3), "stand", coat="HorseCoat1", saddle=None)
-    ppl.extend(h, Matrix.Translation((1.0, 30.0, g.z(1.0, 30.0))) @ Matrix.Rotation(0.12, 4, "Z"))
-    victims = [(3.6, 31.0, "kneel", None, 0.8, "robe", 8), (-0.8, 29.0, "bow_stand", None, 2.6, "robe", 1),
-               (4.6, 36.5, "guard", "spear", 1.6, "soldier", 4)]
-    bandits = [(-7.0, 30.0, "torch_high", "torch", -1.2), (-6.0, 36.0, "slash_high", "sword", -1.3),
-               (8.5, 27.0, "torch_high", "torch", 1.6), (9.5, 33.5, "guard", "halberd", 1.7),
-               (-9.5, 44.0, "torch_high", "torch", -1.0), (7.5, 41.0, "charge", "sword", 2.2),
-               (-4.0, 22.0, "charge", "sword", -0.8), (11.0, 47.0, "torch_high", "torch", 2.0)]
+    ppl.extend(h, Matrix.Translation((0.7, 13.0, g.z(0.7, 13.0))) @ Matrix.Rotation(0.12, 4, "Z"))
+    victims = [(3.3, 14.0, "kneel", None, 0.8, "robe", 8), (-1.2, 12.0, "bow_stand", None, 2.6, "robe", 1),
+               (4.4, 19.5, "guard", "spear", 1.6, "soldier", 4)]
+    bandits = [(-5.5, 13.0, "torch_high", "torch", -1.2), (-5.0, 19.0, "slash_high", "sword", -1.3),
+               (7.0, 11.0, "torch_high", "torch", 1.6), (8.0, 16.5, "guard", "halberd", 1.7),
+               (-7.5, 26.0, "torch_high", "torch", -1.0), (6.5, 24.0, "charge", "sword", 2.2),
+               (-3.4, 7.0, "charge", "sword", -0.8), (9.5, 30.0, "torch_high", "torch", 2.0)]
     lights = []
     for i, (x, y, pose, w, rz, outfit, cl) in enumerate(victims):
         f = MeshBuilder()
@@ -176,14 +178,14 @@ def build(r):
     f = MeshBuilder()
     sk = P.figure(f, random.Random(901), "torch_high", "bandit", cloth=0, cloth2=1, weapon="torch",
                   hat="hood", cape=True, cape_wind=(0.3, 0.1))
-    m = Matrix.Translation((-3.4, 6.5, g.z(-3.4, 6.5))) @ Matrix.Rotation(math.radians(190), 4, "Z")
+    m = Matrix.Translation((-2.6, 1.5, g.z(-2.6, 1.5))) @ Matrix.Rotation(math.radians(195), 4, "Z")
     ppl.extend(f, m)
     hand = sk.arm[-1]["hand"]
     d = (sk.arm[-1]["dir"] + Vector((0, 0, 1.2))).normalized()
     lights.append(m @ (hand + d * 0.45 + Vector((0, 0, 0.2))))
     ppl.build("People", mats)
     for i, p in enumerate(lights):
-        S.point(tuple(p), 260.0 if i < len(lights) - 1 else 180.0, "#FF8A3A", 0.12, name="Torch%d" % i)
+        S.point(tuple(p), 900.0 if i < len(lights) - 1 else 520.0, "#FF8A3A", 0.25, name="Torch%d" % i)
     # mist banks between the trunks (blue dusk)
     for i in range(10):
         x = rng.choice([-1, 1]) * rng.uniform(8, 40)
@@ -192,9 +194,9 @@ def build(r):
                              softness=0.5, stretch=2.5)
         T.card("BMist%d" % i, (x, y, 2.5), (rng.uniform(25, 60), rng.uniform(5, 9)), mm,
                rot_z=rng.uniform(-0.3, 0.3))
-    cam = L.camera((0.6, -7.0, 1.75), (2.0, 80.0, 4.5), focal_mm=30.0, dof=(37.0, 4.0))
+    cam = L.camera((0.4, -6.0, 1.7), (2.0, 80.0, 9.5), focal_mm=28.0, dof=(20.0, 4.0))
     return dict(camera=cam, beams=None,
                 glow=dict(threshold=0.9, mix=-0.72, size=9),
                 grade=dict(saturation=1.04, contrast=1.08, shadows=(-0.01, 0.0, 0.025),
                            highlights=(0.035, 0.012, -0.02), clarity=0.12, vignette=0.34,
-                           canvas=0.02, sharpen=0.3))
+                           canvas=0.012, sharpen=0.3))

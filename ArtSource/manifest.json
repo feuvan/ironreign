@@ -1,0 +1,19 @@
+{
+  "version": 3,
+  "files": [
+    "UI/Button_Disabled@2x.png",
+    "UI/Button_Hover@2x.png",
+    "UI/Divider@2x.png",
+    "UI/NineSlice@2x.json",
+    "UI/Button@2x.png",
+    "UI/Button_Pressed@2x.png",
+    "UI/Frame_Portrait@2x.png",
+    "UI/Panel@2x.png",
+    "UI/PanelDark@2x.png",
+    "UI/Scroll@2x.png",
+    "UI/Seal@2x.png",
+    "UI/Tab@2x.png",
+    "UI/Tab_Active@2x.png",
+    "UI/Title_Logo@2x.png"
+  ]
+}

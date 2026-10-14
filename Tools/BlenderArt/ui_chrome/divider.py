@@ -1,12 +1,12 @@
 """Divider.png (512x16, transparent; the UI stretches it to the widget width at 8-16 px high):
 gold filigree with a central ruyi knot.
 
-    knot     two ruyi heads back to back (lobes outwards) clasping a domed cinnabar cabochon
-             in a gold bezel, x 256 +- 15
+    knot     two ruyi heads back to back (lobes outwards, 13 px tall) clasping a domed cinnabar
+             cabochon in a gold bezel, x 256 +- 14
     scrolls  a cloud curl above and below the wires on each side of the knot
     wires    twin twisted gold wires (r 0.55 px, 2.9 px apart) that converge into one and taper
              to a point at x = 256 +- 246 (the ends fade so any stretch stays graceful)
-The filigree floats 1.3 mm above a shadow catcher, so it carries its own soft cast shadow
+The filigree floats 1 mm above a shadow catcher, so it carries its own soft cast shadow
 (bottom-right) onto whatever the UI draws it on - legible on paper and on dark lacquer.
 """
 
@@ -18,10 +18,11 @@ from ironart import ui_chrome_sdf as S
 from ironart.ui_chrome_maps import Maps, L
 
 NAME = "Divider"
-SPEC = dict(size=(512, 16), ss=4, spp=64, seed=51)
+SPEC = dict(shader_alpha=True, size=(512, 16), ss=4, spp=48, seed=51)
 W, H = 512, 16
 CX, CY = 256.0, 8.0
-LIFT = 1.3
+LIFT = 1.0
+KY = CY - 0.3            # knot centre (a hair high: its shadow falls down-right)
 
 
 def build(G, variant=None):
@@ -44,12 +45,12 @@ def build(G, variant=None):
 
     # ---- knot: ruyi heads back to back + bezel + cabochon -------------------------------------
     F = kit.Folded(X, Y)
-    rl, rl_e = MO.ruyi(F, CX - 8.4, CY, 10.6, rot=-90.0)   # point towards +x (the centre)
-    rr, rr_e = MO.ruyi(F, CX + 8.4, CY, 10.6, rot=90.0)
+    rl, rl_e = MO.ruyi(F, CX - 7.2, KY, 8.0, rot=-90.0)    # point towards +x (the centre)
+    rr, rr_e = MO.ruyi(F, CX + 7.2, KY, 8.0, rot=90.0)
     knot = np.minimum(rl, rr)
     eng = np.minimum(np.where(rl < -0.25, rl_e, 9.0), np.where(rr < -0.25, rr_e, 9.0))
-    bez = np.hypot(X - CX, Y - CY) - 3.6
-    gem = np.hypot(X - CX, Y - CY) - 2.5
+    bez = np.hypot(X - CX, Y - KY) - 3.5
+    gem = np.hypot(X - CX, Y - KY) - 2.4
     knot = S.smooth_union(knot, bez, 0.6)
     zk = MO.dome(knot, 1.2, 0.75) + S.groove(eng, 0.3, 0.2) * (knot < -0.3)
 

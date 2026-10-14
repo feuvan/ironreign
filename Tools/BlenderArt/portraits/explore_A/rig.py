@@ -21,10 +21,10 @@ def setup_render(w=384, h=480, ss=2, samples=96, threshold=0.02, view="Filmic", 
     cy.adaptive_threshold = threshold
     cy.adaptive_min_samples = 24
     cy.use_denoising = False
-    cy.max_bounces = 6
+    cy.max_bounces = 4
     cy.diffuse_bounces = 1
     cy.glossy_bounces = 2
-    cy.transmission_bounces = 4
+    cy.transmission_bounces = 2
     cy.transparent_max_bounces = 6
     cy.volume_bounces = 0
     cy.sample_clamp_direct = 0.0
@@ -140,8 +140,8 @@ RIM_COOL = (0.70, 0.82, 1.0)
 BOUNCE_WARM = (1.0, 0.66, 0.42)
 
 
-def lights(cam, target, key=80.0, fill=1.6, rim=70.0, kicker=10.0, bounce=2.5, key_angle=140.0,
-           key_elev=20.0, key_size=0.32, dist=1.5, world=0.008):
+def lights(cam, target, key=62.0, fill=1.2, rim=70.0, kicker=10.0, bounce=1.2, key_angle=160.0,
+           key_elev=5.0, key_size=0.32, dist=1.5, world=0.008, eyes=None, eye_light=3.0):
     t = Vector(target)
     rig = {}
     rig["key"] = _area("Key", t + screen_dir(cam, key_angle, key_elev) * dist, t, key, key_size,
@@ -159,6 +159,15 @@ def lights(cam, target, key=80.0, fill=1.6, rim=70.0, kicker=10.0, bounce=2.5, k
         rig["bounce"] = _area("Bounce", t + screen_dir(cam, -95.0, 20.0) * dist + Vector((0, 0, -0.2)),
                               t + Vector((0, 0, -0.1)), bounce, 1.0, color=BOUNCE_WARM, shadow=False)
     wd = bpy.data.worlds.new("World")
+    if eyes:
+        # catchlight: a small soft light by the camera that only the eyeballs see (light linking)
+        col = bpy.data.collections.new("EyeLightReceivers")
+        for e in eyes:
+            col.objects.link(e)
+        cpos = cam.location + (cam.matrix_world.to_3x3() @ Vector((-0.12, 0.18, 0.0)))
+        el = _area("EyeLight", cpos, t, eye_light, 0.035, color=(1.0, 0.92, 0.82))
+        el.light_linking.receiver_collection = col
+        rig["eye"] = el
     wd.use_nodes = True
     bg = wd.node_tree.nodes["Background"]
     bg.inputs[0].default_value = (0.20, 0.17, 0.14, 1)

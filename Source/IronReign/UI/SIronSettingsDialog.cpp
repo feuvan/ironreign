@@ -10,6 +10,7 @@
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Input/SSlider.h"
 #include "Widgets/Layout/SBox.h"
+#include "Widgets/Layout/SScrollBox.h"
 #include "Widgets/SBoxPanel.h"
 #include "Widgets/Text/STextBlock.h"
 
@@ -70,6 +71,7 @@ void SIronSettingsDialog::Rebuild()
 	{
 		return;
 	}
+	const float SavedScrollOffset = ScrollBox.IsValid() ? ScrollBox->GetScrollOffset() : 0.0f;
 
 	ContentHost->SetContent(IronStyle::MakePanel(
 		SNew(SVerticalBox)
@@ -79,66 +81,87 @@ void SIronSettingsDialog::Rebuild()
 			IronStyle::MakeHeader(IronUI::Loc("ui.settings.title", "Settings"), 28.0f)
 		]
 		+ SVerticalBox::Slot()
-		.AutoHeight()
-		.Padding(FMargin(0.0f, 16.0f, 0.0f, 8.0f))
+		.FillHeight(1.0f)
 		[
-			IronSettingsDetail::MakeSectionLabel(IronUI::Loc("ui.settings.language", "Language"))
-		]
-		+ SVerticalBox::Slot()
-		.AutoHeight()
-		[
-			MakeLanguageRow()
-		]
-		+ SVerticalBox::Slot()
-		.AutoHeight()
-		.Padding(FMargin(0.0f, 20.0f, 0.0f, 8.0f))
-		[
-			IronSettingsDetail::MakeSectionLabel(IronUI::Loc("ui.settings.sound", "Sound"))
-		]
-		+ SVerticalBox::Slot()
-		.AutoHeight()
-		.Padding(FMargin(0.0f, 0.0f, 0.0f, 6.0f))
-		[
-			MakeVolumeRow(IronUI::Loc("ui.settings.musicVolume", "Music volume"), true)
-		]
-		+ SVerticalBox::Slot()
-		.AutoHeight()
-		[
-			MakeVolumeRow(IronUI::Loc("ui.settings.sfxVolume", "Effects volume"), false)
-		]
-		+ SVerticalBox::Slot()
-		.AutoHeight()
-		.Padding(FMargin(0.0f, 20.0f, 0.0f, 4.0f))
-		[
-			IronSettingsDetail::MakeSectionLabel(IronUI::Loc("ui.settings.mapSpeed", "Campaign map speed"))
-		]
-		+ SVerticalBox::Slot()
-		.AutoHeight()
-		.Padding(FMargin(0.0f, 0.0f, 0.0f, 8.0f))
-		[
-			IronSettingsDetail::MakeHint(IronUI::Loc("ui.settings.mapSpeedHint", "How many days pass each second while the month plays out."))
-		]
-		+ SVerticalBox::Slot()
-		.AutoHeight()
-		[
-			MakeMapSpeedRow()
-		]
-		+ SVerticalBox::Slot()
-		.AutoHeight()
-		.Padding(FMargin(0.0f, 20.0f, 0.0f, 4.0f))
-		[
-			IronSettingsDetail::MakeSectionLabel(IronUI::Loc("ui.settings.battleSpeed", "Battle animation speed"))
-		]
-		+ SVerticalBox::Slot()
-		.AutoHeight()
-		.Padding(FMargin(0.0f, 0.0f, 0.0f, 8.0f))
-		[
-			IronSettingsDetail::MakeHint(IronUI::Loc("ui.settings.battleSpeedHint", "How quickly enemy moves are shown on the battlefield."))
-		]
-		+ SVerticalBox::Slot()
-		.AutoHeight()
-		[
-			MakeBattleSpeedRow()
+			// Scrolls only when the window is too short for every section.
+			SAssignNew(ScrollBox, SScrollBox)
+			+ SScrollBox::Slot()
+			[
+				SNew(SVerticalBox)
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				.Padding(FMargin(0.0f, 16.0f, 0.0f, 8.0f))
+				[
+					IronSettingsDetail::MakeSectionLabel(IronUI::Loc("ui.settings.language", "Language"))
+				]
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				[
+					MakeLanguageRow()
+				]
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				.Padding(FMargin(0.0f, 20.0f, 0.0f, 8.0f))
+				[
+					IronSettingsDetail::MakeSectionLabel(IronUI::Loc("ui.settings.sound", "Sound"))
+				]
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				.Padding(FMargin(0.0f, 0.0f, 0.0f, 6.0f))
+				[
+					MakeVolumeRow(IronUI::Loc("ui.settings.musicVolume", "Music volume"), true)
+				]
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				[
+					MakeVolumeRow(IronUI::Loc("ui.settings.sfxVolume", "Effects volume"), false)
+				]
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				.Padding(FMargin(0.0f, 20.0f, 0.0f, 4.0f))
+				[
+					IronSettingsDetail::MakeSectionLabel(IronUI::Loc("ui.settings.graphics", "Graphics"))
+				]
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				[
+					MakeGraphicsSection()
+				]
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				.Padding(FMargin(0.0f, 20.0f, 0.0f, 4.0f))
+				[
+					IronSettingsDetail::MakeSectionLabel(IronUI::Loc("ui.settings.mapSpeed", "Campaign map speed"))
+				]
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				.Padding(FMargin(0.0f, 0.0f, 0.0f, 8.0f))
+				[
+					IronSettingsDetail::MakeHint(IronUI::Loc("ui.settings.mapSpeedHint", "How many days pass each second while the month plays out."))
+				]
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				[
+					MakeMapSpeedRow()
+				]
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				.Padding(FMargin(0.0f, 20.0f, 0.0f, 4.0f))
+				[
+					IronSettingsDetail::MakeSectionLabel(IronUI::Loc("ui.settings.battleSpeed", "Battle animation speed"))
+				]
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				.Padding(FMargin(0.0f, 0.0f, 0.0f, 8.0f))
+				[
+					IronSettingsDetail::MakeHint(IronUI::Loc("ui.settings.battleSpeedHint", "How quickly enemy moves are shown on the battlefield."))
+				]
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				[
+					MakeBattleSpeedRow()
+				]
+			]
 		]
 		+ SVerticalBox::Slot()
 		.AutoHeight()
@@ -149,6 +172,11 @@ void SIronSettingsDialog::Rebuild()
 		],
 		false,
 		FMargin(34.0f, 28.0f)));
+
+	if (ScrollBox.IsValid() && SavedScrollOffset > 0.0f)
+	{
+		ScrollBox->SetScrollOffset(SavedScrollOffset);
+	}
 }
 
 TSharedRef<SWidget> SIronSettingsDialog::MakeLanguageRow()
@@ -280,6 +308,184 @@ FReply SIronSettingsDialog::OnLanguage(FString CultureName)
 		// Broadcasts OnCultureChanged, which rebuilds this dialog and the current screen.
 		Session->SetCulture(CultureName);
 	}
+	return FReply::Handled();
+}
+
+TSharedRef<SWidget> SIronSettingsDialog::MakeOptionRow(const FText& Label, const TSharedRef<SWidget>& Choices)
+{
+	return SNew(SHorizontalBox)
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		.VAlign(VAlign_Center)
+		[
+			SNew(SBox)
+			.WidthOverride(IronSettingsDetail::VolumeLabelWidth)
+			[
+				SNew(STextBlock)
+				.Text(Label)
+				.Font(IronStyle::Body(16.0f))
+				.ColorAndOpacity(IronStyle::Ink())
+			]
+		]
+		+ SHorizontalBox::Slot()
+		.FillWidth(1.0f)
+		.VAlign(VAlign_Center)
+		.Padding(FMargin(8.0f, 0.0f, 0.0f, 0.0f))
+		[
+			Choices
+		];
+}
+
+TSharedRef<SWidget> SIronSettingsDialog::MakeGraphicsSection()
+{
+	const EIronPresentationMode CurrentMode = Session.IsValid() ? Session->GetPresentationMode() : EIronPresentationMode::Auto;
+	const int32 CurrentQuality = Session.IsValid() ? Session->GetGraphicsQuality() : 2;
+	const bool bTiltShiftOn = !Session.IsValid() || Session->IsTiltShiftEnabled();
+	const bool bInkOn = Session.IsValid() && Session->IsInkOutlinesEnabled();
+	const FSlateFontInfo ChoiceFont = IronStyle::BodyBold(15.0f);
+
+	struct FModeChoice
+	{
+		EIronPresentationMode Value;
+		FText Label;
+	};
+	const FModeChoice ModeChoices[] = {
+		{EIronPresentationMode::Auto, IronUI::Loc("ui.settings.presentationAuto", "Auto")},
+		{EIronPresentationMode::ThreeD, IronUI::Loc("ui.settings.presentation3d", "3D")},
+		{EIronPresentationMode::TwoD, IronUI::Loc("ui.settings.presentation2d", "2D")}};
+	TSharedRef<SHorizontalBox> ModeRow = SNew(SHorizontalBox);
+	for (const FModeChoice& Choice : ModeChoices)
+	{
+		ModeRow->AddSlot()
+			.AutoWidth()
+			.Padding(FMargin(0.0f, 0.0f, IronSettingsDetail::ChoiceSpacing, 0.0f))
+			[
+				IronStyle::MakeChoiceButton(Choice.Label, Choice.Value == CurrentMode, FOnClicked::CreateSP(this, &SIronSettingsDialog::OnPresentation, Choice.Value), ChoiceFont)
+			];
+	}
+
+	// Quality levels 0..3 of the 3D scenes (AIronEnvironment::SetQuality).
+	const FText QualityLabels[] = {
+		IronUI::Loc("ui.settings.qualityLow", "Low"),
+		IronUI::Loc("ui.settings.qualityMedium", "Medium"),
+		IronUI::Loc("ui.settings.qualityHigh", "High"),
+		IronUI::Loc("ui.settings.qualityEpic", "Epic")};
+	TSharedRef<SHorizontalBox> QualityRow = SNew(SHorizontalBox);
+	for (int32 Level = 0; Level < 4; ++Level)
+	{
+		QualityRow->AddSlot()
+			.AutoWidth()
+			.Padding(FMargin(0.0f, 0.0f, IronSettingsDetail::ChoiceSpacing, 0.0f))
+			[
+				IronStyle::MakeChoiceButton(QualityLabels[Level], Level == CurrentQuality, FOnClicked::CreateSP(this, &SIronSettingsDialog::OnQuality, Level), ChoiceFont)
+			];
+	}
+
+	const FText OnLabel = IronUI::Loc("ui.settings.on", "On");
+	const FText OffLabel = IronUI::Loc("ui.settings.off", "Off");
+	const auto MakeToggleRow = [this, &OnLabel, &OffLabel, &ChoiceFont](bool bCurrent, FReply (SIronSettingsDialog::*Handler)(bool)) -> TSharedRef<SWidget>
+	{
+		return SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.Padding(FMargin(0.0f, 0.0f, IronSettingsDetail::ChoiceSpacing, 0.0f))
+			[
+				IronStyle::MakeChoiceButton(OnLabel, bCurrent, FOnClicked::CreateSP(this, Handler, true), ChoiceFont)
+			]
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			[
+				IronStyle::MakeChoiceButton(OffLabel, !bCurrent, FOnClicked::CreateSP(this, Handler, false), ChoiceFont)
+			];
+	};
+
+	return SNew(SVerticalBox)
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.Padding(FMargin(0.0f, 0.0f, 0.0f, 8.0f))
+		[
+			IronSettingsDetail::MakeHint(GetGraphicsStatus())
+		]
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.Padding(FMargin(0.0f, 0.0f, 0.0f, 6.0f))
+		[
+			MakeOptionRow(IronUI::Loc("ui.settings.presentation", "Map and battles"), ModeRow)
+		]
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.Padding(FMargin(0.0f, 0.0f, 0.0f, 6.0f))
+		[
+			MakeOptionRow(IronUI::Loc("ui.settings.quality", "3D quality"), QualityRow)
+		]
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.Padding(FMargin(0.0f, 0.0f, 0.0f, 6.0f))
+		[
+			MakeOptionRow(IronUI::Loc("ui.settings.tiltShift", "Tilt-shift blur"), MakeToggleRow(bTiltShiftOn, &SIronSettingsDialog::OnTiltShift))
+		]
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		[
+			MakeOptionRow(IronUI::Loc("ui.settings.inkOutlines", "Ink outlines"), MakeToggleRow(bInkOn, &SIronSettingsDialog::OnInkOutlines))
+		];
+}
+
+FText SIronSettingsDialog::GetGraphicsStatus() const
+{
+	if (!Session.IsValid())
+	{
+		return FText::GetEmpty();
+	}
+	if (!Session->Allows3D())
+	{
+		return IronUI::Loc("ui.settings.graphicsStatus2d", "The painted 2D map and battle board are shown.");
+	}
+	if (!Session->Is3DMapAvailable())
+	{
+		return IronUI::Loc("ui.settings.graphicsStatusMissing", "The 3D scenery is not installed, so the painted 2D map and battle board are shown.");
+	}
+	return IronUI::Loc("ui.settings.graphicsStatus3d", "The campaign map and battles are shown in real-time 3D. Quality, blur and outlines apply at once.");
+}
+
+FReply SIronSettingsDialog::OnPresentation(EIronPresentationMode Mode)
+{
+	if (Session.IsValid())
+	{
+		// Applied by the player controller and the strategy screen on their next frame.
+		Session->SetPresentationMode(Mode);
+	}
+	Rebuild();
+	return FReply::Handled();
+}
+
+FReply SIronSettingsDialog::OnQuality(int32 Level)
+{
+	if (Session.IsValid())
+	{
+		Session->SetGraphicsQuality(Level);
+	}
+	Rebuild();
+	return FReply::Handled();
+}
+
+FReply SIronSettingsDialog::OnTiltShift(bool bEnabled)
+{
+	if (Session.IsValid())
+	{
+		Session->SetTiltShiftEnabled(bEnabled);
+	}
+	Rebuild();
+	return FReply::Handled();
+}
+
+FReply SIronSettingsDialog::OnInkOutlines(bool bEnabled)
+{
+	if (Session.IsValid())
+	{
+		Session->SetInkOutlinesEnabled(bEnabled);
+	}
+	Rebuild();
 	return FReply::Handled();
 }
 

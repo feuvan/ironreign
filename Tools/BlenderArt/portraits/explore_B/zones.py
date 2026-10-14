@@ -84,7 +84,7 @@ def masks():
     global _MASKS
     if _MASKS is not None:
         return _MASKS
-    cp = mh._cache_path("zones_v11")
+    cp = mh._cache_path("zones_v13")
     if os.path.exists(cp):
         d = np.load(cp)
         _MASKS = {k: d[k] for k in d.files}
@@ -149,6 +149,7 @@ def masks():
     M["goatee"] = _ss(6.52, 6.42, y) * _ss(6.05, 6.15, y) * _ss(0.30, 0.16, ax) * (z > 1.0)
     # eyebrows: band following the brow ridge above each eye
     M["brow"] = _brow_mask(V)
+    M["brow_f"] = _brow_mask(V, female=True)
     M["neck"] = _ss(6.3, 6.0, y) * _ss(5.2, 5.6, y)
     # nasolabial fold distance field (dm): polyline nose wing -> past the mouth corner
     M["nasolabial"] = _poly_band(V, [(0.20, 6.80, 1.42), (0.30, 6.68, 1.40), (0.37, 6.55, 1.33),
@@ -162,7 +163,7 @@ def masks():
     M["temple"] = np.exp(-(((ax - 0.66) / 0.10) ** 2 + ((y - 7.62) / 0.18) ** 2)) * (z > 0.3)
     rows, cols = adjacency()
     for k, it in (("beard", 3), ("moustache", 2), ("scalp", 3), ("scalp_low", 3), ("hairline", 2), ("goatee", 3),
-                  ("brow", 1), ("forehead", 3), ("ears", 1), ("nose", 2), ("cheek", 2)):
+                  ("brow", 1), ("brow_f", 1), ("forehead", 3), ("ears", 1), ("nose", 2), ("cheek", 2)):
         M[k] = smooth(M[k].astype(np.float64), it, rows, cols)
     for k in list(M):
         M[k] = np.clip(np.nan_to_num(M[k]), 0, 1).astype(np.float32)
@@ -172,12 +173,16 @@ def masks():
     return M
 
 
-def _brow_mask(V):
+def _brow_mask(V, female=False):
     x, y, z = V[:, 0], V[:, 1], V[:, 2]
     ax = np.abs(x)
     # brow centre line (|x| -> y): rises from the head of the brow, arches, falls at the tail
     cy = np.interp(ax, [0.08, 0.20, 0.35, 0.50, 0.62], [7.47, 7.52, 7.56, 7.54, 7.46])
     half = np.interp(ax, [0.08, 0.20, 0.45, 0.62], [0.040, 0.044, 0.030, 0.012])
+    if female:
+        # willow-leaf brow: thin, a long gentle arch, tapering to a fine tail
+        cy = np.interp(ax, [0.09, 0.20, 0.36, 0.50, 0.64], [7.46, 7.53, 7.58, 7.57, 7.49])
+        half = np.interp(ax, [0.09, 0.16, 0.40, 0.64], [0.022, 0.026, 0.018, 0.006])
     m = _ss(half + 0.012, half - 0.008, np.abs(y - cy)) * _ss(0.06, 0.10, ax) * _ss(0.66, 0.58, ax)
     return m * (z > 0.9)
 
@@ -209,7 +214,7 @@ def _lash_line(b, V):
         rel = body - cc
         d = np.linalg.norm(rel, axis=1) - r
         up = _ss(-0.035, 0.0, rel[:, 1])
-        out[:13380] = np.maximum(out[:13380], _ss(0.05, 0.022, d) * up * (rel[:, 2] > 0.02))
+        out[:13380] = np.maximum(out[:13380], _ss(0.036, 0.021, d) * up * (rel[:, 2] > 0.02))
     return out
 
 

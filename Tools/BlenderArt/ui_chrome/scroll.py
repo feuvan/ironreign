@@ -3,8 +3,9 @@ content padding 100 / 60 / 100 / 56): an unrolled silk handscroll with rosewood 
 pale jade.
 
 Layout (target px):
-    rollers   axes at x 24 / 1000, radius 12, rod y 22-618; gold ferrules; jade end caps y 5-22
-              and 618-635 (real 3D: lathe meshes, SSS jade, clear-coated rosewood)
+    rollers   axes at x 24 / 1000, radius 12: the silk wound on the rod (y 28-612, indigo with
+              its gold edge line and dark binding), rosewood rod ends, gold ferrules and pale
+              jade knobs (y 4.6-17 and 623-635.4) - real 3D lathe meshes, SSS jade
     sheet     silk from roller to roller, y 30-610
     brocade   indigo silk, a satin xiangyun damask outlined in gold thread: top y 30-54, bottom 586-610,
               left x 36-66, right 958-988; dark binding at the sheet edge
@@ -24,7 +25,8 @@ from ironart import ui_chrome_sdf as S
 from ironart.ui_chrome_maps import Maps, L
 
 NAME = "Scroll"
-SPEC = dict(size=(1024, 640), ss=4, spp=48, margins=(80, 80, 80, 80), seed=71, mesh_step=4)
+SPEC = dict(size=(1024, 640), ss=3, spp=16, adaptive=0.02, margins=(80, 80, 80, 80), seed=71,
+            mesh_step=3)
 W, H = 1024, 640
 RX = (24.0, 1000.0)
 RR = 12.0
@@ -66,7 +68,6 @@ def build(G, variant=None):
     sheet = (S.band(X, sx0, sx1, G) * S.band(Y, sy0, sy1, G)).astype(np.float32)
     # distance into the sheet from its visible top/bottom edges and from the rollers
     dy = np.minimum(Y - sy0, sy1 - Y)
-    dx = np.minimum(X - BRO[0], BRO[2] - X)
     bx0, by0, bx1, by1 = BRO
     fx0, fy0, fx1, fy1 = FIELD
     field = (S.band(X, fx0, fx1, G) * S.band(Y, fy0, fy1, G))
@@ -187,32 +188,87 @@ def _mat_gold():
     return mat
 
 
-def extras(variant, G):
+def _mat_silk_roll():
+    """The silk wound on the roller: the indigo mounting seen edge-on, satin sheen, faint turns."""
     import bpy
+    from ironart import palette
+    mat = bpy.data.materials.new("SilkRoll")
+    mat.use_nodes = True
+    nt = mat.node_tree
+    N, Lk = nt.nodes, nt.links
+    p = N["Principled BSDF"]
+    tc = N.new("ShaderNodeTexCoord")
+    sep = N.new("ShaderNodeSeparateXYZ")
+    Lk.new(tc.outputs["Object"], sep.inputs[0])
+    # local z = along the roller (px units): dark binding rings near both ends of the roll
+    rp = N.new("ShaderNodeValToRGB")
+    cr = rp.color_ramp
+    stops = [(0.0, "#141019"), (0.012, "#141019"), (0.02, "#9C7B40"), (0.026, "#9C7B40"),
+             (0.034, "#26334D"), (0.966, "#26334D"), (0.974, "#9C7B40"), (0.98, "#9C7B40"),
+             (0.988, "#141019"), (1.0, "#141019")]
+    while len(cr.elements) < len(stops):
+        cr.elements.new(0.5)
+    for el, (pos, col) in zip(cr.elements, stops):
+        el.position = pos
+        el.color = palette.lin4(col)
+    mr = N.new("ShaderNodeMapRange")
+    mr.inputs["From Min"].default_value = 28.0
+    mr.inputs["From Max"].default_value = 612.0
+    Lk.new(sep.outputs["Z"], mr.inputs["Value"])
+    Lk.new(mr.outputs[0], rp.inputs[0])
+    nz = N.new("ShaderNodeTexNoise")
+    nz.inputs["Scale"].default_value = 0.35
+    nz.inputs["Detail"].default_value = 4.0
+    mp = N.new("ShaderNodeMapping")
+    mp.inputs["Scale"].default_value = (1.0, 1.0, 0.05)
+    Lk.new(tc.outputs["Object"], mp.inputs["Vector"])
+    Lk.new(mp.outputs[0], nz.inputs["Vector"])
+    mx = N.new("ShaderNodeMix")
+    mx.data_type = "RGBA"
+    mx.blend_type = "MULTIPLY"
+    mx.inputs[0].default_value = 0.25
+    Lk.new(rp.outputs[0], mx.inputs[6])
+    Lk.new(nz.outputs["Color"], mx.inputs[7])
+    Lk.new(mx.outputs[2], p.inputs["Base Color"])
+    p.inputs["Roughness"].default_value = 0.42
+    p.inputs["Sheen Weight"].default_value = 0.6
+    p.inputs["Sheen Roughness"].default_value = 0.35
+    p.inputs["Specular IOR Level"].default_value = 0.35
+    return mat
+
+
+def extras(variant, G):
+    """The two rollers: silk wound on a rosewood rod (the roll spans the sheet height), the rod
+    ends with gold ferrules and pale jade knobs (lathe meshes, SSS jade)."""
     from mathutils import Matrix
     from ironart import geometry as geo
     from ironart.ui_chrome_render import MM
-    mats = {"Wood": _mat_rosewood(), "Jade": _mat_jade(), "Gold": _mat_gold()}
+    mats = {"Silk": _mat_silk_roll(), "Wood": _mat_rosewood(), "Jade": _mat_jade(),
+            "Gold": _mat_gold()}
+    r = RR
     for k, ax in enumerate(RX):
         mb = geo.MeshBuilder()
-        # profile along the roller axis (image y), radius in px; built along +Z then laid down
-        r = RR
-        wood = [(0.0, 22.0), (r * 0.98, 22.0), (r, 23.0), (r, 617.0), (r * 0.98, 618.0), (0.0, 618.0)]
-        mb.lathe([(rr, zz) for rr, zz in wood], "Wood", segments=48, smooth=True)
-        for (z0, z1) in ((19.5, 24.5), (615.5, 620.5)):
-            ring = [(0.0, z0), (r + 0.6, z0), (r + 1.1, z0 + 0.6), (r + 1.1, z1 - 0.6),
-                    (r + 0.6, z1), (0.0, z1)]
-            mb.lathe(ring, "Gold", segments=48, smooth=True)            # gold ferrule
-        cap = [(0.0, 0.0), (6.0, 0.0), (9.0, 0.6), (10.3, 2.0), (10.6, 4.0), (10.6, 9.0),
-               (10.0, 9.6), (10.0, 10.4), (10.6, 11.0), (10.6, 15.0), (10.2, 16.4), (9.0, 17.0),
-               (0.0, 17.0)]
-        top = [(rr, 5.0 + t) for rr, t in cap]                       # tip at y 5
-        bot = [(rr, 635.0 - t) for rr, t in reversed(cap)]           # tip at y 635
+        # rolled silk (y 28-612): slightly fuller in the middle, rounded edges
+        roll = [(0.0, 28.0), (r - 1.2, 28.0), (r - 0.3, 28.4), (r, 29.4), (r + 0.25, 320.0),
+                (r, 610.6), (r - 0.3, 611.6), (r - 1.2, 612.0), (0.0, 612.0)]
+        mb.lathe(roll, "Silk", segments=48, smooth=True)
+        # rod ends
+        for (a, b) in ((17.5, 28.5), (611.5, 622.5)):
+            mb.lathe([(0.0, a), (5.6, a), (6.0, a + 0.4), (6.0, b - 0.4), (5.6, b), (0.0, b)],
+                     "Wood", segments=32, smooth=True)
+        for (z0, z1) in ((17.0, 20.2), (619.8, 623.0)):
+            mb.lathe([(0.0, z0), (6.8, z0), (7.4, z0 + 0.5), (7.4, z1 - 0.5), (6.8, z1), (0.0, z1)],
+                     "Gold", segments=40, smooth=True)
+        cap = [(0.0, 0.0), (5.0, 0.0), (7.6, 0.5), (8.9, 1.6), (9.3, 3.4), (9.3, 7.0),
+               (8.7, 7.6), (8.7, 8.4), (9.3, 9.0), (9.3, 11.0), (8.6, 12.2), (7.2, 12.6),
+               (0.0, 12.6)]
+        top = [(rr, 4.6 + t) for rr, t in cap]                       # knob tip at y 4.6
+        bot = [(rr, 635.4 - t) for rr, t in reversed(cap)]           # knob tip at y 635.4
         mb.lathe(top, "Jade", segments=48, smooth=True)
         mb.lathe(bot, "Jade", segments=48, smooth=True)
         ob = mb.build("Roller%d" % k, mats)
         # local z (along the axis) = image y (down) -> world -y; local y -> world z
-        ob.matrix_world = (Matrix.Translation(((ax - W / 2) * MM, (H / 2) * MM, RR * MM)) @
+        ob.matrix_world = (Matrix.Translation(((ax - W / 2) * MM, (H / 2) * MM, r * MM)) @
                            Matrix.Rotation(math.radians(90.0), 4, "X") @
                            Matrix.Diagonal((MM, MM, MM, 1.0)))
     return None

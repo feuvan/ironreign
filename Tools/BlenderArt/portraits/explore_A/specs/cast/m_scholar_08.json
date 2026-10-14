@@ -1,0 +1,66 @@
+{
+ "id": "m_scholar_08",
+ "seed": 93985,
+ "gender": "m",
+ "age": 28,
+ "archetype": "scholar",
+ "expression": "serene",
+ "bg": "cool",
+ "notes": "Ren Zhiyuan, the Far-Sighted",
+ "hair": {
+  "style": "topknot",
+  "grey": 0.0,
+  "recede": 0.1
+ },
+ "skin": {
+  "weather": 0.2,
+  "scars": []
+ },
+ "camera": {
+  "yaw": 20.0,
+  "pitch": -3.0,
+  "head_frac": 0.42,
+  "eye_line": 0.39
+ },
+ "beard": {
+  "mustache": 1.0,
+  "soul": 0.0,
+  "tails": 0.8,
+  "gravity": 0.7,
+  "radius": 0.0001,
+  "frizz": 0.0014,
+  "must_len": 0.044,
+  "chin": 0.0,
+  "jaw": 0.0,
+  "cheeks": 0.0,
+  "neck": 0.0,
+  "sideburns": 0.0,
+  "length": 0.02,
+  "count": 2500
+ },
+ "beard_grey": 0.0,
+ "outfit": {
+  "kind": "scholar",
+  "outer": [
+   0.02,
+   0.05,
+   0.16
+  ],
+  "band": [
+   0.55,
+   0.42,
+   0.18
+  ],
+  "motif": "lattice",
+  "depth": 0.13
+ },
+ "headgear": {
+  "kind": "guan",
+  "rgb": [
+   0.015,
+   0.013,
+   0.012
+  ],
+  "size": 1.1
+ }
+}

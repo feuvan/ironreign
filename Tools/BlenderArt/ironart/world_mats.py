@@ -178,8 +178,8 @@ class W:
 # ---------------------------------------------------------------------------------------------
 # masonry
 # ---------------------------------------------------------------------------------------------
-def ashlar(name="W_Stone", color="#8D877B", mortar="#A59D8C", block=(1.25, 0.55), vary=0.18,
-           bump=0.6, foot=1.8):
+def ashlar(name="W_Stone", color="#8D877B", mortar="#6F6A60", block=(1.25, 0.55), vary=0.26,
+           bump=0.8, foot=1.8):
     """City wall ashlar: big grey-beige blocks (per-block tone), recessed soft mortar, chipped
     arrises, foot grime, rain streaks, moss near the ground."""
     mat, nb = _new(name)
@@ -188,7 +188,13 @@ def ashlar(name="W_Stone", color="#8D877B", mortar="#A59D8C", block=(1.25, 0.55)
     w = W(nb)
     uv = w.uv()
     c1, c2 = L(color, 1.0 - vary), L(color, 1.0 + vary * 0.6)
-    col, fac = w.brick(uv, block[0], block[1], 0.035, c1, c2, L(mortar), smooth=0.3)
+    col, fac = w.brick(uv, block[0], block[1], 0.05, c1, c2, L(mortar), smooth=0.3)
+    # per-block tone (brick 'Fac' bias is weak): hash each block from its row / column index
+    s_ = w.sep(uv)
+    rowi = w.m("FLOOR", w.m("DIVIDE", s_["Y"], block[1]))
+    coli = w.m("FLOOR", w.m("DIVIDE", w.m("ADD", s_["X"], w.m("MULTIPLY", w.m("FRACT", w.m("MULTIPLY", rowi, 0.5)), block[0])), block[0]))
+    tone = w.noise(w.comb(coli, rowi, 0.0), 3.7, 1)
+    col = w.mul(col, w.ramp(tone, [(0.25, (0.82, 0.82, 0.82, 1)), (0.75, (1.12, 1.1, 1.06, 1))]))
     # per-block noise texture (pitting) + large patches
     fine = w.noise(w.scale(uv, 9.0), 1.0, 6, 0.65)
     col = w.mul(col, w.ramp(fine, [(0.3, (0.86, 0.86, 0.86, 1)), (0.7, (1.06, 1.06, 1.04, 1))]))
@@ -398,9 +404,10 @@ def wood(name="W_Wood", color="#5B3E28", grain=0.4, rough=0.7):
 
 
 def beam_paint(name="W_BeamPaint", c1="#2E6B6A", c2="#2C4F86", gold="#C29A44", red="#8A2417",
-               period=3.2):
-    """Painted architraves (xuanzi caihua): along the beam (MetreUV u) repeating panels -
-    teal / lapis bands with gold and white rims, red ends; faded and chalky."""
+               period=1.0):
+    """Painted architraves (xuanzi caihua), one panel set per bay: MetreUV u is normalised 0..1
+    along each bay's beam (world_kit.beam), v in metres up the face - teal / lapis bands with gold
+    and white rims; faded and chalky.  Baked into the atlas trim strip shared by every beam."""
     mat, nb = _new(name)
     if nb is None:
         return mat
@@ -647,6 +654,36 @@ def ground(name, mask_path, size_m, earth="#8C7656", pave="#8F8B82", grass="#647
     return mat
 
 
+def fabric(name="W_Trim", color="#2B2622", motif="#5A4A30", vary=0.06, sheen=0.3):
+    """Banner trim: heavy dark silk with a fine weave and a faint woven cloud-scroll motif (MetreUV)."""
+    mat, nb = _new(name)
+    if nb is None:
+        return mat
+    w = W(nb)
+    uv = w.uv()
+    s = w.sep(uv)
+    weave = w.m("MULTIPLY", w.m("SINE", w.m("MULTIPLY", s["X"], 260.0)), w.m("SINE", w.m("MULTIPLY", s["Y"], 260.0)))
+    col = w.ramp(w.noise(w.scale(uv, 3.0), 1.0, 3), [(0.3, L(color, 1 - vary)), (0.7, L(color, 1 + vary))])
+    sc = w.m("SINE", w.m("ADD", w.m("MULTIPLY", s["X"], 5.0), w.m("MULTIPLY", w.m("SINE", w.m("MULTIPLY", s["Y"], 5.0)), 1.6)))
+    col = w.mix(col, L(motif), w.m("MULTIPLY", w.mr(sc, 0.85, 0.95), 0.6))
+    p = w.out(col, 0.62, 0.0, w.bump(weave, 0.15, 0.002), spec=0.4)
+    nb.set(sock(p.inputs, "Sheen Weight"), sheen)
+    return mat
+
+
+def tassel(name="W_Tassel", color="#8E1E16"):
+    """Dyed horsehair tassel: strands along the object Z."""
+    mat, nb = _new(name)
+    if nb is None:
+        return mat
+    w = W(nb)
+    o = w.obj()
+    st = w.noise(w.scale(o, (60.0, 60.0, 1.5)), 1.0, 3)
+    col = w.ramp(st, [(0.3, L(color, 0.7)), (0.7, L(color, 1.15))])
+    w.out(col, 0.55, 0.0, w.bump(st, 0.4, 0.003), spec=0.45)
+    return mat
+
+
 # ---------------------------------------------------------------------------------------------
 # library
 # ---------------------------------------------------------------------------------------------
@@ -685,6 +722,8 @@ def library():
             (fascia, ("W_Fascia",)),
             (flat, ("W_Gable", "#7A2418", 0.6)),
             (rock, ("W_Rock",)),
+            (fabric, ("W_Trim",)),
+            (tassel, ("W_Tassel",)),
     ):
         mat = fn(*args)
         m[mat.name] = mat

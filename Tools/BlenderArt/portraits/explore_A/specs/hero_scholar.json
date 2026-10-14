@@ -1,24 +1,38 @@
 {
  "id": "hero_scholar",
- "seed": 23,
+ "seed": 5,
  "gender": "f",
  "age": 26,
  "archetype": "scholar",
  "expression": "serene",
  "expr": {
   "mouth-corner-puller": 0.1,
-  "eyebrows-right-extern-up": 0.15
+  "eyebrows-right-extern-up": 0.15,
+  "eye-left-slit": 0.15,
+  "eye-right-slit": 0.15
  },
  "face": {
-  "eyes/{s}-eye-scale-decr|incr": 0.2,
-  "nose/nose-scale-horiz-decr|incr": -0.2,
-  "chin/chin-width-decr|incr": -0.25,
-  "head/head-fat-decr|incr": -0.15
+  "eyes/{s}-eye-scale-decr|incr": 0.3,
+  "eyes/{s}-eye-height2-decr|incr": -0.2,
+  "head/head-oval": 0.7,
+  "head/head-scale-horiz-decr|incr": -0.3,
+  "chin/chin-width-decr|incr": -0.4,
+  "nose/nose-scale-horiz-decr|incr": -0.3,
+  "head/head-invertedtriangular": 0.45,
+  "cheek/{s}-cheek-inner-decr|incr": -0.3,
+  "eyes/{s}-eye-corner2-down|up": 0.4,
+  "mouth/mouth-upperlip-volume-decr|incr": -0.35,
+  "mouth/mouth-lowerlip-volume-decr|incr": -0.2,
+  "mouth/mouth-scale-horiz-decr|incr": -0.15,
+  "neck/neck-scale-vert-decr|incr": -0.4,
+  "forehead/forehead-scale-vert-decr|incr": -0.2
  },
  "identity": {
-  "skin_tone": 0.2,
-  "skin_red": 0.35,
-  "makeup": 0.85
+  "skin_tone": 0.28,
+  "skin_red": 0.4,
+  "makeup": 0.5,
+  "muscle": 0.3,
+  "weight": 0.4
  },
  "skin": {
   "huadian": true,
@@ -27,17 +41,31 @@
  "hair": {
   "style": "lady",
   "grey": 0.0,
-  "recede": 0.0,
-  "count": 9000,
-  "bun": 0.03,
-  "puff": 0.016
+  "recede": -0.35,
+  "count": 12000,
+  "bun": 0.045,
+  "puff": 0.004,
+  "side_puff": 0.013,
+  "volume": 0.004,
+  "physical": true,
+  "clump": 0.55
+ },
+ "light": {
+  "key": 40.0,
+  "key_angle": 145.0,
+  "key_elev": 16.0,
+  "key_size": 0.6,
+  "fill": 2.2,
+  "bounce": 1.6,
+  "rim": 50.0
  },
  "brows": {
-  "thick": 0.7,
-  "arch": 1.2,
+  "thick": 0.85,
+  "arch": 1.15,
   "angle": 0.1,
-  "count": 700,
-  "hair_len": 0.008
+  "count": 1300,
+  "hair_len": 0.008,
+  "radius": 5e-05
  },
  "outfit": {
   "kind": "lady",
@@ -90,10 +118,10 @@
   ]
  },
  "camera": {
-  "yaw": -18.0,
-  "pitch": -2.0,
-  "head_frac": 0.4,
-  "eye_line": 0.4
+  "yaw": -14.0,
+  "pitch": 2.0,
+  "head_frac": 0.42,
+  "eye_line": 0.42
  },
  "bg": "jade"
 }

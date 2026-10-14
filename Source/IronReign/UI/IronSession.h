@@ -4,6 +4,25 @@
 #include "Delegates/Delegate.h"
 #include "Misc/DateTime.h"
 #include "Sim/IronGame.h"
+#include "UObject/WeakObjectPtr.h"
+#include "UObject/WeakObjectPtrTemplates.h"
+
+class UWorld;
+
+/**
+ * How the campaign map and the battles are presented (Settings.json "presentation": "auto" / "3d" / "2d").
+ * The real-time 3D scenes (Source/IronReign/World, docs/DESIGN.md section 12) need the imported assets; without them
+ * every mode shows the 2D painted map and hex board.
+ */
+enum class EIronPresentationMode : uint8
+{
+	/** The 3D scenes when their assets are available (default). */
+	Auto,
+	/** The 3D scenes (the 2D views only while the scene loads or when the assets are missing). */
+	ThreeD,
+	/** Always the 2D painted map and hex board. */
+	TwoD
+};
 
 /** A scenario file found under Content/Data/Scenarios. */
 struct FIronScenarioEntry
@@ -24,14 +43,15 @@ struct FIronSaveSlot
 };
 
 /**
- * Owns the running campaign (IronSim::FGame), scenario discovery, save slots, language and user settings.
+ * Owns the running campaign (IronSim::FGame), scenario discovery, save slots, language and user settings (including
+ * the graphics options of the 3D presentation), and knows the world the 3D scenes live in.
  * Created by UIronReignWorldStateSubsystem and shared by every Slate screen.
  *
  * Files:
  *   Content/Data/Scenarios/<name>.json            scenarios
  *   Content/Data/Localization/<culture>/<table>.json  string tables (Strings.json + Scenario_<key>.json)
  *   <ProjectSaved>/SaveGames/IronReign_<slot>.json save games (slot 0 = autosave)
- *   <ProjectSaved>/IronReign/Settings.json        culture + options
+ *   <ProjectSaved>/IronReign/Settings.json        culture + options (speeds, volumes, graphics)
  */
 class IRONREIGN_API FIronSession : public TSharedFromThis<FIronSession>
 {
@@ -104,6 +124,46 @@ public:
 	 */
 	static int32 LoadCultureStrings(const FString& InCulture, TArray<FString>* OutErrors = nullptr);
 
+	// ----- Graphics options (3D presentation integration; persisted in Settings.json) -----
+	EIronPresentationMode GetPresentationMode() const { return PresentationMode; }
+	void SetPresentationMode(EIronPresentationMode Mode);
+	/** 0 Low, 1 Medium, 2 High (default), 3 Epic: the quality levels of AIronWorldMap3D / AIronBattleBoard3D / AIronEnvironment. */
+	int32 GetGraphicsQuality() const { return GraphicsQuality; }
+	void SetGraphicsQuality(int32 Level);
+	/** Tilt-shift depth of field of the 3D scenes (AIronEnvironment::SetTiltShiftStrength 1 / 0). */
+	bool IsTiltShiftEnabled() const { return bTiltShift; }
+	void SetTiltShiftEnabled(bool bEnabled);
+	/** Ink outline post-process of the 3D scenes (AIronEnvironment::SetInkStrength 1 / 0). */
+	bool IsInkOutlinesEnabled() const { return bInkOutlines; }
+	void SetInkOutlinesEnabled(bool bEnabled);
+	/** Broadcast after any graphics option changed. AIronReignPlayerController applies them to the 3D scenes. */
+	FSimpleMulticastDelegate OnGraphicsChanged;
+	/** Incremented by every graphics option change (cheap change detection for per-frame code). */
+	int32 GetGraphicsRevision() const { return GraphicsRevision; }
+
+	/** False in the 2D presentation mode. */
+	bool Allows3D() const { return PresentationMode != EIronPresentationMode::TwoD; }
+	/** AIronWorldMap3D::AreAssetsAvailable(), cached (a negative answer is re-checked at most every 30 seconds). */
+	bool Is3DMapAvailable() const;
+	/** AIronBattleBoard3D::AreAssetsAvailable(), cached the same way. */
+	bool Is3DBattleAvailable() const;
+	/** The strategy map is presented in 3D: Allows3D() and Is3DMapAvailable(). */
+	bool Uses3DMap() const { return Allows3D() && Is3DMapAvailable(); }
+	/** Battles are presented in 3D: Allows3D() and Is3DBattleAvailable(). */
+	bool Uses3DBattle() const { return Allows3D() && Is3DBattleAvailable(); }
+
+	// ----- Presentation context -----
+	/** World that hosts the 3D scenes and the game viewport (set by UIronReignWorldStateSubsystem; weakly held). */
+	void SetPresentationWorld(UWorld* InWorld);
+	UWorld* GetPresentationWorld() const;
+	/**
+	 * True while the game viewport renders the world, i.e. a 3D scene (strategy map or battle board) is on screen behind
+	 * the Slate screens; they must not paint an opaque backdrop over it then.
+	 */
+	bool IsWorldRendered() const;
+	/** Incremented whenever the campaign is replaced (new game, load, end): per-campaign presentation state is rebuilt. */
+	int32 GetCampaignSerial() const { return CampaignSerial; }
+
 private:
 	void LoadSettings();
 	void SaveSettings() const;
@@ -111,6 +171,8 @@ private:
 	void ApplyAudioVolumes() const;
 	void LoadStringTables();
 	static FString SaveSlotPath(int32 Slot);
+	/** Bumps the graphics revision, saves the settings and broadcasts OnGraphicsChanged. */
+	void CommitGraphicsChange();
 
 	IronSim::FGame Campaign;
 	bool bHasGame = false;
@@ -119,4 +181,18 @@ private:
 	float BattleStepSeconds = 0.35f;
 	float MusicVolume = 0.7f;
 	float SfxVolume = 0.8f;
+
+	EIronPresentationMode PresentationMode = EIronPresentationMode::Auto;
+	int32 GraphicsQuality = 2;
+	bool bTiltShift = true;
+	bool bInkOutlines = false;
+	int32 GraphicsRevision = 0;
+	int32 CampaignSerial = 0;
+	TWeakObjectPtr<UWorld> PresentationWorld;
+
+	/** Asset availability caches (see Is3DMapAvailable): answer and the time (FPlatformTime::Seconds) of the check. */
+	mutable bool bMapAssetsAvailable = false;
+	mutable bool bBattleAssetsAvailable = false;
+	mutable double MapAssetsCheckedAt = -1.0;
+	mutable double BattleAssetsCheckedAt = -1.0;
 };

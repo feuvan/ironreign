@@ -1,0 +1,63 @@
+{
+ "id": "f_warrior_02",
+ "seed": 60519,
+ "gender": "f",
+ "age": 19,
+ "archetype": "warrior",
+ "expression": "stern",
+ "bg": "warm",
+ "notes": "Helian Yue, Moon of the Steppe",
+ "hair": {
+  "style": "helmet",
+  "grey": 0.0,
+  "recede": 0.1
+ },
+ "skin": {
+  "weather": 0.8,
+  "scars": [
+   [
+    [
+     0.56,
+     0.61
+    ],
+    [
+     1.03,
+     -0.34
+    ]
+   ]
+  ]
+ },
+ "camera": {
+  "yaw": -18.0,
+  "pitch": -3.0,
+  "head_frac": 0.42,
+  "eye_line": 0.39
+ },
+ "outfit": {
+  "kind": "armour",
+  "silk": [
+   0.18,
+   0.09,
+   0.03
+  ],
+  "trim": [
+   0.55,
+   0.4,
+   0.2
+  ],
+  "fur": true
+ },
+ "headgear": {
+  "kind": "helmet",
+  "tassel": [
+   0.25,
+   0.12,
+   0.03
+  ],
+  "trim": [
+   0.55,
+   0.4,
+   0.2
+  ]
+ }
+}

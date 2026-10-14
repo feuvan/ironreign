@@ -1,0 +1,43 @@
+{
+ "id": "m_warrior_02",
+ "seed": 45648,
+ "gender": "m",
+ "age": 21,
+ "archetype": "warrior",
+ "expression": "fierce",
+ "bg": "smoke",
+ "notes": "Yan Lie, the Young Flame",
+ "hair": {
+  "style": "topknot",
+  "grey": 0.0,
+  "recede": 0.1
+ },
+ "skin": {
+  "weather": 0.8,
+  "scars": []
+ },
+ "camera": {
+  "yaw": 20.0,
+  "pitch": -3.0,
+  "head_frac": 0.42,
+  "eye_line": 0.39
+ },
+ "beard": null,
+ "beard_grey": 0.0,
+ "outfit": {
+  "kind": "armour",
+  "silk": [
+   0.2,
+   0.016,
+   0.012
+  ],
+  "trim": [
+   0.62,
+   0.42,
+   0.16
+  ]
+ },
+ "headgear": {
+  "kind": "none"
+ }
+}

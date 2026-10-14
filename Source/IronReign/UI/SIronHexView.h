@@ -3,11 +3,14 @@
 #include "CoreMinimal.h"
 #include "Sim/IronBattle.h"
 #include "Fonts/SlateFontInfo.h"
+#include "Layout/Margin.h"
+#include "UObject/WeakObjectPtr.h"
 #include "Widgets/DeclarativeSyntaxSupport.h"
 #include "Widgets/SLeafWidget.h"
 
 #include <string>
 
+class AIronBattleBoard3D;
 class FIronSession;
 struct FSlateBrush;
 
@@ -56,6 +59,13 @@ namespace IronBattleUI
  * side-coloured bases, troop bars, commander star, status overlays, move interpolation, hit effects, floating numbers,
  * a day banner and a hover tooltip. Plays the battle sound effects in sync with the animations.
  * Game logic lives in SIronBattleScreen; the view reports clicks.
+ *
+ * With an active AIronBattleBoard3D (argument Board) the widget is a transparent overlay over the real-time 3D board
+ * (docs/DESIGN.md 12.4) and must cover the whole game viewport: hover and clicks are picked on the board, left or
+ * middle drag pans its camera, the wheel zooms and Home / R reset the view; highlights, the hover ring and every unit,
+ * gate and effect animation are drawn by the board (fed from the same FBattleEvent stream); the widget draws the
+ * projected unit plates (name, troop bar), gate bars, floating numbers, the day banner and the tooltip, and plays the
+ * sounds on the board's animation timeline. Without a board (or when it stops being active) it draws the 2D board.
  */
 class SIronHexView : public SLeafWidget
 {
@@ -63,6 +73,8 @@ public:
 	SLATE_BEGIN_ARGS(SIronHexView) {}
 		SLATE_ARGUMENT(TSharedPtr<IronSim::FBattle>, Battle)
 		SLATE_ARGUMENT(TSharedPtr<FIronSession>, Session)
+		/** The built and active 3D board of this battle, or null for the 2D board. */
+		SLATE_ARGUMENT(TWeakObjectPtr<AIronBattleBoard3D>, Board)
 		SLATE_EVENT(FOnIronHexClicked, OnHexClicked)
 		SLATE_EVENT(FOnIronHexCancel, OnCancel)
 	SLATE_END_ARGS()
@@ -76,14 +88,33 @@ public:
 	void ShowBanner(const FText& Text);
 	/** Drops every running animation and queued sound (e.g. after a fast-forward). */
 	void ClearAnimations();
-	/** FPlatformTime::Seconds() until which queued move animations are still playing. */
-	double GetBusyUntil() const { return AnimCursor; }
+	/** FPlatformTime::Seconds() until which queued animations (2D moves, or the 3D board's blocking animations) play. */
+	double GetBusyUntil() const;
+	/** True while queued animations should hold back the next AI step or the result dialog. */
+	bool IsAnimating() const;
+	/**
+	 * After the events of a rules change were played: the 3D board takes the new rules state (SyncFromBattle);
+	 * bFinishAnimations completes every board animation at once (fast-forward). No-op on the 2D board.
+	 */
+	void SyncBoard(bool bFinishAnimations);
+	/** True while the 3D board shows the battle and this widget is its transparent overlay. */
+	bool IsBoardMode() const;
+	/**
+	 * 3D: fractions of the widget covered by the screen's panels (left, top, right, bottom); the banner and the
+	 * tooltip stay inside the rest.
+	 */
+	void SetCoveredInsets(const FMargin& InInsets);
 
 	// SWidget interface
 	virtual int32 OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const override;
 	virtual FReply OnMouseButtonDown(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override;
+	virtual FReply OnMouseButtonDoubleClick(const FGeometry& InMyGeometry, const FPointerEvent& InMouseEvent) override;
+	virtual FReply OnMouseButtonUp(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override;
 	virtual FReply OnMouseMove(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override;
+	virtual FReply OnMouseWheel(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override;
 	virtual void OnMouseLeave(const FPointerEvent& MouseEvent) override;
+	virtual void OnMouseCaptureLost(const FCaptureLostEvent& CaptureLostEvent) override;
+	virtual FCursorReply OnCursorQuery(const FGeometry& MyGeometry, const FPointerEvent& CursorEvent) const override;
 	virtual FReply OnKeyDown(const FGeometry& MyGeometry, const FKeyEvent& InKeyEvent) override;
 	virtual bool SupportsKeyboardFocus() const override { return true; }
 
@@ -138,6 +169,9 @@ private:
 	struct FFloatText
 	{
 		FVector2f BoardPos = FVector2f(0.0f, 0.0f);
+		/** Hex the text pops over (the 3D anchor) and how many texts were already stacked there. */
+		IronSim::FHex Hex = {-1, -1};
+		int32 Stack = 0;
 		FString Text;
 		FLinearColor Color = FLinearColor::White;
 		double Start = 0.0;
@@ -189,13 +223,43 @@ private:
 	void DrawBar(FSlateWindowElementList& OutDrawElements, int32 Layer, const FGeometry& Geometry, const FVector2f& Center, const FVector2f& Size, float Fraction, const FLinearColor& FillColor) const;
 	/** Text centred on Center with a dark drop shadow (uses two layers: Layer and Layer + 1). */
 	void DrawCenteredText(FSlateWindowElementList& OutDrawElements, int32 Layer, const FGeometry& Geometry, const FString& Text, const FSlateFontInfo& Font, const FVector2f& Center, const FLinearColor& Color) const;
-	int32 DrawTooltip(FSlateWindowElementList& OutDrawElements, int32 Layer, const FGeometry& Geometry, const FVector2f& LocalSize) const;
+	/** Day banner across the area AreaMin..AreaMax (uses Layer .. Layer + 2). */
+	void DrawBanner(FSlateWindowElementList& OutDrawElements, int32 Layer, const FGeometry& Geometry, const FVector2f& AreaMin, const FVector2f& AreaMax, double Now) const;
+	/** Hover tooltip next to the cursor, kept inside AreaMin..AreaMax. */
+	int32 DrawTooltip(FSlateWindowElementList& OutDrawElements, int32 Layer, const FGeometry& Geometry, const FVector2f& AreaMin, const FVector2f& AreaMax) const;
 	void BuildTooltipLines(TArray<FTipLine>& OutLines) const;
+
+	// 3D board overlay.
+	/** The board while it shows this battle (built and active), else null. */
+	AIronBattleBoard3D* GetActiveBoard() const;
+	/** Game viewport render pixels per widget-local unit (the board projects into viewport pixels). */
+	FVector2f ViewportPixelsPerLocal(const FVector2f& LocalSize) const;
+	/** Hex of the 3D board under a widget-local point; Col = -1 when off the board. */
+	IronSim::FHex PickBoardHex(const FVector2f& LocalPos, const FVector2f& LocalSize) const;
+	/** Re-picks the hovered hex (the camera and the units move under a still cursor) and shows it on the board. */
+	void UpdateBoardHover(const FVector2f& LocalSize);
+	/** Hands the highlights and the hovered hex to the board. */
+	void PushBoardHighlights();
+	void ResetPointerState();
+	/** Widget-local area not covered by the screen's panels (the whole widget on the 2D board). */
+	void GetFreeArea(const FVector2f& LocalSize, FVector2f& OutMin, FVector2f& OutMax) const;
+	/** Unit plates, gate bars, floating texts, banner and tooltip over the 3D board. */
+	int32 PaintBoardOverlay(const AIronBattleBoard3D& ActiveBoard, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FGeometry& Geometry, double Now) const;
 
 	TSharedPtr<IronSim::FBattle> Battle;
 	TSharedPtr<FIronSession> Session;
+	TWeakObjectPtr<AIronBattleBoard3D> Board;
 	FOnIronHexClicked OnHexClickedDelegate;
 	FOnIronHexCancel OnCancelDelegate;
+
+	/** 3D: fractions of the widget covered by the screen's panels. */
+	FMargin CoveredInsets = FMargin(0.0f);
+	/** 3D pointer: a left press becomes a click on release unless it turns into a drag; left or middle drag pans. */
+	FVector2f PressLocal = FVector2f(0.0f, 0.0f);
+	FVector2f LastDragLocal = FVector2f(0.0f, 0.0f);
+	bool bPanButtonDown = false;
+	bool bClickPending = false;
+	bool bDragging = false;
 
 	FIronHexHighlights Highlights;
 	IronSim::FHex HoveredHex = {-1, -1};

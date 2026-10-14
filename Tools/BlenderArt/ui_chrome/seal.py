@@ -19,10 +19,10 @@ from PIL import Image, ImageDraw, ImageFont
 
 import kit
 from ironart import ui_chrome_sdf as S
-from ironart.ui_chrome_maps import Maps, L
+from ironart.ui_chrome_maps import Maps
 
 NAME = "Seal"
-SPEC = dict(size=(128, 128), ss=4, spp=48, seed=61)
+SPEC = dict(shader_alpha=True, size=(128, 128), ss=4, spp=32, seed=61)
 W = H = 128
 SIDE = 104.0
 ROT = 3.0
@@ -34,7 +34,7 @@ def font_path(name):
     return os.path.join(FONTS, name)
 
 
-def glyph_mask(ch, w, h, ss, weight=0.27, soften=0.85):
+def glyph_mask(ch, w, h, ss, weight=0.235, soften=0.85):
     """A glyph stretched to fill a w x h cell (target px) at ss samples/px, seal-styled."""
     big = 512
     f = ImageFont.truetype(font_path("Brush.ttf"), big)
@@ -104,7 +104,7 @@ def build(G, variant=None, side=SIDE, rot=ROT, seed=61, cx=W / 2, cy=H / 2):
     speck = (S.value_noise(G.shape, 0.55 * ss, seed + 9) > 0.9).astype(np.float32)
     speck = S.blur(speck, 0.25 * ss) * kit.smoothstep(0.45, 0.65, press)
     cover = field * (1 - carve) * np.clip(1 - 0.6 * voids - 0.8 * speck, 0, 1)
-    cover = np.clip(cover * (0.82 + 0.18 * kit.smoothstep(0.25, 0.6, press)), 0, 1)
+    cover = np.clip(cover * (0.9 + 0.1 * kit.smoothstep(0.25, 0.6, press)), 0, 1)
 
     m = Maps(G.shape, base="#B0281C", alpha=0.0)
     # paste colour: thicker paste (strong pressure) is deeper red

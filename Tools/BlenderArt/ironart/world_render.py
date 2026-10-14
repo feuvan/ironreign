@@ -70,7 +70,7 @@ def sky_world(strength=0.9, sun_dir=None):
     sky.air_density = 1.0
     sky.dust_density = 2.0
     sky.ozone_density = 1.0
-    bg.inputs["Strength"].default_value = strength * 0.08
+    bg.inputs["Strength"].default_value = strength * 0.11
     nt.links.new(sky.outputs[0], bg.inputs["Color"])
     nt.links.new(bg.outputs[0], out.inputs["Surface"])
     return w

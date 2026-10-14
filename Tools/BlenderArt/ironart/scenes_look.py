@@ -30,12 +30,13 @@ import numpy as np
 #: the family recipe (master = @2x size; 1x = Lanczos downsample)
 RECIPE = dict(
     view="Filmic", look="Medium Contrast",
-    spp=128, preview_spp=20, adaptive_threshold=0.012,
-    light_paths=dict(max_bounces=6, diffuse_bounces=3, glossy_bounces=2, transmission_bounces=6,
-                     volume_bounces=1, transparent_max_bounces=32),
+    spp=32, preview_spp=12, adaptive_threshold=0.02,
+    light_paths=dict(max_bounces=4, diffuse_bounces=2, glossy_bounces=1, transmission_bounces=2,
+                     volume_bounces=0, transparent_max_bounces=24),
     clamp_direct=0.0, clamp_indirect=5.0, filter_width=1.5,
     # compositor brush pass (sizes in MASTER px; scaled with the render)
-    kuwahara=dict(size=2.0, sharpness=0.8, eccentricity=1.0, uniformity=4, amount=0.55),
+    kuwahara=dict(size=1.6, far_size=3.4, near_m=40.0, far_m=1500.0, sharpness=0.8,
+                  eccentricity=1.0, uniformity=4, amount=0.6),
     glow=dict(threshold=1.0, mix=-0.86, size=8),
     beams=dict(ray_length=0.18, strength=0.30, threshold=1.6),
     # numpy finish defaults (scene grades override)
@@ -53,12 +54,14 @@ ART_SOURCE = os.path.join(REPO, "ArtSource")
 # =============================================================================================
 # render settings
 # =============================================================================================
-def setup(w, h, ss=1, spp=None, preview=False, seed=0, **over):
-    """Cycles CPU + Filmic for a ``w`` x ``h`` master rendered at ``ss`` x.  Returns the recipe."""
+def setup(w, h, ss=1, spp=None, preview=False, seed=0, light_paths=None, **over):
+    """Cycles CPU + Filmic for a ``w`` x ``h`` master rendered at ``ss`` x.  Returns the recipe.
+    ``light_paths`` overrides individual bounce limits (interiors want more diffuse bounces)."""
     import bpy
     from . import scene
     r = dict(RECIPE)
     r.update(over)
+    r["light_paths"] = dict(RECIPE["light_paths"], **(light_paths or {}))
     samples = spp or (r["preview_spp"] if preview else r["spp"])
     sc = scene.setup_cycles(samples=samples, transparent=False, preset="portrait", view=r["view"],
                             look=r["look"], adaptive_threshold=r["adaptive_threshold"], seed=seed,
@@ -132,23 +135,27 @@ def screen_pos(cam, co):
 # =============================================================================================
 # compositor
 # =============================================================================================
-def compositor(r, beams_source=None, beams=None, glow=None, kuwahara=None, lens=0.0):
-    """Render Layers -> [sun beams] -> [fog glow] -> Kuwahara brush mix -> Composite.
-
-    ``beams_source`` = (x, y) normalised screen position of the sun / light source (None = no
-    beams).  All sizes in master px (scaled by ``r['ss']``).
-    """
+def compositor(r, beams_source=None, beams=None, glow=None, kuwahara=None, lens=0.0, source=None,
+               scene=None, depth=None):
+    """[Render Layers | ``source`` image node] -> [sun beams] -> [fog glow] -> Kuwahara brush
+    mix -> Composite.  ``beams_source`` = (x, y) normalised screen position of the sun / light
+    (None = no beams).  All sizes in master px (scaled by ``r['ss']``)."""
     import bpy
-    sc = bpy.context.scene
+    sc = scene or bpy.context.scene
     sc.use_nodes = True
     sc.render.use_compositing = True
     nt = sc.node_tree
     nt.nodes.clear()
     L = nt.links
-    rl = nt.nodes.new("CompositorNodeRLayers")
+    if source is None:
+        rl = nt.nodes.new("CompositorNodeRLayers")
+        cur = rl.outputs["Image"]
+    else:
+        im = nt.nodes.new("CompositorNodeImage")
+        im.image = source
+        cur = im.outputs["Image"]
     comp = nt.nodes.new("CompositorNodeComposite")
     comp.use_alpha = False
-    cur = rl.outputs["Image"]
     ss = r["ss"]
     b = dict(RECIPE["beams"])
     b.update(beams or {})
@@ -190,18 +197,39 @@ def compositor(r, beams_source=None, beams=None, glow=None, kuwahara=None, lens=
     k = dict(RECIPE["kuwahara"])
     k.update(kuwahara or {})
     if k.get("amount", 0) > 0 and k.get("size", 0) > 0:
-        kn = nt.nodes.new("CompositorNodeKuwahara")
-        kn.variation = "ANISOTROPIC"
-        kn.size = max(1, int(round(k["size"] * ss * (0.5 if r.get("preview_half") else 1.0))))
-        kn.uniformity = int(k["uniformity"])
-        kn.sharpness = k["sharpness"]
-        kn.eccentricity = k["eccentricity"]
-        L.new(cur, kn.inputs[0])
+        def kuwa(size):
+            kn = nt.nodes.new("CompositorNodeKuwahara")
+            kn.variation = "ANISOTROPIC"
+            kn.size = max(1, int(round(size * ss * r.get("brush_scale", 1.0))))
+            kn.uniformity = int(k["uniformity"])
+            kn.sharpness = k["sharpness"]
+            kn.eccentricity = k["eccentricity"]
+            L.new(cur, kn.inputs[0])
+            return kn.outputs[0]
+        painted = kuwa(k["size"])
+        if depth is not None and k.get("far_size"):
+            # painters simplify the distance: bigger strokes with depth
+            far = kuwa(k["far_size"])
+            dn = nt.nodes.new("CompositorNodeImage")
+            dn.image = depth
+            mr = nt.nodes.new("CompositorNodeMapRange")
+            mr.use_clamp = True
+            L.new(dn.outputs["Image"], mr.inputs["Value"])
+            mr.inputs["From Min"].default_value = k.get("near_m", 30.0)
+            mr.inputs["From Max"].default_value = k.get("far_m", 1500.0)
+            mr.inputs["To Min"].default_value = 0.0
+            mr.inputs["To Max"].default_value = 1.0
+            md = nt.nodes.new("CompositorNodeMixRGB")
+            md.blend_type = "MIX"
+            L.new(mr.outputs[0], md.inputs[0])
+            L.new(painted, md.inputs[1])
+            L.new(far, md.inputs[2])
+            painted = md.outputs[0]
         mx = nt.nodes.new("CompositorNodeMixRGB")
         mx.blend_type = "MIX"
         mx.inputs[0].default_value = k["amount"]
         L.new(cur, mx.inputs[1])
-        L.new(kn.outputs[0], mx.inputs[2])
+        L.new(painted, mx.inputs[2])
         cur = mx.outputs[0]
     if lens:
         ld = nt.nodes.new("CompositorNodeLensdist")
@@ -211,6 +239,81 @@ def compositor(r, beams_source=None, beams=None, glow=None, kuwahara=None, lens=
         cur = ld.outputs[0]
     L.new(cur, comp.inputs["Image"])
     return nt
+
+
+def passes_compositor(out_dir):
+    """Stage 1 compositor: write the raw beauty and the denoising guides as float EXRs
+    (``beauty0001.exr``, ``albedo0001.exr``, ``normal0001.exr``, ``depth0001.exr``)."""
+    import bpy
+    sc = bpy.context.scene
+    vl = sc.view_layers[0]
+    vl.cycles.denoising_store_passes = True
+    vl.use_pass_z = True
+    sc.use_nodes = True
+    sc.render.use_compositing = True
+    nt = sc.node_tree
+    nt.nodes.clear()
+    rl = nt.nodes.new("CompositorNodeRLayers")
+    comp = nt.nodes.new("CompositorNodeComposite")
+    nt.links.new(rl.outputs["Image"], comp.inputs["Image"])
+    fo = nt.nodes.new("CompositorNodeOutputFile")
+    fo.base_path = out_dir
+    fo.format.file_format = "OPEN_EXR"
+    fo.format.color_depth = "32"
+    fo.format.exr_codec = "ZIP"
+    fo.file_slots.clear()
+    for name, sock in (("beauty", "Image"), ("albedo", "Denoising Albedo"),
+                       ("normal", "Denoising Normal"), ("depth", "Depth")):
+        fo.file_slots.new(name)
+        nt.links.new(rl.outputs[sock], fo.inputs[name])
+    return fo
+
+
+def post_render(exr_path, out_png, r, depth_path=None, **comp_kw):
+    """Stage 3: run the painterly compositor on the denoised linear EXR in a throw-away scene
+    (1 spp, no objects) and write the Filmic display-referred 16-bit PNG."""
+    import bpy
+    main = bpy.context.scene
+    ps = bpy.data.scenes.new("IR_Post")
+    ps.render.engine = "CYCLES"
+    ps.cycles.device = "CPU"
+    ps.cycles.samples = 1
+    ps.cycles.use_denoising = False
+    ps.cycles.use_adaptive_sampling = False
+    ps.render.resolution_x = main.render.resolution_x
+    ps.render.resolution_y = main.render.resolution_y
+    ps.render.resolution_percentage = 100
+    ps.display_settings.display_device = "sRGB"
+    ps.view_settings.view_transform = main.view_settings.view_transform
+    ps.view_settings.look = main.view_settings.look
+    ps.view_settings.exposure = main.view_settings.exposure
+    ps.render.image_settings.file_format = "PNG"
+    ps.render.image_settings.color_mode = "RGB"
+    ps.render.image_settings.color_depth = "16"
+    ps.render.dither_intensity = 0.0
+    ps.render.threads_mode = main.render.threads_mode
+    cd = bpy.data.cameras.new("IR_PostCam")
+    co = bpy.data.objects.new("IR_PostCam", cd)
+    ps.collection.objects.link(co)
+    ps.camera = co
+    img = bpy.data.images.load(exr_path, check_existing=False)
+    for cs in ("Linear Rec.709", "Linear"):
+        try:
+            img.colorspace_settings.name = cs
+            break
+        except TypeError:
+            continue
+    dimg = None
+    if depth_path:
+        dimg = bpy.data.images.load(depth_path, check_existing=False)
+        dimg.colorspace_settings.name = "Non-Color"
+    compositor(r, source=img, scene=ps, depth=dimg, **comp_kw)
+    ps.render.filepath = out_png
+    t0 = time.time()
+    bpy.ops.render.render(write_still=True, scene=ps.name)
+    secs = time.time() - t0
+    bpy.data.scenes.remove(ps)
+    return secs
 
 
 # =============================================================================================
@@ -434,3 +537,146 @@ class Timer:
         self.t[name] = round(now - self._t0, 1)
         self._t0 = now
         return self.t[name]
+
+
+# =============================================================================================
+# denoising (Cycles here has no OpenImageDenoise): edge-avoiding a-trous wavelet filter
+# =============================================================================================
+def load_exr(path):
+    """Linear float RGBA (H x W x 4, top row first) of an EXR via Blender's image loader."""
+    import bpy
+    img = bpy.data.images.load(path, check_existing=False)
+    img.colorspace_settings.name = "Non-Color"
+    w, h = img.size
+    a = np.empty(w * h * 4, np.float32)
+    img.pixels.foreach_get(a)
+    bpy.data.images.remove(img)
+    return np.ascontiguousarray(a.reshape(h, w, 4)[::-1])
+
+
+def save_exr(rgb, path):
+    """Save linear float RGB as a 32-bit EXR through Blender (for the post compositor)."""
+    import bpy
+    h, w = rgb.shape[:2]
+    img = bpy.data.images.new("IR_Denoised", w, h, alpha=True, float_buffer=True)
+    img.colorspace_settings.name = "Non-Color"
+    a = np.ones((h, w, 4), np.float32)
+    a[..., :3] = rgb
+    img.pixels.foreach_set(np.ascontiguousarray(a[::-1]).reshape(-1))
+    img.filepath_raw = path
+    img.file_format = "OPEN_EXR"
+    sc = bpy.context.scene
+    old = (sc.render.image_settings.file_format, sc.render.image_settings.color_depth)
+    img.save()
+    bpy.data.images.remove(img)
+    return path
+
+
+def _shift(a, dy, dx):
+    """Shift with edge clamping (no wrap)."""
+    h, w = a.shape[:2]
+    ys = np.clip(np.arange(h) + dy, 0, h - 1)
+    xs = np.clip(np.arange(w) + dx, 0, w - 1)
+    return a[ys][:, xs]
+
+
+def despeckle(img, k=2.2, floor=0.04, iters=2):
+    """Firefly suppression: a pixel brighter than ``k`` x the mean of its 8 neighbours (+ floor)
+    is replaced by that mean (isolated speckles from glossy / small-emitter paths)."""
+    out = img.copy()
+    for _ in range(iters):
+        acc = np.zeros_like(out)
+        for dy in (-1, 0, 1):
+            for dx in (-1, 0, 1):
+                if dx or dy:
+                    acc += _shift(out, dy, dx)
+        mean = acc / 8.0
+        Lc = luma(out)
+        Lm = luma(mean)
+        bad = Lc > (Lm * k + floor)
+        out = np.where(bad, mean, out)
+    return out
+
+
+def denoise(color, albedo, normal, depth, passes=5, sigma_c=0.55, sigma_n=0.35, sigma_z=0.04,
+            strength=1.0, speckle=2.2, sigma_a=0.035):
+    """Edge-avoiding a-trous wavelet filter (Dammertz et al. 2010) on the albedo-demodulated
+    radiance, guided by normals and relative depth.  ``strength`` < 1 blends the original back
+    (keeps a little grain for the painterly finish).  All inputs H x W x C float32 (linear)."""
+    eps = 1e-4
+    if speckle:
+        color = np.concatenate([despeckle(color[..., :3], speckle), color[..., 3:]], -1) \
+            if color.shape[-1] > 3 else despeckle(color, speckle)
+    A = np.clip(albedo[..., :3], 0.0, None)
+    a_l = luma(A)
+    # demodulate only bright, diffuse-looking albedo (dark glossy floors would explode)
+    useA = np.clip((a_l - 0.1) / 0.1, 0.0, 1.0).astype(np.float32)
+    Ad = A * useA + (1.0 - useA)
+    I = color[..., :3] / np.maximum(Ad, 0.05)
+    N = normal[..., :3]
+    Z = depth[..., :1] if depth.ndim == 3 else depth[..., None]
+    Z = np.where(np.isfinite(Z), Z, 1e6).astype(np.float32)
+    lz = np.log(np.maximum(Z, 1e-3))
+    Asq = np.sqrt(A).astype(np.float32)            # perceptual-ish albedo for edge stopping
+    k1 = np.array([1 / 16, 1 / 4, 3 / 8, 1 / 4, 1 / 16], np.float32)
+    out = I.copy()
+    # variance guidance: where the local relative noise is high, the colour edge-stopping
+    # loosens (noisy flat areas blend, clean edges stay)
+    L0 = luma(I)
+    m1 = box_blur(L0, 2)
+    m2 = box_blur(L0 * L0, 2)
+    rel = np.sqrt(np.clip(m2 - m1 * m1, 0, None)) / (m1 + 1e-3)
+    sc = np.clip(sigma_c * (1.0 + 1.5 * rel), sigma_c, 2.0).astype(np.float32)
+    for it in range(passes):
+        step = 1 << it
+        acc = np.zeros_like(out)
+        wsum = np.zeros(out.shape[:2] + (1,), np.float32)
+        Lp = luma(out)
+        for j, ky in enumerate(k1):
+            for i, kx in enumerate(k1):
+                dy, dx = (j - 2) * step, (i - 2) * step
+                q = _shift(out, dy, dx)
+                Lq = luma(q)
+                dc = (Lp - Lq) / (Lp + Lq + eps)
+                w = np.exp(-(dc * dc) / (sc * sc))
+                if dy or dx:
+                    nq = _shift(N, dy, dx)
+                    dn = ((N - nq) ** 2).sum(-1, keepdims=True)
+                    w *= np.exp(-dn / (sigma_n * sigma_n))
+                    zq = _shift(lz, dy, dx)
+                    dzz = lz - zq
+                    w *= np.exp(-(dzz * dzz) / (sigma_z * sigma_z * step))
+                    aq = _shift(Asq, dy, dx)
+                    da = ((Asq - aq) ** 2).sum(-1, keepdims=True)
+                    w *= np.exp(-da / (sigma_a * sigma_a))
+                w *= kx * ky
+                acc += q * w
+                wsum += w
+        out = acc / np.maximum(wsum, 1e-8)
+        sc = sc * 0.6
+    res = out * Ad
+    if strength < 1.0:
+        res = color[..., :3] * (1.0 - strength) + res * strength
+    return res.astype(np.float32)
+
+
+# =============================================================================================
+# QA
+# =============================================================================================
+def qa(rgb, name=""):
+    """Measured values of a finished 1x image (float RGB 0..1): mean luma, clipped / crushed
+    fractions, NaN check, and detail energy (mean |Laplacian| of luma, 8-bit) per column third -
+    used to verify the calm UI zones (Title: left 40 %, Duel: centre)."""
+    Y = (rgb[..., :3] * np.array([0.2126, 0.7152, 0.0722], np.float32)).sum(-1) * 255.0
+    lap = np.abs(4 * Y[1:-1, 1:-1] - Y[:-2, 1:-1] - Y[2:, 1:-1] - Y[1:-1, :-2] - Y[1:-1, 2:])
+    w = lap.shape[1]
+    out = dict(mean_luma=round(float(Y.mean()), 1), p02=round(float(np.percentile(Y, 2)), 1),
+               p98=round(float(np.percentile(Y, 98)), 1),
+               clipped_pct=round(float((Y >= 254.5).mean() * 100), 2),
+               crushed_pct=round(float((Y <= 1.5).mean() * 100), 2),
+               nan=bool(np.isnan(rgb).any()))
+    out["detail_left40"] = round(float(lap[:, :int(w * 0.4)].mean()), 2)
+    out["detail_right60"] = round(float(lap[:, int(w * 0.4):].mean()), 2)
+    out["detail_centre30"] = round(float(lap[:, int(w * 0.35):int(w * 0.65)].mean()), 2)
+    out["detail_sides"] = round(float(np.concatenate([lap[:, :int(w * 0.3)], lap[:, int(w * 0.7):]], 1).mean()), 2)
+    return out

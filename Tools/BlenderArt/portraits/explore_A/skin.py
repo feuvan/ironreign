@@ -161,7 +161,7 @@ def eye_materials(eye_png, iris_dark=0.5, name="Eye"):
     iris = nb.maprange(hsv.outputs[1], 0.3, 0.55)
     # dark brown iris; sclera toned down to a warm ivory (never paper white)
     ir = nb.hsv(tex, h=0.53, s=0.85, v=iris_dark)
-    scl = nb.mix(nb.hsv(tex, h=0.5, s=0.6, v=0.78), (0.78, 0.72, 0.66), 0.3)
+    scl = nb.mix(nb.hsv(tex, h=0.5, s=0.5, v=0.95), (0.86, 0.81, 0.75), 0.4)
     col = nb.mix(scl, ir, iris)
     p = nb.principled(Base_Color=col, Roughness=0.35, Specular_IOR_Level=0.3)
     nb.output(p.outputs[0])
@@ -172,7 +172,7 @@ def eye_materials(eye_png, iris_dark=0.5, name="Eye"):
     gl.inputs["Roughness"].default_value = 0.015
     fr = nb2.node("ShaderNodeLayerWeight")
     fr.inputs["Blend"].default_value = 0.12
-    fac = nb2.math("ADD", fr.outputs["Fresnel"], 0.06, clamp=True)
+    fac = nb2.math("ADD", fr.outputs["Fresnel"], 0.03, clamp=True)
     mx = nb2.node("ShaderNodeMixShader")
     nb2.link(fac, mx.inputs[0])
     nb2.link(tr.outputs[0], mx.inputs[1])
@@ -182,7 +182,7 @@ def eye_materials(eye_png, iris_dark=0.5, name="Eye"):
     return m, c
 
 
-def skin_material_tex(idn, A_img, R_img, H_img, name="Skin", sss="BURLEY", bump=1.0):
+def skin_material_tex(idn, A_img, R_img, H_img, name="Skin", sss="BURLEY", bump=None):
     """Texture-driven skin (maps from :mod:`skinmaps`): cheap to render, rich in detail."""
     m = bpy.data.materials.new(name)
     nb = NB(m)
@@ -190,7 +190,9 @@ def skin_material_tex(idn, A_img, R_img, H_img, name="Skin", sss="BURLEY", bump=
     alb = nb.image(A_img, uv)[0]
     rough = nb.image(R_img, uv)[0]
     hgt = nb.image(H_img, uv, interp="Cubic")[0]
-    nrm = nb.bump(hgt, strength=bump, distance=0.0009)
+    if bump is None:
+        bump = 1.0 + 0.8 * max(0.0, min(1.0, (idn.age - 35.0) / 35.0))
+    nrm = nb.bump(hgt, strength=min(1.0, bump), distance=0.0009 * max(1.0, bump))
     p = nb.principled(Base_Color=alb, Roughness=rough, Subsurface_Weight=1.0,
                       Subsurface_Radius=(1.0, 0.40, 0.20), Subsurface_Scale=0.0045,
                       Specular_IOR_Level=0.5, Normal=nrm,

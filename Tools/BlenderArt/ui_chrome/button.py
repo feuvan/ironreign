@@ -23,10 +23,12 @@ from ironart import ui_chrome_sdf as S
 from ironart.ui_chrome_maps import Maps, L
 
 NAME = "Button"
-SPEC = dict(size=(192, 64), ss=4, spp=64, margins=(20, 16, 20, 16), seed=21)
+SPEC = dict(size=(192, 64), ss=4, spp=48, margins=(20, 16, 20, 16), seed=21)
 W, H = 192, 64
 MX, MY = 20, 16
 VARIANTS = ("normal", "hover", "pressed", "disabled")
+# (lacquer albedos go through kit.coat_cal: measured (126, 37, 30) for Lacquer (126, 31, 23)
+#  on the centre row before that correction)
 FILE = {"normal": "Button", "hover": "Button_Hover", "pressed": "Button_Pressed",
         "disabled": "Button_Disabled"}
 
@@ -34,14 +36,14 @@ FILE = {"normal": "Button", "hover": "Button_Hover", "pressed": "Button_Pressed"
 LOOK = {
     "normal": dict(field="#7E1F17", field_k=1.0, glow=0.0, gold="gold", gold_rough=0.24,
                    sink=0.0, lip="#2A0B07", groove="#3A0E09", rough=0.42, coat=1.0, sat=1.0),
-    "hover": dict(field="#93281C", field_k=1.0, glow=1.0, gold="gold", gold_rough=0.17,
+    "hover": dict(field="#8A2218", field_k=1.0, glow=1.0, gold="gold", gold_rough=0.17,
                   gold_base="#FFD98C", sink=0.0, lip="#341009", groove="#47120B", rough=0.38,
                   coat=1.0, sat=1.0),
     "pressed": dict(field="#4A120D", field_k=1.0, glow=0.0, gold="gold_satin", gold_rough=0.34,
                     gold_base="#D9AE62", sink=0.75, lip="#1E0805", groove="#2A0906", rough=0.46,
                     coat=1.0, sat=1.0),
-    "disabled": dict(field="#594A42", field_k=1.0, glow=0.0, gold="bronze_dull", gold_rough=0.6,
-                     sink=0.0, lip="#2B2420", groove="#3A302A", rough=0.75, coat=0.12, sat=0.0),
+    "disabled": dict(field="#5E4A3F", field_k=1.0, glow=0.0, gold="bronze_dull", gold_rough=0.6,
+                     sink=0.0, lip="#2B2420", groove="#3A302A", rough=0.75, coat=0.12, sat=0.45),
 }
 
 
@@ -78,7 +80,8 @@ def build(G, variant="normal"):
     z = z + dome * field
 
     def lac(col, k=1.0):
-        return dict(base=L(col, k), metal=0.0, rough=lk["rough"], coat=lk["coat"], spec=0.06)
+        base = kit.coat_cal(L(col, k), lk["coat"])
+        return dict(base=base, metal=0.0, rough=lk["rough"], coat=lk["coat"], spec=0.06)
 
     m.paint(lip, lac(lk["lip"]))
     gl = dict(kit_gold(lk))
@@ -110,11 +113,11 @@ def build(G, variant="normal"):
     if lk["glow"] > 0:
         # warm inner glow: strongest in the plaque, fading to nothing under the gold frame
         gw = kit.smoothstep(6.0, 20.0, d) * lk["glow"]
-        m.emit = m.emit + (np.array([0.075, 0.020, 0.006], np.float32) * gw[..., None])
+        m.emit = m.emit + (np.array([0.046, 0.010, 0.004], np.float32) * gw[..., None])
     if lk["sat"] < 1.0:
         lum = (m.base * np.array([0.2126, 0.7152, 0.0722], np.float32)).sum(-1, keepdims=True)
         m.base = lum + (m.base - lum) * lk["sat"]
-        m.base = m.base * np.array([1.04, 1.0, 0.95], np.float32)
+        m.base = m.base * np.array([1.05, 1.0, 0.92], np.float32)
     m.height = z.astype(np.float32)
     m.alpha = S.aa_mask(-d, G)
     return m

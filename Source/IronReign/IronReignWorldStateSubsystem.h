@@ -9,7 +9,8 @@ class FIronSession;
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnWorldDayAdvanced, int32, NewDay);
 
 /**
- * Owns the FIronSession (and through it the IronSim::FGame campaign) for game and PIE worlds.
+ * Owns the FIronSession (and through it the IronSim::FGame campaign) for game and PIE worlds, and registers this world
+ * as the session's presentation world (where the 3D strategy map and battle board are spawned).
  * Created before any actor's BeginPlay, so AIronReignPlayerController can hand the session to the UI.
  */
 UCLASS()

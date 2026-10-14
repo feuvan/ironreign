@@ -11,7 +11,7 @@ Layers (back to front):
     seal         the 铁血 baiwen impression of Seal.png, smaller, under the last character
     shadow       the gold letters float 14 mm above a shadow catcher, so their soft shadow is part
                  of the logo (legible over light mist and dark backgrounds alike)
-    letters      Blender text, extrude 3 mm + 3.6 mm round bevel, antique gold (polished
+    letters      Blender text, extrude 4 mm + 4.4 mm round bevel, antique gold (polished
                  faces, satin bevels, faint wear), lit by a large softbox above the left letters
                  (a highlight sweep across the word), a warm rim from the right and the family
                  studio environment in every bevel
@@ -26,16 +26,16 @@ from PIL import Image, ImageDraw, ImageFont
 import kit
 import seal
 from ironart import ui_chrome_sdf as S
-from ironart.ui_chrome_maps import Maps, L
+from ironart.ui_chrome_maps import Maps
 
 NAME = "Title_Logo"
-SPEC = dict(size=(1200, 400), ss=4, spp=64, seed=81, view="Filmic", look="Medium High Contrast",
+SPEC = dict(shader_alpha=True, size=(1200, 400), ss=3, spp=24, seed=81, view="Standard", look="None",
             mesh_step=2)
 W, H = 1200, 400
 TEXT = "IRON REIGN"
 TEXT_W = 1000.0            # target width of the gold word (px)
 TEXT_CY = 212.0            # its vertical centre (px)
-LIFT = 14.0
+LIFT = 10.0
 #: calligraphy layout: (char, cx, cy, height px, rotation deg, shear)
 CALLI = [("铁", 188.0, 186.0, 300.0, -6.0, 0.10), ("血", 460.0, 210.0, 255.0, 3.0, 0.06),
          ("王", 738.0, 186.0, 240.0, -3.0, 0.10), ("座", 1010.0, 200.0, 290.0, 5.0, 0.08)]
@@ -136,7 +136,7 @@ def build(G, variant=None):
     tone = 0.85 + 0.3 * kit.smoothstep(0.3, 0.9, inner)     # wet strokes are blacker
     m.paint(np.ones(G.shape, np.float32), "ink")
     m.tint(np.ones(G.shape, np.float32), 1.6 - 0.6 * tone)
-    m.paint(cover, rough=0.32 + 0.25 * (1 - inner))
+    m.paint(cover, rough=0.45 + 0.25 * (1 - inner), spec=0.18)
     z = 0.08 * cover * inner
 
     # ---- gold-leaf flakes ---------------------------------------------------------------------
@@ -229,11 +229,11 @@ def _gold_material():
     p.inputs["Metallic"].default_value = 1.0
     # fine wear (micro scratches) as a bump
     sc = N.new("ShaderNodeTexNoise")
-    sc.inputs["Scale"].default_value = 900.0
+    sc.inputs["Scale"].default_value = 520.0
     sc.inputs["Detail"].default_value = 2.0
     Lk.new(tc.outputs["Object"], sc.inputs["Vector"])
     bp = N.new("ShaderNodeBump")
-    bp.inputs["Strength"].default_value = 0.08
+    bp.inputs["Strength"].default_value = 0.03
     Lk.new(sc.outputs["Fac"], bp.inputs["Height"])
     Lk.new(bp.outputs[0], p.inputs["Normal"])
     return mat
@@ -241,7 +241,6 @@ def _gold_material():
 
 def extras(variant, G):
     import bpy
-    from mathutils import Vector
     from ironart.ui_chrome_render import MM
     cu = bpy.data.curves.new("Word", "FONT")
     cu.font = bpy.data.fonts.load(font("Heading.ttf"))
@@ -257,17 +256,19 @@ def extras(variant, G):
     dims = ob.dimensions
     k = TEXT_W * MM / max(dims.x, 1e-6)
     cu.size = k
-    cu.extrude = 3.0 * MM
-    cu.bevel_depth = 3.6 * MM
-    cu.bevel_resolution = 4
-    cu.offset = -2.0 * MM
+    cu.extrude = 4.0 * MM
+    cu.bevel_depth = 4.4 * MM
+    cu.bevel_resolution = 5
+    cu.offset = -2.5 * MM
     ob.location = (0.0, (H / 2 - TEXT_CY) * MM, (LIFT + 4.0) * MM)
     ob.data.materials.append(_gold_material())
     bpy.context.view_layer.update()
-    # shadow catcher under the word
+    # shadow catcher under the word only (its shadow falls within ~30 px): a band, so the empty
+    # rest of the canvas costs nothing
     me = bpy.data.meshes.new("Catcher")
-    hw, hh = W / 2 * MM, H / 2 * MM
-    me.from_pydata([(-hw, -hh, 0.0), (hw, -hh, 0.0), (hw, hh, 0.0), (-hw, hh, 0.0)], [],
+    hw = (TEXT_W / 2 + 40) * MM
+    y0, y1 = (H / 2 - TEXT_CY - 105) * MM, (H / 2 - TEXT_CY + 95) * MM
+    me.from_pydata([(-hw, y0, 0.0), (hw, y0, 0.0), (hw, y1, 0.0), (-hw, y1, 0.0)], [],
                    [(0, 1, 2, 3)])
     c = bpy.data.objects.new("Catcher", me)
     bpy.context.scene.collection.objects.link(c)
@@ -276,14 +277,20 @@ def extras(variant, G):
 
 
 def rig(variant):
-    """Family studio environment + logo drama: big softbox above the left letters (highlight
-    sweep), warm rim from the right, cool kicker from the lower left."""
+    """Family studio environment and sun (softened to 12 deg for a soft letter shadow) + logo
+    drama on the gold word only (light linking: the calligraphy, seal and shadow keep the
+    calibrated family light): a softbox above the left letters (highlight sweep across the
+    word), a warm rim from the right, a cool kicker from the lower left."""
     import bpy
     from mathutils import Vector
     from ironart import palette
     from ironart import ui_chrome_render as R
     from ironart.ui_chrome_render import MM
-    R.rig_chrome(ambient=0.12, top=0.6, box=3.0, arc=1.9, ring=0.6)
+    R.rig_chrome(ambient=0.14, key_soft=12.0, top=0.7, box=2.6, arc=1.7, ring=0.55)
+    word = bpy.data.objects.get("Word")
+    coll = bpy.data.collections.new("LogoWord")
+    if word is not None:
+        coll.objects.link(word)
 
     def area(name, loc, size, power, col, target=(0, 0, 0), size_y=None):
         ld = bpy.data.lights.new(name, "AREA")
@@ -297,7 +304,11 @@ def rig(variant):
         ob.location = Vector(loc) * MM
         d = Vector(target) * MM - ob.location
         ob.rotation_euler = d.to_track_quat("-Z", "Y").to_euler()
+        ob.light_linking.receiver_collection = coll
+        ob.light_linking.blocker_collection = coll
         return ob
-    area("Softbox", (-330.0, 110.0, 620.0), 520.0, 260.0, "#FFF1DC", (-330.0, 60.0, 0.0), 260.0)
-    area("Rim", (900.0, 60.0, 160.0), 140.0, 90.0, "#FFC98A", (200.0, 0.0, 20.0), 500.0)
-    area("Kick", (-800.0, -260.0, 220.0), 160.0, 30.0, "#BFD3FF", (-200.0, 0.0, 20.0), 400.0)
+    # powers are tiny on purpose: radiance ~ P / (pi * area) must stay ~1-3 so the reflections
+    # sweep across the gold instead of blowing it out
+    area("Softbox", (-330.0, 110.0, 620.0), 520.0, 0.75, "#FFF1DC", (-330.0, 60.0, 0.0), 260.0)
+    area("Rim", (900.0, 60.0, 160.0), 140.0, 0.9, "#FFC98A", (200.0, 0.0, 20.0), 500.0)
+    area("Kick", (-800.0, -260.0, 220.0), 160.0, 0.35, "#BFD3FF", (-200.0, 0.0, 20.0), 400.0)

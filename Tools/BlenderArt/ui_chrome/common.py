@@ -16,8 +16,6 @@ TOOLS = os.path.dirname(HERE)
 if TOOLS not in sys.path:
     sys.path.insert(0, TOOLS)
 
-import numpy as np  # noqa: E402
-
 from ironart import REPO_DIR, post  # noqa: E402
 from ironart import ui_chrome_sdf as S  # noqa: E402
 
@@ -35,9 +33,14 @@ def out_dir(*parts):
 
 
 def finish(raw, ss, lo=0.004, hi=0.996):
-    """Supersampled RGBA render -> (@1x, @2x) straight-alpha float images."""
+    """Supersampled RGBA render -> (@1x, @2x) straight-alpha float images (premultiplied
+    Lanczos; an odd ``ss`` resamples the @2x by ss/2)."""
     img = post.load(raw) if isinstance(raw, str) else raw
-    x2 = post.downsample(img, ss // 2) if ss > 2 else img
+    h, w = img.shape[:2]
+    if ss % 2 == 0:
+        x2 = post.downsample(img, ss // 2) if ss > 2 else img
+    else:
+        x2 = post.resize(img, (w * 2 // ss, h * 2 // ss))
     x1 = post.downsample(img, ss)
     out = []
     for im in (x1, x2):
@@ -62,20 +65,21 @@ def render_piece(mod, variant=None, preview=False, tag=None):
     t0 = time.time()
     scene.reset(seed=spec.get("seed", 1))
     R.setup(ss=ss, spp=spp, transparent=True, view=spec.get("view", "Standard"),
-            look=spec.get("look", "None"))
+            look=spec.get("look", "None"), adaptive=spec.get("adaptive", 0.01))
     G = S.Grid(w, h, ss)
     m = mod.build(G, variant)
     t_maps = time.time() - t0
     R.camera(w, h, ss)
-    rig = getattr(mod, "rig", None)
+    if m is not None:
+        R.plate(tag, m, w, h, step=spec.get("mesh_step", 1), cut=spec.get("cut", True),
+                shader_alpha=spec.get("shader_alpha", False))
+    if hasattr(mod, "extras"):
+        mod.extras(variant, G)
+    rig = getattr(mod, "rig", None)            # after extras: rigs may light-link to them
     if rig is not None:
         rig(variant)
     else:
         R.rig_chrome(**spec.get("rig", {}))
-    if m is not None:
-        R.plate(tag, m, w, h, step=spec.get("mesh_step", 1), cut=spec.get("cut", True))
-    if hasattr(mod, "extras"):
-        mod.extras(variant, G)
     raw = os.path.join(out_dir("raw"), "%s_raw_%dx.png" % (tag, ss))
     t1 = time.time()
     t_render = scene.render(raw)

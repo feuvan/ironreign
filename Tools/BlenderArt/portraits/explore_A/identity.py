@@ -99,8 +99,8 @@ EXPRESSIONS = {
     "neutral": {},
     "stern": {"eyebrows-left-down": 0.6, "eyebrows-right-down": 0.6, "eye-left-slit": 0.05,
               "eye-right-slit": 0.05, "mouth-compression": 0.35, "mouth-depression": 0.25},
-    "fierce": {"eyebrows-left-down": 0.8, "eyebrows-right-down": 0.8, "eye-left-opened-up": 0.15,
-               "eye-right-opened-up": 0.15, "mouth-compression": 0.4, "nose-compression": 0.25,
+    "fierce": {"eyebrows-left-down": 0.9, "eyebrows-right-down": 0.9, "eye-left-slit": 0.12,
+               "eye-right-slit": 0.12, "mouth-compression": 0.4, "nose-compression": 0.3,
                "mouth-depression": 0.2},
     "scheming": {"eyebrows-left-down": 0.25, "eyebrows-right-extern-up": 0.35, "eye-left-slit": 0.22,
                  "eye-right-slit": 0.12, "mouth-corner-puller": 0.22, "mouth-compression": 0.1},
@@ -230,9 +230,10 @@ def make_identity(seed, gender="m", age=35, archetype="warrior", variety=1.0, **
         for k, v in FEMALE_BIAS.items():
             face[k] = face.get(k, 0.0) + v
     # open, readable eyes (the MakeHuman asian lids are heavy at portrait scale)
+    eo = {"warrior": 1.0, "scholar": 0.8, "elder": 0.3, "monk": 0.5, "rogue": 0.8}.get(archetype, 0.8)
     for k, v in (("eyes/{s}-eye-height2-decr|incr", 0.55), ("eyes/{s}-eye-scale-decr|incr", 0.25),
                  ("eyes/{s}-eye-eyefold-down|up", 0.4), ("eyes/{s}-eye-bag-decr|incr", -0.35)):
-        face[k] = face.get(k, 0.0) + v
+        face[k] = face.get(k, 0.0) + v * (eo if v > 0 else 1.0)
     # age-driven shape
     old = max(0.0, (age - 40.0) / 35.0)
     face["head/head-age-decr|incr"] = min(1.0, max(-0.6, (age - 35.0) / 35.0))

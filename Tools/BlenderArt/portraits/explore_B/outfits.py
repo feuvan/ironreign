@@ -123,21 +123,21 @@ def warlord_armour(spec, b, surf, kd, rng, col):
     # 6. helmet
     hinfo = None
     if o.get("helmet", True):
-        hobjs, hinfo = C.helmet(bust, lm, dict(iron=M["iron_plain"], bronze=M["bronze"], gold=M["gold"],
+        hobjs, hinfo = C.helmet(bust, lm, dict(iron=M["iron_inlay"], guard=M["iron"], bronze=M["bronze"], gold=M["gold"],
                                                leather=M["leather"], lacing=M["lacing"]), col,
                                 clearance=0.014, rng=rng, guard_rows=3)
         objs += hobjs
     post = []
     if hinfo is not None and o.get("tassel", True):
         def tassel(surf2, rng2, col2, hinfo=hinfo):
-            root = hinfo["top"] + np.array([0, 0, 0.022], np.float32)
-            S = 2600
+            root = hinfo["top"] + np.array([0, 0, 0.03], np.float32)
+            S = 2200
             ang = rng2.random(S) * 6.283
             rr = 0.010 * np.sqrt(rng2.random(S))
             roots = root + np.stack([np.cos(ang) * rr, np.sin(ang) * rr, np.zeros(S)], 1).astype(np.float32)
             d = np.stack([np.cos(ang), np.sin(ang), np.full(S, 1.1)], 1).astype(np.float32)
-            L = 0.075 * (0.75 + 0.4 * rng2.random(S))
-            pts = HR.grow(roots, d, L, 14, gravity=1.0, stiff=0.55, rng=rng2, noise=0.02)
+            L = 0.10 * (0.75 + 0.4 * rng2.random(S))
+            pts = HR.grow(roots, d, L, 16, gravity=1.0, stiff=0.45, rng=rng2, noise=0.015)
             pts = HR.clump(pts, 60, 0.55, rng2)
             pts = HR.collide(surf2, pts, 0.004)
             tm = HR.hair_material("Tassel", melanin=0.05, redness=1.0, roughness=0.3,
@@ -148,7 +148,7 @@ def warlord_armour(spec, b, surf, kd, rng, col):
     if o.get("fur", True):
         def fur(surf2, rng2, col2):
             # fur mantle on the shoulders behind the neck
-            S = 9000
+            S = 6000
             th = np.radians(rng2.uniform(-150, 150, S))
             th = np.where(np.abs(th) < np.radians(55), np.sign(th) * np.radians(55) + th * 0.0, th)
             zz = nz - 0.035 + rng2.normal(size=S) * 0.012

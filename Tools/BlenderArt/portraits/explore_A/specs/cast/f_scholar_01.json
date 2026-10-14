@@ -1,0 +1,56 @@
+{
+ "id": "f_scholar_01",
+ "seed": 52492,
+ "gender": "f",
+ "age": 26,
+ "archetype": "scholar",
+ "expression": "serene",
+ "bg": "cool",
+ "notes": "Shangguan Qiu, the Autumn Scribe",
+ "hair": {
+  "style": "lady",
+  "grey": 0.0,
+  "recede": 0.1,
+  "count": 10000,
+  "bun": 0.03195034694062152,
+  "puff": 0.016
+ },
+ "skin": {
+  "weather": 0.2,
+  "scars": [],
+  "huadian": false
+ },
+ "camera": {
+  "yaw": -20.0,
+  "pitch": -3.0,
+  "head_frac": 0.42,
+  "eye_line": 0.39
+ },
+ "outfit": {
+  "kind": "lady",
+  "outer": [
+   0.02,
+   0.05,
+   0.16
+  ],
+  "mid": [
+   0.32,
+   0.03,
+   0.04
+  ],
+  "band": [
+   0.55,
+   0.42,
+   0.18
+  ],
+  "motif": "lattice",
+  "earrings": true,
+  "shawl": true
+ },
+ "headgear": {
+  "kind": "pins"
+ },
+ "identity": {
+  "makeup": 0.72
+ }
+}

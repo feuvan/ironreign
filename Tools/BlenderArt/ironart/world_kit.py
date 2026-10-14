@@ -137,11 +137,11 @@ def beam(mb, p0, p1, z0, h, t, mat, uv_norm=True):
     mb.face((ids[1], ids[2], ids[6], ids[5]), mat, [(0, 0), (t, 0), (t, h), (0, h)])
 
 
-def column(mb, x, y, z0, h, r, mat="W_Lacquer", seg=10, base_mat="W_Marble", base=True):
+def column(mb, x, y, z0, h, r, mat="W_Lacquer", seg=8, base_mat="W_Marble", base=True):
     if base:
-        mb.lathe([(r * 1.45, 0.0), (r * 1.45, 0.12), (r * 1.25, 0.24), (r * 1.05, 0.28)], base_mat,
+        mb.lathe([(r * 1.45, 0.0), (r * 1.4, 0.16), (r * 1.05, 0.28)], base_mat + "~d",
                  seg, center=(x, y, z0), smooth=True, cap_top=False)
-    mb.lathe([(r, 0.0), (r * 0.94, h)], mat, seg, center=(x, y, z0 + (0.26 if base else 0.0)),
+    mb.lathe([(r, 0.0), (r * 0.94, h)], mat + "~d", seg, center=(x, y, z0 + (0.26 if base else 0.0)),
              smooth=True)
 
 
@@ -162,6 +162,7 @@ def steps(mb, x, y, z0, width, rise, n, run=0.38, mat="W_Marble", rz=0.0, cheeks
     front edge at y (local).  ``rz`` rotates the flight about (x, y)."""
     s = mb.n
     hstep = rise / n
+    mat = mat + "~d"
     for i in range(n):
         d = run * (n - i)
         mb.box((0, d / 2.0, i * hstep), (width, d, hstep), mat, skip=("bottom",))
@@ -211,6 +212,8 @@ class RoofSpec:
         self.finial = None           # pyramid apex: 'gold' / 'tile'
         self.finial_mat = "W_Gold"
         self.ridge_ends = "chiwen"   # 'chiwen' | 'curl' (southern upturned) | 'plain'
+        self.barge = True            # barge ridges down gable rakes
+        self.nu_min = 8              # min surface columns per slope (2 for flat copings)
         for k, v in kw.items():
             if not hasattr(self, k):
                 raise AttributeError("RoofSpec has no %r" % k)
@@ -318,7 +321,7 @@ def roof(mb, center, w, d, H, spec=None, rz=0.0, **kw):
         for j in range(nvu):
             for i in range(nu):
                 q = [ids[j][i], ids[j][i + 1], ids[j + 1][i + 1], ids[j + 1][i]]
-                mb.face(q if flip else q[::-1], sp.under_mat, None, True)
+                mb.face(q if flip else q[::-1], sp.under_mat + "~d", None, True)
         return ids
 
     def fascia_strip(top_pts, bot_pts, flip):
@@ -340,8 +343,8 @@ def roof(mb, center, w, d, H, spec=None, rz=0.0, **kw):
             mb.face(q, sp.fascia_mat, uv, False)
 
     th = Vector((0, 0, sp.thick))
-    nu_f = max(8, min(28, int(2 * A / 1.2)))
-    nu_s = max(6, min(18, int(2 * B / 1.2)))
+    nu_f = max(sp.nu_min, min(28, int(2 * A / 1.2)))
+    nu_s = max(min(6, sp.nu_min), min(18, int(2 * B / 1.2)))
     # ---- front / back slopes ----
     v1f = vmax
     for side in (1, -1):
@@ -378,7 +381,7 @@ def roof(mb, center, w, d, H, spec=None, rz=0.0, **kw):
         """pt_fn(v) -> surface point; outward: horizontal unit vector pointing down-slope."""
         if v_end < 0.12:
             return
-        n = sp.tile_seg
+        n = max(2, int(round(sp.tile_seg * min(1.0, v_end / max(vmax, 1e-3)) * (0.6 + 0.4 * vmax))))
         vs = [v_end * (i / n) * 0.985 for i in range(n + 1)]
         P = [pt_fn(v) for v in vs]
         rings = []
@@ -398,11 +401,11 @@ def roof(mb, center, w, d, H, spec=None, rz=0.0, **kw):
         m = len(sec)
         for i in range(n):
             for j in range(m - 1):
-                mb.face((rings[i][j], rings[i][j + 1], rings[i + 1][j + 1], rings[i + 1][j]), sp.mat,
+                mb.face((rings[i][j], rings[i][j + 1], rings[i + 1][j + 1], rings[i + 1][j]), sp.mat + "~row",
                         None, True)
         # round tile end at the eave (faces down-slope)
         cap = rings[0][::-1]
-        mb.face(cap, sp.ridge_mat, None, False)
+        mb.face(cap, sp.ridge_mat + "~d", None, False)
 
     if sp.tiles and vmax > 0.2:
         p = sp.pitch
@@ -435,7 +438,8 @@ def roof(mb, center, w, d, H, spec=None, rz=0.0, **kw):
             sec_main = [(-rw / 2, -0.25 * rh), (-rw / 2, 0.7 * rh), (-rw * 0.3, rh), (rw * 0.3, rh),
                         (rw / 2, 0.7 * rh), (rw / 2, -0.25 * rh)]
             ext = xg + (sp.overhang * 0.15 if gable else rw * 0.3)
-            path = [(-ext + 2 * ext * i / 6, 0.0, H) for i in range(7)]
+            nr = 1 if not sp.barge else 3
+            path = [(-ext + 2 * ext * i / nr, 0.0, H) for i in range(nr + 1)]
             sweep(mb, path, sec_main, sp.ridge_mat, caps=True, smooth=False)
             for sx in (-1, 1):
                 if sp.ridge_ends == "chiwen":
@@ -449,11 +453,10 @@ def roof(mb, center, w, d, H, spec=None, rz=0.0, **kw):
         if sp.style == "pyramid" and sp.finial:
             _finial(mb, Vector((0, 0, H)), rh, sp.finial_mat)
     # hip ridges (from v_top down to the corner, with an upturned tip and beasts)
-    sec_hip = [(-rw * 0.36, -0.2 * rh), (-rw * 0.36, 0.45 * rh), (0.0, 0.62 * rh),
-               (rw * 0.36, 0.45 * rh), (rw * 0.36, -0.2 * rh)]
+    sec_hip = [(-rw * 0.36, -0.2 * rh), (-rw * 0.3, 0.5 * rh), (rw * 0.3, 0.5 * rh), (rw * 0.36, -0.2 * rh)]
     if not gable:
         v_top = min(vmax, vg)
-        nseg = 8
+        nseg = 5
         for sx in (-1, 1):
             for sy in (-1, 1):
                 pts = []
@@ -470,12 +473,12 @@ def roof(mb, center, w, d, H, spec=None, rz=0.0, **kw):
                 for b in range(min(sp.beasts, nseg - 2)):
                     q = pts[nseg - 1 - b]
                     mb.lathe([(rh * 0.18, 0), (rh * 0.2, rh * 0.25), (rh * 0.1, rh * 0.5), (0.0, rh * 0.62)],
-                             sp.ridge_mat, 5, center=(q.x, q.y, q.z + rh * 0.4), smooth=True)
+                             sp.ridge_mat + "~d", 5, center=(q.x, q.y, q.z + rh * 0.4), smooth=True)
     # gable (vertical) ridges and gable boards
     if sp.style == "hip_gable" and vmax >= 0.999:
         for sx in (-1, 1):
             for side in (1, -1):
-                pts = [front_pt(sx * xg, vg + (1 - vg) * (1 - j / 6), side) for j in range(7)]
+                pts = [front_pt(sx * xg, vg + (1 - vg) * (1 - j / 3), side) for j in range(4)]
                 pts = [p + Vector((sx * 0.02, 0, 0)) for p in pts]
                 sweep(mb, pts, sec_hip, sp.ridge_mat, caps=True, smooth=False)
             pts = []
@@ -488,11 +491,11 @@ def roof(mb, center, w, d, H, spec=None, rz=0.0, **kw):
             ids = [mb.v(p) for p in pts]
             uvs = [(p[1], p[2]) for p in pts]
             mb.face(ids[::-1] if sx > 0 else ids, sp.gable_mat, uvs[::-1] if sx > 0 else uvs)
-    if gable and vmax >= 0.999:
+    if gable and vmax >= 0.999 and sp.barge:
         # barge ridges down both rakes
         for sx in (-1, 1):
             for side in (1, -1):
-                pts = [front_pt(sx * (A - 0.05), 1.0 - j / 6, side) for j in range(7)]
+                pts = [front_pt(sx * (A - 0.05), 1.0 - j / 3, side) for j in range(4)]
                 sweep(mb, pts, [(-rw * 0.3, -0.15 * rh), (-rw * 0.3, 0.38 * rh), (rw * 0.3, 0.38 * rh),
                                 (rw * 0.3, -0.15 * rh)], sp.ridge_mat, caps=True, smooth=False)
     mb.transform(s0, T(center[0], center[1], center[2], rz + (math.pi / 2 if swap else 0.0)))
@@ -504,8 +507,7 @@ def _chiwen(mb, base, sx, rh, mat):
     pts = [base + Vector((sx * -0.1 * rh, 0, 0.3 * rh)), base + Vector((sx * 0.25 * rh, 0, 1.2 * rh)),
            base + Vector((sx * 0.2 * rh, 0, 2.0 * rh)), base + Vector((sx * -0.25 * rh, 0, 2.35 * rh)),
            base + Vector((sx * -0.6 * rh, 0, 2.05 * rh)), base + Vector((sx * -0.55 * rh, 0, 1.65 * rh))]
-    sec = [(-0.22 * rh, -0.42 * rh), (-0.24 * rh, 0.0), (-0.16 * rh, 0.36 * rh), (0.16 * rh, 0.36 * rh),
-           (0.24 * rh, 0.0), (0.22 * rh, -0.42 * rh)]
+    sec = [(-0.22 * rh, -0.42 * rh), (-0.2 * rh, 0.3 * rh), (0.2 * rh, 0.3 * rh), (0.22 * rh, -0.42 * rh)]
     sweep(mb, pts, sec, mat, caps=True, smooth=True, up=(sx, 0, 0.0001),
           scale_fn=lambda t: 1.15 - 0.75 * t)
     # body block
@@ -559,7 +561,7 @@ def ngon_roof(mb, center, R, H, n=8, v_max=1.0, curve=1.6, lift=0.5, flare=0.3, 
         bot = [[mb.v(pt(k, i / nu, v_max * j / 2) - th) for i in range(nu + 1)] for j in range(3)]
         for j in range(2):
             for i in range(nu):
-                mb.face((bot[j][i], bot[j + 1][i], bot[j + 1][i + 1], bot[j][i + 1]), under_mat, None, True)
+                mb.face((bot[j][i], bot[j + 1][i], bot[j + 1][i + 1], bot[j][i + 1]), under_mat + "~d", None, True)
         top = [pt(k, i / nu, 0.0) for i in range(nu + 1)]
         tid = [mb.v(p) for p in top]
         bid = [mb.v(p - th) for p in top]
@@ -573,11 +575,12 @@ def ngon_roof(mb, center, R, H, n=8, v_max=1.0, curve=1.6, lift=0.5, flare=0.3, 
             for q in range(1, m):
                 t = q / m
                 pts = [pt(k, t, v_max * 0.985 * j / tile_seg) for j in range(tile_seg + 1)]
-                sweep(mb, pts, [(-tr, -0.02), (0.0, tr * 0.8), (tr, -0.02)], mat, caps=False, smooth=True)
+                sweep(mb, pts, [(-tr, -0.02), (0.0, tr * 0.8), (tr, -0.02)], mat + "~row", caps=False, smooth=True)
     rh = ridge_h if ridge_h is not None else max(0.25, R * 0.07)
     sec = [(-rh * 0.3, -0.2 * rh), (-rh * 0.3, 0.45 * rh), (0, 0.6 * rh), (rh * 0.3, 0.45 * rh), (rh * 0.3, -0.2 * rh)]
+    sec = [(-rh * 0.3, -0.2 * rh), (0, 0.6 * rh), (rh * 0.3, -0.2 * rh)]
     for k in range(n):
-        pts = [pt(k, 0.0, v_max * (1 - j / 6)) for j in range(7)]
+        pts = [pt(k, 0.0, v_max * (1 - j / 3)) for j in range(4)]
         tip = pts[-1]
         rad = Vector((tip.x, tip.y, 0)).normalized()
         pts.append(tip + rad * rh * 0.6 + Vector((0, 0, rh * 0.7)))
@@ -592,17 +595,13 @@ def ngon_roof(mb, center, R, H, n=8, v_max=1.0, curve=1.6, lift=0.5, flare=0.3, 
 # ---------------------------------------------------------------------------------------------
 # hall bodies
 # ---------------------------------------------------------------------------------------------
-def bracket_set(mb, x, y, z0, nx, ny, k=1.0, mat="W_Bracket"):
+def bracket_set(mb, x, y, z0, nx, ny, k=1.0, mat="W_Bracket~d"):
     """Dougong cluster at (x, y, z0) projecting outward along (nx, ny) (unit, horizontal):
     bottom block, two stepped arm tiers along the facade, two cantilevers out."""
     s = mb.n
-    mb.box((0, 0, 0), (0.42 * k, 0.42 * k, 0.24 * k), mat, skip=("bottom",))
-    mb.box((0, 0, 0.24 * k), (1.15 * k, 0.24 * k, 0.2 * k), mat, skip=("bottom",))
-    mb.box((0, -0.22 * k, 0.24 * k), (0.24 * k, 0.9 * k, 0.2 * k), mat, skip=("bottom",))
-    mb.box((0, 0, 0.44 * k), (1.6 * k, 0.24 * k, 0.2 * k), mat, skip=("bottom",))
-    mb.box((0, -0.42 * k, 0.44 * k), (0.24 * k, 1.3 * k, 0.2 * k), mat, skip=("bottom",))
-    for sx in (-0.65, 0.0, 0.65):
-        mb.box((sx * k, -0.05 * k, 0.64 * k), (0.3 * k, 0.3 * k, 0.16 * k), mat, skip=("bottom",))
+    mb.box((0, -0.1 * k, 0.0), (0.45 * k, 0.6 * k, 0.26 * k), mat, skip=("bottom",), taper=(-0.35 * k, -0.25 * k))
+    mb.box((0, -0.3 * k, 0.26 * k), (1.15 * k, 1.1 * k, 0.24 * k), mat, skip=("bottom",), taper=(-0.3 * k, -0.15 * k))
+    mb.box((0, -0.35 * k, 0.5 * k), (1.8 * k, 1.4 * k, 0.2 * k), mat, skip=("bottom",))
     ang = math.atan2(ny, nx) + math.pi / 2       # local -y points along (nx, ny)
     mb.transform(s, T(x, y, z0, ang))
 
@@ -640,7 +639,7 @@ class HallSpec:
             setattr(self, k, v)
 
 
-def _body(mb, W, D, z0, hs, col_h, front, inset, bays, cols=True):
+def _body(mb, W, D, z0, hs, col_h, front, inset, bays, cols=True, col_base=True):
     """Columns, walls, lattice bays, beam band, brackets for a W x D column grid at z0.
     Returns the eave-support height (top of brackets)."""
     nx, ny = bays
@@ -650,10 +649,10 @@ def _body(mb, W, D, z0, hs, col_h, front, inset, bays, cols=True):
     if cols:
         for x in xs:
             for y in (ys[0], ys[-1]):
-                column(mb, x, y, z0, col_h, r, hs.col_mat)
+                column(mb, x, y, z0, col_h, r, hs.col_mat, base=col_base)
         for y in ys[1:-1]:
             for x in (xs[0], xs[-1]):
-                column(mb, x, y, z0, col_h, r, hs.col_mat)
+                column(mb, x, y, z0, col_h, r, hs.col_mat, base=col_base)
     wall_top = z0 + col_h - 0.7
     wt = 0.45
     fy = ys[0] + inset
@@ -727,7 +726,7 @@ def hall(mb, center=(0, 0, 0), hs=None, rz=0.0, **kw):
             g = (hs.tiers - 1 - t) * 3.0
             platform(mb, W + 2 * m + 2 * g, D + 2 * m + 2 * g, hs.plat_h, hs.plat_mat, hs.plat_top,
                      z0=z, skirt=1.5 if t == 0 else 0.2)
-            if hs.balustrade:
+            if hs.balustrade and t == hs.tiers - 1:
                 bw, bd = W + 2 * m + 2 * g - 0.4, D + 2 * m + 2 * g - 0.4
                 gap = 6.0 if hs.steps else 0.0
                 balustrade_rect(mb, bw, bd, z + hs.plat_h, gap=gap, mat=hs.bal_mat)
@@ -755,7 +754,7 @@ def hall(mb, center=(0, 0, 0), hs=None, rz=0.0, **kw):
         vw = (lower.overhang + min(ix, iy)) / Bl
         zu = top + rl * (vw ** lower.curve) - 0.35
         ub = (max(1, nx - 1) if nx > 2 else nx, max(1, ny - 1) if ny > 2 else ny)
-        top2 = _body(mb, Wu, Du, zu, hs, hs.upper_h + 0.35, "lattice", 0.0, ub, cols=True)
+        top2 = _body(mb, Wu, Du, zu, hs, hs.upper_h + 0.35, "lattice", 0.0, ub, cols=True, col_base=False)
         roof(mb, (0, 0, top2), Wu, Du, rh, rs)
         info["top"] = top2 + rh
     else:
@@ -778,16 +777,15 @@ def balustrade(mb, p0, p1, z0, h=1.05, spacing=1.7, mat="W_Marble", post=0.24):
     n = max(1, int(round(Ln / spacing)))
     ang = math.atan2(d.y, d.x)
     s = mb.n
-    mb.box((Ln / 2, 0, 0), (Ln, 0.36, 0.14), mat, skip=("bottom",))
+    md = mat + "~d"
+    mb.box((Ln / 2, 0, 0), (Ln, 0.36, 0.14), md, skip=("bottom",))
     for i in range(n + 1):
         x = Ln * i / n
-        mb.box((x, 0, 0.14), (post, post, h - 0.14), mat, skip=("bottom",))
-        mb.lathe([(post * 0.62, 0.0), (post * 0.7, 0.12), (post * 0.4, 0.26), (0.0, 0.34)], mat, 6,
-                 center=(x, 0, h), smooth=True)
+        mb.box((x, 0, 0.14), (post, post, h - 0.14), md, skip=("bottom",))
+        mb.box((x, 0, h), (post * 1.25, post * 1.25, 0.3), md, skip=("bottom",), taper=(post * 0.45, post * 0.45))
         if i < n:
             x0, x1 = x + post / 2, Ln * (i + 1) / n - post / 2
-            mb.box(((x0 + x1) / 2, 0, 0.14), (x1 - x0, 0.12, h * 0.62), mat, skip=("bottom",))
-            mb.box(((x0 + x1) / 2, 0, 0.14 + h * 0.62), (x1 - x0, 0.17, 0.12), mat, skip=("bottom",))
+            mb.box(((x0 + x1) / 2, 0, 0.14), (x1 - x0, 0.14, h * 0.74), md, skip=("bottom",), taper=(0.0, 0.02))
     mb.transform(s, T(a.x, a.y, z0, ang))
 
 
@@ -813,15 +811,12 @@ def railing(mb, p0, p1, z0, h=1.0, spacing=1.4, mat="W_Lacquer"):
     n = max(1, int(round(Ln / spacing)))
     ang = math.atan2(d.y, d.x)
     s = mb.n
+    md = mat + "~d"
     for i in range(n + 1):
         x = Ln * i / n
-        mb.box((x, 0, 0), (0.14, 0.14, h + 0.1), mat, skip=("bottom",))
-    mb.box((Ln / 2, 0, h - 0.08), (Ln, 0.12, 0.1), mat)
-    mb.box((Ln / 2, 0, h * 0.45), (Ln, 0.08, 0.08), mat)
-    for i in range(n):
-        for q in (0.33, 0.66):
-            x = Ln * (i + q) / n
-            mb.box((x, 0, h * 0.45), (0.06, 0.06, h * 0.47), mat, skip=("bottom", "top"))
+        mb.box((x, 0, 0), (0.14, 0.14, h + 0.1), md, skip=("bottom",))
+    mb.box((Ln / 2, 0, h - 0.08), (Ln, 0.12, 0.1), md)
+    mb.box((Ln / 2, 0, h * 0.45), (Ln, 0.08, 0.08), md)
     mb.transform(s, T(a.x, a.y, z0, ang))
 
 
@@ -870,8 +865,8 @@ def wall_segment(mb, L, H, T_, batter=0.9, mat="W_Stone", top="W_Paving", par="W
     if earth:
         mb.box((0, oy, H), (L, 0.5, par_h + 0.3), mat, skip=("bottom",))
         roof(mb, (0, oy, H + par_h + 0.3), L - 0.0, 0.5, 0.35, RoofSpec(
-            style="gable", overhang=0.22, lift=0.0, flare=0.0, thick=0.08, pitch=0.45, tile_seg=2,
-            tile_faces=2, nv=2, ridge_h=0.14, ridge_ends="plain", mat="W_TileDark",
+            style="gable", overhang=0.22, lift=0.0, flare=0.0, thick=0.08, pitch=0.45, tiles=False,
+            nv=1, barge=False, nu_min=2, ridge_h=0.14, ridge_ends="plain", mat="W_TileDark",
             fascia_mat="W_WoodDark"))
     else:
         mw, mh, mt = merlon
@@ -1016,7 +1011,7 @@ def pagoda(mb, center=(0, 0, 0), tiers=7, R=4.2, base_h=5.5, tier_h=3.2, taper=0
             a = TAU * (k + 0.5) / n
             cxp, cyp = r * math.cos(a) * 0.985, r * math.sin(a) * 0.985
             if lacquer_frames:
-                mb.box((cxp, cyp, z), (0.28, 0.28, h - 0.3), "W_Lacquer", rot_z=a)
+                mb.box((cxp, cyp, z), (0.28, 0.28, h - 0.3), "W_Lacquer~d", rot_z=a)
         for k in range(n):
             a = TAU * k / n
             if (k + t) % 2:
@@ -1031,14 +1026,14 @@ def pagoda(mb, center=(0, 0, 0), tiers=7, R=4.2, base_h=5.5, tier_h=3.2, taper=0
         # corbelled band + eave
         mb.lathe([(r * 0.985, 0.0), (r * 1.08, 0.25), (r * 1.12, 0.45)], "W_Bracket" if lacquer_frames else body_mat, n,
                  center=(0, 0, z), smooth=False)
-        er = r * 1.12 + 1.2 * eave_k
+        er = r * 1.1 + 0.95 * eave_k
         eh = er * 0.42
         vm = 1.0 if t == tiers - 1 else 0.5
         ngon_roof(mb, (0, 0, z + 0.45), er / math.cos(math.pi / n), eh, n=n, v_max=vm, lift=0.55 * eave_k,
                   flare=0.35 * eave_k, thick=0.28, mat=roof_mat, ridge_mat=ridge_mat,
                   finial=None, nv=3, nu=3, rot=0.0)
         z += 0.45 + eh * (vm ** 1.6) - 0.15
-        if balcony and t < tiers - 1 and t < 3:
+        if balcony and t < tiers - 1 and t < 2:
             rr = r * taper * 1.12
             pts = [(rr * math.cos(TAU * (k + 0.5) / n), rr * math.sin(TAU * (k + 0.5) / n)) for k in range(n)]
             for k in range(n):
@@ -1160,7 +1155,7 @@ def courtyard_wall(mb, L, h=2.6, t=0.45, mat="W_Brick", cap="W_TileDark", top_ma
     mb.box((0, 0, -1.0), (L, t, 1.0 + h - 0.6), mat, skip=("bottom",))
     mb.box((0, 0, h - 0.6), (L, t - 0.04, 0.6), top_mat, skip=("bottom",))
     roof(mb, (0, 0, h), L, t, 0.32, RoofSpec(style="gable", overhang=0.22, lift=0.0, flare=0.0,
-                                            thick=0.07, pitch=0.5, tile_seg=2, tile_faces=2, nv=2,
+                                            thick=0.07, pitch=0.5, tiles=False, nv=1, barge=False, nu_min=2,
                                             ridge_h=0.14, ridge_ends="plain", mat=cap,
                                             fascia_mat="W_WoodDark", under_mat="W_WoodDark"))
     return s0
@@ -1177,7 +1172,7 @@ def gatehouse_small(mb, w=4.2, d=3.0, h=3.2, rz=0.0, center=(0, 0, 0)):
     mb.transform(s, T(0, -0.1, 0))
     box_uv(mb, (-w / 2, -d / 2, h - 0.6), (w, d, 0.6), "W_WoodDark", skip=("bottom",))
     roof(mb, (0, 0, h), w, d, d * 0.42, RoofSpec(style="gable", overhang=0.6, lift=0.15, flare=0.05,
-                                                thick=0.16, pitch=0.5, tile_seg=3, tile_faces=2,
+                                                thick=0.16, pitch=0.7, tile_seg=3, tile_faces=2,
                                                 nv=3, ridge_h=0.3, ridge_ends="curl", mat="W_TileDark",
                                                 fascia_mat="W_Fascia"))
     mb.transform(s0, T(center[0], center[1], center[2], rz))

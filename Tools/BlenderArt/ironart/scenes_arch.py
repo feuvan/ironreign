@@ -21,7 +21,8 @@ K = 8.0
 
 
 def materials(k=K, roof="#4E5A5E", roof_hi=None, stone="#8E8A80", plaster="#D6C8AC",
-              pillar="#8A2A1C", ground=("#8A7E64", "#9A8C6E"), thatch="#8E7A52"):
+              pillar="#8A2A1C", ground=("#8A7E64", "#9A8C6E"), thatch="#8E7A52", glaze=0.25,
+              roof_rough=0.5):
     """Real-scale material set for the slot names of the geometry builders (+ Thatch, Mud,
     Paving, Lattice, RoofGold)."""
     from . import materials as M
@@ -31,8 +32,8 @@ def materials(k=K, roof="#4E5A5E", roof_hi=None, stone="#8E8A80", plaster="#D6C8
         "Stone": M.stone_wall("AStone", stone, block=(0.62 * s, 0.32 * s), bump=0.25, vary=0.14),
         "StoneTop": M.principled("AStoneTop", "#A8A294", 0.85, vary=0.06, vary_scale=0.3),
         "StoneDark": M.principled("AStoneDark", "stone_dark", 0.9, vary=0.1),
-        "RoofTile": M.roof_tiles("ARoofTile", roof, channel=0.26 * s, course=0.3 * s, glaze=0.25,
-                                 roughness=0.5, bump=0.5, specular=0.4),
+        "RoofTile": M.roof_tiles("ARoofTile", roof, channel=0.26 * s, course=0.3 * s, glaze=glaze,
+                                 roughness=roof_rough, bump=0.5, specular=0.4),
         "RoofRidge": M.principled("ARoofRidge", "#3A4446", 0.55, vary=0.03),
         "PillarRed": M.lacquer("APillarRed", pillar, roughness=0.42, coat=0.35, coat_roughness=0.2),
         "GateDoor": M.lacquer("AGateDoor", pillar, roughness=0.5, coat=0.2, coat_roughness=0.3, vary=0.04),
@@ -71,8 +72,9 @@ def thatch_material(name, color="#8E7A52"):
     return _fin(mat, nb, p.outputs[0])
 
 
-def glow_material(name, color="#FFB060", strength=4.0, base="#2A1E16"):
-    """Window/door glow (night scenes): emission over a dark base."""
+def glow_material(name, color="#FFB060", strength=4.0, base="#2A1E16", light=0.2):
+    """Window/door glow (night scenes): emission over a dark base; only ``light`` x of it
+    illuminates the scene (indirect fireflies), the camera sees it all."""
     from .materials import new
     from .scenes_sky import G, lin4
     mat, nb, created = new(name)
@@ -82,7 +84,9 @@ def glow_material(name, color="#FFB060", strength=4.0, base="#2A1E16"):
     p = b.principled(Base_Color=lin4(base), Roughness=0.8)
     em = nb.node("ShaderNodeEmission")
     em.inputs["Color"].default_value = lin4(color)
-    em.inputs["Strength"].default_value = strength
+    lp = nb.node("ShaderNodeLightPath")
+    b.link(b.math("MULTIPLY", strength, b.math("ADD", light, b.math("MULTIPLY", lp.outputs["Is Camera Ray"], 1.0 - light))),
+           em.inputs["Strength"])
     ad = nb.node("ShaderNodeAddShader")
     b.link(p.outputs[0], ad.inputs[0])
     b.link(em.outputs[0], ad.inputs[1])
@@ -251,7 +255,15 @@ def wk_materials(**variants):
 
 
 def wk_build(mb, name, mats, col=None):
-    """MeshBuilder -> object with the UV layer named ``MetreUV`` (what world_mats reads)."""
+    """MeshBuilder -> object with the UV layer named ``MetreUV`` (what world_mats reads).
+    The kit tags some slots with bake suffixes (``W_Lacquer~d``, ``W_Tile~row``): they resolve
+    to the base material here (a missing slot would render as default grey/white)."""
+    mats = dict(mats)
+    for nm in mb.mat_names:
+        if nm not in mats and "~" in nm:
+            base = nm.split("~", 1)[0]
+            if base in mats:
+                mats[nm] = mats[base]
     o = mb.build(name, mats, col=col, auto_smooth_deg=40.0)
     if o.data.uv_layers:
         o.data.uv_layers[0].name = "MetreUV"

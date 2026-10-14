@@ -1,0 +1,59 @@
+{
+ "id": "m_warrior_19",
+ "seed": 45041,
+ "gender": "m",
+ "age": 37,
+ "archetype": "warrior",
+ "expression": "stern",
+ "bg": "jade",
+ "notes": "Yue Changfeng, the Long Wind",
+ "hair": {
+  "style": "topknot",
+  "grey": 0.0,
+  "recede": 0.1
+ },
+ "skin": {
+  "weather": 0.8,
+  "scars": []
+ },
+ "camera": {
+  "yaw": 18.0,
+  "pitch": -3.0,
+  "head_frac": 0.42,
+  "eye_line": 0.39
+ },
+ "beard": {
+  "mustache": 1.0,
+  "soul": 0.8,
+  "tails": 0.8,
+  "gravity": 0.7,
+  "radius": 0.0001,
+  "frizz": 0.0014,
+  "must_len": 0.0365,
+  "chin": 1.0,
+  "jaw": 0.0,
+  "cheeks": 0.0,
+  "neck": 0.0,
+  "sideburns": 0.0,
+  "length": 0.0666,
+  "taper": 0.5,
+  "count": 4500
+ },
+ "beard_grey": 0.0,
+ "outfit": {
+  "kind": "armour",
+  "silk": [
+   0.04,
+   0.12,
+   0.05
+  ],
+  "trim": [
+   0.7,
+   0.52,
+   0.22
+  ]
+ },
+ "headgear": {
+  "kind": "none"
+ }
+}

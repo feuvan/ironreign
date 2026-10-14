@@ -26,26 +26,29 @@ class Frame:
         self.ipd = float(lm["ipd"])
         # neck base (jugular notch) ~ 1.45 IPD below the chin; shoulders slightly lower
         self.notch = self.chin - 0.078
-        self.side = self.chin - 0.062
-        self.back = self.chin - 0.035
+        self.side = self.chin - 0.050
+        self.back = self.chin - 0.022
 
 
-def cross_cut(fr, depth=0.16, w=52.0, top_drop=0.0, back_up=0.0, front_drop=0.0):
-    """Neckline of a cross-collar layer: V crossing in front, higher at the back."""
+def cross_cut(fr, depth=0.16, w=52.0, apex_az=-14.0, top_drop=0.0, back_up=0.0):
+    """Asymmetric cross-collar neckline (right-over-left, youren): the top panel's edge runs from
+    the character's left neck side down past the centre to an apex on the right chest."""
     z_side = fr.side - top_drop
     z_back = fr.back - top_drop + back_up
+    z_apex = z_side - depth
 
     def L1(az):
-        return z_side - depth * np.clip((w - az) / (2 * w + 12), 0, 1.4)
+        return z_side + (z_apex - z_side) * (w - np.asarray(az, float)) / (w - apex_az)
 
     def L2(az):
-        return z_side - depth * np.clip((w + az) / (2 * w + 12), 0, 1.4)
+        return z_side + (z_apex - z_side) * np.clip((np.asarray(az, float) + w) / (apex_az + w), 0, 1)
 
     def cut(az):
-        a = np.abs(((np.asarray(az) + 180) % 360) - 180)
-        zt = np.interp(a, [0, w, 110, 180], [z_side - front_drop, z_side, z_back, z_back])
-        v = np.minimum(L1(np.asarray(az)), L2(np.asarray(az)))
-        return np.where(a < w + 15, np.minimum(zt, v), zt)
+        a = ((np.asarray(az, float) + 180) % 360) - 180
+        aa = np.abs(a)
+        zt = np.interp(aa, [0, w, 110, 180], [z_side, z_side, z_back, z_back])
+        v = np.where(a >= apex_az, L1(np.clip(a, apex_az, w)), L2(np.clip(a, -w, apex_az)))
+        return np.where(aa < w, np.minimum(zt, v), zt)
     return cut, L1, L2, z_side, z_back
 
 
@@ -64,46 +67,47 @@ def _folds(seed, amp=0.0025, freq=0.3):
         a = np.radians(az)
         w = (np.sin(az * freq * 0.0174533 * 9 + ph[0] + 0.8 * np.sin(a * 3 + ph[1]))
              + 0.5 * np.sin(az * freq * 0.0174533 * 23 + ph[2]))
-        return amp * w * (1 - t) ** 1.5
+        return amp * (0.6 + 0.6 * w) * (1 - t) ** 1.5  # outward only: never sinks into inner layers
     return f
 
 
 def cross_robe(shell, fr, layers, coll=None, seed=0):
-    """Stacked cross-collar layers, innermost first.  layer dict:
-        mat, band_mat, offset (m), depth (V depth m), band (width m), top_drop, el_bottom,
-        folds (amp)"""
+    """Stacked cross-collar layers (innermost first), each a full hull layer with an integral
+    raised collar band along its neckline; the outer layers also get the top panel's band
+    continuing past the crossing (the 'y' overlap).  layer dict keys:
+        mat, band_mat, offset, depth, band (width m), w, apex, folds, run (deg), top_drop"""
     objs = []
     for k, L in enumerate(layers):
-        cut, L1, L2, z_side, z_back = cross_cut(fr, L.get("depth", 0.16), L.get("w", 52.0),
-                                               L.get("top_drop", 0.0), L.get("back_up", 0.0))
+        depth = L.get("depth", 0.16)
+        w = L.get("w", 52.0)
+        apex = L.get("apex", -14.0)
+        cut, L1, L2, z_side, z_back = cross_cut(fr, depth, w, apex, L.get("top_drop", 0.0), L.get("back_up", 0.0))
         off = L.get("offset", 0.006)
-        folds = _folds(seed + k, L.get("folds", 0.002)) if L.get("folds", 0.002) else None
-        ob = shell.layer("Robe%d" % k, cut, off, rows=L.get("rows", 70), el_bottom=L.get("el_bottom"),
-                         folds=folds, mats=[L["mat"]], coll=coll, seed=seed + k)
+        fa = L.get("folds", 0.002)
+        folds = _folds(seed + k, fa) if fa else None
+        bw = L.get("band", 0.03)
+        mats = [L["mat"], L.get("band_mat") or L["mat"]]
+        fl = L.get("flare", 0.02)
+
+        def flare(az, t, fl=fl):
+            # garments hang wider toward the bottom and over the arms (sleeves)
+            return fl * (1 - t) ** 2 * (0.4 + 0.6 * np.abs(np.sin(np.radians(az))))
+        ob = shell.layer("Robe%d" % k, cut, off, rows=L.get("rows", 90), el_bottom=L.get("el_bottom"),
+                         folds=folds, mats=mats, band=(bw, L.get("band_lift", 0.003), True), coll=coll,
+                         seed=seed + k, flare=flare)
         ob.pass_index = 5
         objs.append(ob)
-        bw = L.get("band", 0.03)
-        if L.get("band_mat") is not None and bw > 0:
-            w = L.get("w", 52.0)
-            depth = L.get("depth", 0.16)
-            boff = off + L.get("band_off", 0.0035)
-            dz = bw * 0.42
-            # under panel + back collar: from the crossing up L2, around the back, to L1's top
-            az_cross = 0.0
-            pa = [az_cross, -w, -90, -150, -180, -210, -270, -360 + w]
-            pz = [L2(np.array(az_cross)) - dz, z_side - dz * 0.5, (z_side + z_back) / 2 - dz * 0.2,
-                  z_back + dz * 0.1, z_back + dz * 0.15, z_back + dz * 0.1, (z_side + z_back) / 2 - dz * 0.2,
-                  z_side - dz * 0.5]
-            sb, *_ = shell.strip("CollarB%d" % k, np.array(pa), np.array(pz, float), bw, boff, L["band_mat"],
-                                 coll, n=160, thick=0.003)
-            # top panel: L1 from the neck side down across the chest
-            a1 = np.linspace(w, -w - 12 - L.get("run", 25.0), 30)
-            z1 = L1(a1) - dz
-            sa, *_ = shell.strip("CollarA%d" % k, a1, z1, bw, boff + 0.0012, L["band_mat"], coll, n=90,
-                                 thick=0.0035)
-            for o in (sa, sb):
-                o.pass_index = 5
-            objs += [sa, sb]
+        run = L.get("run", 0.0)
+        if run > 0 and L.get("band_mat") is not None:
+            # the top panel's collar keeps going past the crossing, lying over the under panel
+            a1 = np.linspace(apex + 6.0, apex - run, 24)
+            z_apex = z_side - depth
+            slope = (z_apex - z_side) / (apex - w)
+            z1 = z_apex + (a1 - apex) * slope - bw * 0.45
+            sa, *_ = shell.strip("CollarRun%d" % k, a1, z1, bw, off + L.get("band_lift", 0.003) + 0.0015,
+                                 L["band_mat"], coll, n=60, thick=0.003)
+            sa.pass_index = 5
+            objs.append(sa)
     return objs
 
 
@@ -195,7 +199,7 @@ def lamellar(shell, plate_mat, lace_mat, cut, offset=0.016, row_h=0.03, plate_w=
             aa = np.linspace(a0, a1, 3)
             SS, AA = np.meshgrid(ss, aa, indexing="ij")
             P, N = AG.at(SS, AA)
-            across = np.cos(np.linspace(-1.1, 1.1, 3))[None, :] * 0.0010
+            across = np.cos(np.linspace(-1.1, 1.1, 3))[None, :] * 0.0005
             down = np.linspace(0.0, 0.0016, 4)[:, None]  # bottom edge stands off (tile overlap)
             tw = rng.standard_normal(2) * 0.0009 * tilt
             twist = np.linspace(-1, 1, 3)[None, :] * tw[0] + np.linspace(-1, 1, 4)[:, None] * tw[1]
@@ -558,31 +562,51 @@ def helmet(surf, b, C, mats, coll=None, seed=0, brim_el=None, style="bowl", flap
 
 
 def topknot_crown(apex, axis, fwd, mats, coll=None, size=1.0, pin=True):
-    """Small scholar's crown (guan) over the bun with a hairpin through it."""
+    """Crescent crown (yanyue guan) standing over the topknot, pinned through crosswise."""
+    import bmesh
     objs = []
-    w, h, d = 0.032 * size, 0.03 * size, 0.04 * size
-    # crown: a curved band (half cylinder) along the front-back axis
-    bpy.ops.mesh.primitive_cylinder_add(vertices=32, radius=w * 0.62, depth=d, location=tuple(apex))
-    cr = bpy.context.active_object
-    cr.name = "Guan"
+    axis = np.array(axis, float) / np.linalg.norm(axis)
+    fwd = np.array(fwd, float) / np.linalg.norm(fwd)
     side = np.cross(axis, fwd)
-    m = Matrix((side, fwd, axis)).transposed()
-    cr.rotation_euler = (m @ Matrix.Rotation(math.pi / 2, 3, "X")).to_euler()
-    cr.scale = (1.0, 1.15, 1.0)
-    for p in cr.data.polygons:
+    R0 = 0.024 * size
+    wdt = 0.032 * size
+    th = 0.0025
+    bm = bmesh.new()
+    rows = []
+    n = 24
+    for i in range(n + 1):
+        a = np.pi * (0.06 + 0.88 * i / n)  # arch from back to front over the bun
+        ring = []
+        for sw, rr in ((-1, R0), (1, R0), (1, R0 + th), (-1, R0 + th)):
+            p = np.array(apex) + (np.cos(a) * fwd + np.sin(a) * axis) * rr + side * sw * wdt / 2 * (1 - 0.25 * np.cos(a) ** 2)
+            p = p - axis * R0 * 0.35
+            ring.append(bm.verts.new(tuple(p)))
+        rows.append(ring)
+    for i in range(n):
+        for k in range(4):
+            a0, a1 = rows[i][k], rows[i][(k + 1) % 4]
+            b0, b1 = rows[i + 1][k], rows[i + 1][(k + 1) % 4]
+            bm.faces.new((a0, a1, b1, b0))
+    bm.faces.new(rows[0][::-1])
+    bm.faces.new(rows[-1])
+    me = bpy.data.meshes.new("Guan")
+    bm.to_mesh(me)
+    bm.free()
+    for p in me.polygons:
         p.use_smooth = True
-    sol = cr.modifiers.new("t", "SOLIDIFY")
-    sol.thickness = 0.002
-    cr.data.materials.append(mats["crown"])
+    me.materials.append(mats["crown"])
+    cr = bpy.data.objects.new("Guan", me)
+    (coll or bpy.context.scene.collection).objects.link(cr)
+    cr.modifiers.new("s", "SUBSURF").levels = 1
     cr.pass_index = 4
     objs.append(cr)
     if pin:
-        L = 0.11 * size
-        c = np.array(apex) + np.array(axis) * 0.002
+        L = 0.10 * size
+        c = np.array(apex) + axis * R0 * 0.15
         p0 = c - side * L / 2
         p1 = c + side * L / 2
-        po = HR.curves_object("Pin", [np.linspace(p0, p1, 6)], 0.0016, 0.0012, mats["pin"], coll, pass_index=7)
-        bpy.ops.mesh.primitive_uv_sphere_add(segments=12, ring_count=8, radius=0.0045, location=tuple(p1))
+        po = HR.curves_object("Pin", [np.linspace(p0, p1, 6)], 0.0016, 0.0013, mats["pin"], coll, pass_index=7)
+        bpy.ops.mesh.primitive_uv_sphere_add(segments=12, ring_count=8, radius=0.004, location=tuple(p1))
         kn = bpy.context.active_object
         kn.data.materials.append(mats["pin"])
         kn.pass_index = 7
@@ -632,4 +656,112 @@ def hairpin(p0, direction, length, mats, coll=None, head="flower", dangles=0, rn
             for p in o.data.polygons:
                 p.use_smooth = True
             o.pass_index = 7
+    return objs
+
+
+def prayer_beads(shell, fr, mat, offset=0.03, coll=None, radius=0.0075, drop=0.17, big=None):
+    """A string of large wooden beads around the neck hanging in a U over the chest."""
+    az = np.concatenate([np.linspace(180, 60, 20), np.linspace(60, -60, 40), np.linspace(-60, -180, 20)])
+    z = np.where(np.abs(az) > 60, np.interp(np.abs(az), [60, 180], [fr.side - 0.02, fr.back - 0.01]),
+                 fr.side - 0.02 - drop * np.cos(np.radians(az) * 1.5) ** 2)
+    el = shell.el_at(az, z)
+    P = shell.point(az, el, offset)
+    seg = np.concatenate([[0], np.cumsum(np.linalg.norm(np.diff(P, axis=0), axis=1))])
+    n = int(seg[-1] / (radius * 2.05))
+    ts = np.linspace(0, seg[-1], n)
+    pts = np.stack([np.interp(ts, seg, P[:, k]) for k in range(3)], 1)
+    objs = []
+    me_all = None
+    bpy.ops.mesh.primitive_uv_sphere_add(segments=12, ring_count=8, radius=radius, location=(0, 0, 0))
+    proto = bpy.context.active_object
+    proto.data.materials.append(mat)
+    for p in proto.data.polygons:
+        p.use_smooth = True
+    for k, p in enumerate(pts):
+        o = proto.copy()
+        o.location = tuple(p)
+        r = radius * (1.6 if big and k == len(pts) // 2 else 1.0)
+        o.scale = (r / radius,) * 3
+        (coll or bpy.context.scene.collection).objects.link(o)
+        o.pass_index = 7
+        objs.append(o)
+    bpy.data.objects.remove(proto)
+    return objs
+
+
+def fur_collar(shell, cut, mat, rng, offset=0.02, count=6000, length=0.045, band=0.05, coll=None):
+    """Fur trim along a neckline: clumped strands rooted in a band below ``cut``."""
+    az = rng.uniform(-180, 180, count)
+    dz = rng.uniform(0, band, count)
+    z = cut(az) - dz
+    el = shell.el_at(az, z)
+    root = shell.point(az, el, offset)
+    n = shell.normal(az, el)
+    K = 6
+    L = length * (0.6 + 0.8 * rng.random(count))
+    down = np.array([0, 0, -1.0])
+    t = np.linspace(0, 1, K)[None, :, None]
+    d = n * 0.8 + down[None] * 0.5
+    d /= np.linalg.norm(d, axis=1, keepdims=True)
+    pts = root[:, None, :] + d[:, None, :] * L[:, None, None] * t + down[None, None, :] * (L[:, None, None] * 0.4 * t ** 2)
+    pts = HR.clump(pts, rng, count // 25, 0.6, 1.0)
+    pts = HR.frizz(pts, rng, 0.002, 2.0)
+    return HR.curves_object("Fur", pts, 0.00025, 0.00006, mat, coll, pass_index=6)
+
+
+def headband(surf, b, C, mat, coll=None, width=0.03, height_ipd=0.95, knot=True):
+    """Cloth band tied around the head over the forehead (ze / mojie)."""
+    lm = b["lm"]
+    eye_c = np.array(lm["eye_c"])
+    az = np.linspace(-180, 180, 145)
+    el = np.linspace(-30, 90, 61)
+    D, r = _skull_shell(surf, C, az, el)
+    rs = SH._blur2(r, 2.0, 2.0)
+    zc = eye_c[2] + height_ipd * lm["ipd"]
+    rows = []
+    for dz in (-width / 2, -width / 4, 0, width / 4, width / 2):
+        row = []
+        for j, a in enumerate(az):
+            col = C + D[:, j] * (rs[:, j] + 0.006)[:, None]
+            zz = zc + dz - 0.012 * (1 - np.cos(np.radians(a))) * 0.5
+            e = np.interp(zz, col[:, 2], el)
+            rr = np.interp(e, el, rs[:, j]) + 0.006 + 0.002 * math.cos(dz / width * math.pi)
+            row.append(C + SH._dir(np.array(a), np.array(e)) * rr)
+        rows.append(row)
+    V = np.array(rows)
+    nr, nc = V.shape[:2]
+    faces = [(i * nc + j, i * nc + j + 1, (i + 1) * nc + j + 1, (i + 1) * nc + j) for i in range(nr - 1) for j in range(nc - 1)]
+    me = bpy.data.meshes.new("Headband")
+    me.from_pydata(V.reshape(-1, 3).tolist(), [], faces)
+    for p in me.polygons:
+        p.use_smooth = True
+    me.materials.append(mat)
+    ob = bpy.data.objects.new("Headband", me)
+    (coll or bpy.context.scene.collection).objects.link(ob)
+    ob.pass_index = 5
+    return ob
+
+
+def cape(shell, fr, mat, coll=None, offset=0.055, front_az=58.0, seed=0, folds=0.006):
+    """War cloak hanging from the shoulders behind the pauldrons (two halves, open in front)."""
+    rng = np.random.default_rng(seed)
+    objs = []
+    ph = rng.random(3) * 6.28
+
+    def cut(az):
+        a = np.abs(((np.asarray(az, float) + 180) % 360) - 180)
+        return np.interp(a, [front_az, 100, 180], [fr.side - 0.035, fr.side - 0.005, fr.back - 0.01])
+
+    def off(az, t):
+        a = np.abs(((np.asarray(az, float) + 180) % 360) - 180)
+        f = folds * (0.5 + 0.5 * np.sin(np.radians(a) * 11 + ph[0] + 1.5 * np.sin(np.radians(a) * 3 + ph[1]))) * (1 - t) ** 1.2
+        return offset + f + 0.03 * (1 - t) ** 2 + 0.01 * np.clip((front_az + 25 - a) / 25, 0, 1)
+    for k, rngz in enumerate(((front_az, 179.9), (-179.9, -front_az))):
+        ob = shell.layer("Cape%d" % k, cut, off, rows=60, mats=[mat], coll=coll, az_range=rngz,
+                         band=(0.025, 0.004, True))
+        ob.data.materials.append(mat)
+        sol = ob.modifiers.new("t", "SOLIDIFY")
+        sol.thickness = 0.003
+        ob.pass_index = 5
+        objs.append(ob)
     return objs

@@ -1,0 +1,69 @@
+{
+ "id": "m_warrior_05",
+ "seed": 92200,
+ "gender": "m",
+ "age": 26,
+ "archetype": "warrior",
+ "expression": "stern",
+ "bg": "smoke",
+ "notes": "Duan Kui, the Bronze Bull",
+ "hair": {
+  "style": "topknot",
+  "grey": 0.0,
+  "recede": 0.1
+ },
+ "skin": {
+  "weather": 0.8,
+  "scars": [
+   [
+    [
+     0.46,
+     0.57
+    ],
+    [
+     0.95,
+     -0.14
+    ]
+   ]
+  ]
+ },
+ "camera": {
+  "yaw": 20.0,
+  "pitch": -3.0,
+  "head_frac": 0.42,
+  "eye_line": 0.39
+ },
+ "beard": {
+  "mustache": 1.0,
+  "soul": 0.0,
+  "tails": 0.8,
+  "gravity": 0.7,
+  "radius": 0.0001,
+  "frizz": 0.0014,
+  "must_len": 0.0397,
+  "chin": 0.0,
+  "jaw": 0.0,
+  "cheeks": 0.0,
+  "neck": 0.0,
+  "sideburns": 0.0,
+  "length": 0.02,
+  "count": 2500
+ },
+ "beard_grey": 0.0,
+ "outfit": {
+  "kind": "armour",
+  "silk": [
+   0.2,
+   0.016,
+   0.012
+  ],
+  "trim": [
+   0.62,
+   0.42,
+   0.16
+  ]
+ },
+ "headgear": {
+  "kind": "none"
+ }
+}

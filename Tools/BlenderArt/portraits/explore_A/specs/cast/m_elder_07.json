@@ -1,0 +1,69 @@
+{
+ "id": "m_elder_07",
+ "seed": 99739,
+ "gender": "m",
+ "age": 68,
+ "archetype": "elder",
+ "expression": "serene",
+ "bg": "warm",
+ "notes": "Dongfang Ce, the Old Fox",
+ "hair": {
+  "style": "topknot",
+  "grey": 1.0,
+  "recede": 0.41
+ },
+ "skin": {
+  "weather": 0.2,
+  "scars": []
+ },
+ "camera": {
+  "yaw": 20.0,
+  "pitch": -3.0,
+  "head_frac": 0.42,
+  "eye_line": 0.39
+ },
+ "beard": {
+  "mustache": 1.0,
+  "soul": 0.8,
+  "tails": 0.8,
+  "gravity": 0.85,
+  "radius": 0.0001,
+  "frizz": 0.002,
+  "must_len": 0.055,
+  "chin": 1.0,
+  "jaw": 1.0,
+  "cheeks": 0.3,
+  "neck": 0.7,
+  "sideburns": 1.0,
+  "length": 0.1582,
+  "cheek_len": 0.05,
+  "taper": 0.55,
+  "count": 9000,
+  "clump": 0.6
+ },
+ "beard_grey": 1.0,
+ "outfit": {
+  "kind": "scholar",
+  "outer": [
+   0.12,
+   0.1,
+   0.07
+  ],
+  "band": [
+   0.04,
+   0.035,
+   0.03
+  ],
+  "motif": "lattice",
+  "depth": 0.13
+ },
+ "headgear": {
+  "kind": "guan",
+  "rgb": [
+   0.015,
+   0.013,
+   0.012
+  ],
+  "size": 1.1
+ }
+}

@@ -47,6 +47,20 @@ def _kuwa(nt, src, size, ecc, sharp=0.5, unif=4):
     return k.outputs[0]
 
 
+def _kuwa_half(nt, src, size, ecc, sharp=0.5, unif=4):
+    """Kuwahara at half resolution (1/16 of the cost for the same stroke size), scaled back."""
+    d = _n(nt, "CompositorNodeScale", space="RELATIVE")
+    d.inputs[1].default_value = 0.5
+    d.inputs[2].default_value = 0.5
+    nt.links.new(src, d.inputs[0])
+    k = _kuwa(nt, d.outputs[0], max(1, size / 2), ecc, sharp, unif)
+    u = _n(nt, "CompositorNodeScale", space="RELATIVE")   # (RENDER_SIZE mis-places the canvas in 4.0)
+    u.inputs[1].default_value = 2.0
+    u.inputs[2].default_value = 2.0
+    nt.links.new(k, u.inputs[0])
+    return u.outputs[0]
+
+
 def _blur(nt, src, px):
     b = _n(nt, "CompositorNodeBlur", filter_type="GAUSS")
     b.size_x = b.size_y = max(1, int(px))
@@ -212,9 +226,9 @@ def setup(spec, sc, out, ss):
     # region masks
     aov = {a: rl.outputs.get(a) for a in AOVS}
     s = ss / 2.0
-    k_face = _kuwa(nt, over, P.get("face_size", 4) * s, P.get("face_ecc", 1.0), P.get("face_sharp", 0.6))
-    k_hair = _kuwa(nt, over, P.get("hair_size", 6) * s, P.get("hair_ecc", 2.0), 0.5)
-    k_cost = _kuwa(nt, over, P.get("cost_size", 8) * s, P.get("cost_ecc", 1.6), 0.45)
+    k_face = _kuwa(nt, over, P.get("face_size", 5) * s, P.get("face_ecc", 1.0), P.get("face_sharp", 0.6))
+    k_hair = _kuwa_half(nt, over, P.get("hair_size", 8) * s, P.get("hair_ecc", 2.0), 0.5)
+    k_cost = _kuwa_half(nt, over, P.get("cost_size", 12) * s, P.get("cost_ecc", 1.6), 0.45)
     skin = _blur(nt, aov["skin"], 2 * s)
     hair = _blur(nt, aov["hair"], 2 * s)
     eye = _blur(nt, aov["eye"], 3 * s)
@@ -222,10 +236,10 @@ def setup(spec, sc, out, ss):
     painted = _mix(nt, painted, k_hair, hair)
     painted = _mix(nt, painted, k_face, skin)
     # detail retention: a little of the clean render everywhere, a lot on the eyes
-    painted = _mix(nt, painted, over, P.get("detail", 0.22))
+    painted = _mix(nt, painted, over, P.get("detail", 0.12))
     painted = _mix(nt, painted, over, _math(nt, "MULTIPLY", eye, P.get("eye_clean", 0.9)))
     # ink accents (lash line etc.): multiply towards warm ink
-    acc = _math(nt, "MULTIPLY", aov["accent"], P.get("accent", 0.55))
+    acc = _math(nt, "MULTIPLY", aov["accent"], P.get("accent", 0.7))
     painted = _mix(nt, painted, (0.018, 0.011, 0.008, 1.0), acc)
     nt.links.new(painted, comp.inputs["Image"])
     # masks for numpy finishing

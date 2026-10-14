@@ -18,7 +18,7 @@ from ironart import ui_chrome_sdf as S
 from ironart.ui_chrome_maps import Maps, L
 
 NAME = "Tab"
-SPEC = dict(size=(160, 48), ss=4, spp=64, margins=(18, 14, 18, 10), seed=31)
+SPEC = dict(size=(160, 48), ss=4, spp=48, margins=(18, 14, 18, 10), seed=31)
 W, H = 160, 48
 VARIANTS = ("inactive", "active")
 FILE = {"inactive": "Tab", "active": "Tab_Active"}
@@ -43,7 +43,7 @@ def build(G, variant="inactive"):
     z = z + 0.35 * (1 - yy ** 2) * kit.smoothstep(4.0, 7.0, d) * field
 
     def lac(col, k=1.0, rough=0.42):
-        return dict(base=L(col, k), metal=0.0, rough=rough, coat=1.0, spec=0.06)
+        return dict(base=kit.coat_cal(L(col, k)), metal=0.0, rough=rough, coat=1.0, spec=0.06)
 
     if active:
         m.paint(lip, lac("#2A0B07"))
@@ -63,8 +63,8 @@ def build(G, variant="inactive"):
         m.paint(lip, lac("#1A0F0A"))
         m.paint(gold, "gold_satin")
         m.paint(groove, lac("#1E120C"))
-        g = kit.grain1d(G.Y, 8, freq=0.55, lo=0.62, hi=1.25)
-        m.paint(field, lac("#5A3A28", rough=0.36))
+        g = kit.grain1d(G.Y, 8, freq=1.15, lo=0.66, hi=1.22)
+        m.paint(field, lac("#5C3526", rough=0.36))
         m.tint(field, g)
         # towards the bottom the plaque falls into the panel's shadow
         m.tint(field, 1.0 - 0.35 * kit.smoothstep(H - 16.0, H, G.Y))

@@ -11,6 +11,8 @@ void UIronReignWorldStateSubsystem::Initialize(FSubsystemCollectionBase& Collect
 	Super::Initialize(Collection);
 
 	Session = MakeShared<FIronSession>();
+	// The 3D scenes (strategy map, battle board) live in this world; the screens reach them through the session.
+	Session->SetPresentationWorld(GetWorld());
 	Session->Initialize();
 }
 
@@ -21,6 +23,7 @@ void UIronReignWorldStateSubsystem::Deinitialize()
 		// Normally done by AIronReignPlayerController::EndPlay; repeated here (idempotent) so no sound object
 		// outlives the world, e.g. when the world is torn down without its actors ending play.
 		FIronAudio::Get().Shutdown();
+		Session->SetPresentationWorld(nullptr);
 		IronStyle::SetSession(nullptr);
 		Session.Reset();
 		// Styles reference textures owned by FIronAssets: clear the styles first, then release the textures.

@@ -1,0 +1,44 @@
+{
+ "id": "m_warrior_27",
+ "seed": 45345,
+ "gender": "m",
+ "age": 18,
+ "archetype": "warrior",
+ "expression": "fierce",
+ "bg": "warm",
+ "notes": "Helian Shuo, the New Moon Rider",
+ "hair": {
+  "style": "topknot",
+  "grey": 0.0,
+  "recede": 0.1
+ },
+ "skin": {
+  "weather": 0.8,
+  "scars": []
+ },
+ "camera": {
+  "yaw": 22.0,
+  "pitch": -3.0,
+  "head_frac": 0.42,
+  "eye_line": 0.39
+ },
+ "beard": null,
+ "beard_grey": 0.0,
+ "outfit": {
+  "kind": "armour",
+  "silk": [
+   0.12,
+   0.1,
+   0.07
+  ],
+  "trim": [
+   0.5,
+   0.42,
+   0.3
+  ],
+  "fur": true
+ },
+ "headgear": {
+  "kind": "none"
+ }
+}

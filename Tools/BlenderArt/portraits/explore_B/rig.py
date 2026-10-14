@@ -22,7 +22,7 @@ def reset():
     return sc
 
 
-def cycles(samples=64, w=384, h=480, ss=2, adaptive=0.02, clamp_direct=0.0, clamp_indirect=3.0,
+def cycles(samples=40, w=384, h=480, ss=2, adaptive=0.03, clamp_direct=0.0, clamp_indirect=3.0,
            threads=None, view="Filmic", look="Medium Contrast", exposure=0.0, transparent=True):
     sc = bpy.context.scene
     cy = sc.cycles
@@ -38,11 +38,11 @@ def cycles(samples=64, w=384, h=480, ss=2, adaptive=0.02, clamp_direct=0.0, clam
     cy.caustics_reflective = False
     cy.caustics_refractive = False
     cy.blur_glossy = 1.0
-    cy.max_bounces = 6
-    cy.diffuse_bounces = 2
-    cy.glossy_bounces = 2
-    cy.transmission_bounces = 4
-    cy.transparent_max_bounces = 24
+    cy.max_bounces = 4
+    cy.diffuse_bounces = 1
+    cy.glossy_bounces = 1
+    cy.transmission_bounces = 2
+    cy.transparent_max_bounces = 8
     cy.volume_bounces = 0
     cy.pixel_filter_type = "BLACKMAN_HARRIS"
     cy.filter_width = 1.5
@@ -171,6 +171,8 @@ def light_rig(cam, target, key=46.0, fill=6.0, rim=34.0, rim2=10.0, bounce=3.0, 
     fd = screen_dir(cam, -10.0, 35.0)
     rig["fill"] = area_light("Fill", t + fd * dist * 1.3, t, fill, 1.8, color=fill_color, shadow=False,
                              group="fill")
+    # the broad fill would paint every metal plate the same flat silver: diffuse only
+    rig["fill"].visible_glossy = False
     rd = screen_dir(cam, 30.0, -50.0)
     rig["rim"] = area_light("Rim", t + rd * dist, t, rim, 0.25, 1.0, color=rim_color, group="rim")
     r2 = screen_dir(cam, 160.0, -45.0)

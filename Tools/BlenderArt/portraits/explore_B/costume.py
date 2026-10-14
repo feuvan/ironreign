@@ -63,6 +63,12 @@ class Shell:
         return np.array(loc, np.float32), np.array(nor, np.float32)
 
     def obj(self, mats, col=None, solidify=0.0, subdiv=1, uv=None, name=None, mat_index=None):
+        if uv is None:
+            # cylindrical UVs in metres (arc length around the body axis, height): fabric
+            # patterns get a physical scale on every garment
+            cy = float(self.V[:, 1].mean())
+            th = np.arctan2(self.V[:, 0], -(self.V[:, 1] - cy))
+            uv = np.stack([th * 0.16, self.V[:, 2]], 1).astype(np.float32)
         ob = MU.make_mesh(name or self.name, self.V, self.Q, col=col, mats=mats, uv=uv,
                           mat_index=mat_index)
         if solidify:
@@ -137,7 +143,7 @@ def lamellar(shell, axis_xy, z_rows, theta_range, plate_w=0.021, plate_h=0.052, 
     """Rows of overlapping plates on ``shell``.  ``z_rows`` top-to-bottom row centre heights;
     ``theta_range`` (deg) around the vertical axis through ``axis_xy`` (0 = front, + = left)."""
     rng = rng or np.random.default_rng(0)
-    gV, gF, guv = _plate_grid(plate_w, plate_h, dome=0.0007, round_bottom=0.3)
+    gV, gF, guv = _plate_grid(plate_w, plate_h, dome=0.0002, round_bottom=0.3)
     Vall, Fall, UVall, MI, RID = [], [], [], [], []
     off = 0
     nrows = len(z_rows)
@@ -164,6 +170,9 @@ def lamellar(shell, axis_xy, z_rows, theta_range, plate_w=0.021, plate_h=0.052, 
             up = np.array([0, 0, 1], np.float32)
             up = _norm(up - n * np.dot(up, n))
             right = np.cross(up, n)
+            # hand-made irregularity: a few degrees of twist per plate
+            a = rng.normal() * 0.035
+            up, right = up * math.cos(a) + right * math.sin(a), right * math.cos(a) - up * math.sin(a)
             # plates overlap to the right: alternate tiny depth so neighbours do not z-fight
             ln = gV.copy()
             ln[:, 0] *= sw
@@ -512,7 +521,7 @@ def neck_guard_lamellar(rim, c, cy, mats, col, rows=3, rng=None, name="Helmet", 
     plate_h = drop / rows * 1.45
     z_rows = [zt - plate_h * 0.45 - k * drop / rows for k in range(rows)]
     pl = lamellar(sk, (c[0], cy), z_rows, theta, plate_w=0.02, plate_h=plate_h, overlap_u=0.35,
-                  name=name + "_guard", mats=[mats["iron"]], col=col, rng=rng, row_out=0.002,
+                  name=name + "_guard", mats=[mats.get("guard", mats["iron"])], col=col, rng=rng, row_out=0.002,
                   tilt=0.003)
     if pl is not None:
         objs.append(pl)
@@ -568,9 +577,7 @@ def push_outside(shell, inner, gap=0.004):
         if loc is None:
             continue
         rel = Vector(V[i]) - loc
-        # orient the inner normal outwards (away from the body axis)
-        if nor.dot(Vector((loc.x, loc.y - float(inner.V[:, 1].mean()), 0.0))) < 0:
-            nor = -nor
+        # BVH face normals follow the (outward) winding of the body-derived shells
         h = rel.dot(nor)
         if h < gap:
             V[i] = np.array(loc + nor * gap, np.float32)

@@ -75,7 +75,11 @@ def hairline_elev(az, recede=0.0, widow=0.0):
     # knots: (azimuth, elevation)
     ka = np.array([0, 18, 32, 48, 62, 75, 95, 115, 140, 180], np.float32)
     ke = np.array([30, 29, 24, 23, 12, -4, 4, -8, -25, -32], np.float32)
-    ke = ke + recede * np.array([10, 11, 14, 12, 4, 0, 0, 0, 0, 0], np.float32)
+    if recede >= 0:
+        ke = ke + recede * np.array([10, 11, 14, 12, 4, 0, 0, 0, 0, 0], np.float32)
+    else:
+        # lower, rounder hairline (young women): forehead and temples come down
+        ke = ke + recede * np.array([22, 22, 20, 16, 8, 2, 0, 0, 0, 0], np.float32)
     e = np.interp(a, ka, ke)
     e = e - widow * 4.0 * np.exp(-(az / 6.0) ** 2)
     return e

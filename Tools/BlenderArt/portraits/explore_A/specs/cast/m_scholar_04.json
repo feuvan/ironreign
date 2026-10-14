@@ -1,0 +1,51 @@
+{
+ "id": "m_scholar_04",
+ "seed": 66764,
+ "gender": "m",
+ "age": 31,
+ "archetype": "scholar",
+ "expression": "serene",
+ "bg": "warm",
+ "notes": "Lu Xingzhou, the Star Reader",
+ "hair": {
+  "style": "topknot",
+  "grey": 0.0,
+  "recede": 0.1
+ },
+ "skin": {
+  "weather": 0.2,
+  "scars": []
+ },
+ "camera": {
+  "yaw": 22.0,
+  "pitch": -3.0,
+  "head_frac": 0.42,
+  "eye_line": 0.39
+ },
+ "beard": null,
+ "beard_grey": 0.0,
+ "outfit": {
+  "kind": "scholar",
+  "outer": [
+   0.18,
+   0.09,
+   0.03
+  ],
+  "band": [
+   0.08,
+   0.05,
+   0.03
+  ],
+  "motif": "lattice",
+  "depth": 0.13
+ },
+ "headgear": {
+  "kind": "guan",
+  "rgb": [
+   0.015,
+   0.013,
+   0.012
+  ],
+  "size": 1.1
+ }
+}

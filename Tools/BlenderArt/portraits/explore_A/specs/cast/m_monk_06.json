@@ -1,0 +1,48 @@
+{
+ "id": "m_monk_06",
+ "seed": 64162,
+ "gender": "m",
+ "age": 58,
+ "archetype": "monk",
+ "expression": null,
+ "bg": "warm",
+ "notes": "spare monk",
+ "hair": {
+  "style": "bald",
+  "grey": 0.6,
+  "recede": 0.27
+ },
+ "skin": {
+  "weather": 0.2,
+  "scars": []
+ },
+ "camera": {
+  "yaw": -18.0,
+  "pitch": -3.0,
+  "head_frac": 0.42,
+  "eye_line": 0.39
+ },
+ "outfit": {
+  "kind": "scholar",
+  "outer": [
+   0.32,
+   0.12,
+   0.02
+  ],
+  "mid": [
+   0.18,
+   0.1,
+   0.05
+  ],
+  "band": [
+   0.25,
+   0.08,
+   0.02
+  ],
+  "motif": null,
+  "beads": true
+ },
+ "headgear": {
+  "kind": "none"
+ }
+}

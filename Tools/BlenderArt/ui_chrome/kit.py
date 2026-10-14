@@ -135,3 +135,80 @@ def vgrad(G, H, k=0.12):
 
 def deg(a):
     return math.radians(a)
+
+
+def edge_wear(z, ss, radius=0.8, k=2.0):
+    """(albedo multiplier, roughness offset) that polish convex edges of a metal relief: the
+    high points of a gilt mount are rubbed bright and smooth, the recesses keep the patina."""
+    conv = np.clip(z - S.blur(z, radius * ss), 0, None)
+    f = np.clip(1.0 + k * conv, 1.0, 1.35).astype(np.float32)
+    dr = (-0.6 * np.clip(conv * k, 0, 0.25)).astype(np.float32)
+    return f, dr
+
+
+#: what the family rig's clear coat does to a flat lacquer field (measured on Button/PanelDark):
+#: rendered = (1 - COAT_F) * albedo + COAT_LIFT  (linear, per channel)
+COAT_F = 0.04
+COAT_LIFT = 0.0046
+
+
+def coat_cal(lin_rgb, coat=1.0):
+    """Albedo that renders on ``lin_rgb`` under a clear coat of weight ``coat``."""
+    t = np.asarray(lin_rgb, np.float32)
+    return np.maximum((t - COAT_LIFT * coat) / (1.0 - COAT_F * coat), 0.0004).astype(np.float32)
+
+
+#: mother-of-pearl (abalone / nacre) palette of the raden inlays, linear-ish sRGB hexes
+RADEN = ("#E9D3DC", "#CFE6DF", "#C9D6F2", "#EDE6CF", "#B8DCCB", "#E2C8E6", "#D4E9F0", "#F2DCC8")
+
+
+def raden(G, inside, seed, cell=2.0, gap=0.22):
+    """Raden inlay: the area ``inside`` (mask) tiled with small irregular shell pieces (a jittered
+    Voronoi), each with its own nacre tint and sheen angle, separated by hairline lacquer gaps.
+    Returns (base linear RGB, gap mask, relief mm)."""
+    from ironart.ui_chrome_maps import L
+    rng = np.random.default_rng(seed)
+    ys, xs = np.nonzero(inside > 0.01)
+    if len(xs) == 0:
+        return np.zeros(G.shape + (3,), np.float32), np.zeros(G.shape, np.float32), np.zeros(G.shape, np.float32)
+    x0, x1 = G.xs[xs.min()] - cell, G.xs[xs.max()] + cell
+    y0, y1 = G.ys[ys.min()] - cell, G.ys[ys.max()] + cell
+    gx = np.arange(x0, x1, cell)
+    gy = np.arange(y0, y1, cell)
+    P = np.array([(x + (rng.random() - 0.5) * cell * 0.9, y + (rng.random() - 0.5) * cell * 0.9)
+                  for y in gy for x in gx], np.float32)
+    cols = np.array([L(RADEN[i]) for i in rng.integers(0, len(RADEN), len(P))], np.float32)
+    bright = (0.75 + 0.4 * rng.random(len(P))).astype(np.float32)
+    tilt = (rng.random((len(P), 2)) - 0.5).astype(np.float32)
+    sl = (slice(ys.min(), ys.max() + 1), slice(xs.min(), xs.max() + 1))
+    X, Y = G.X[sl], G.Y[sl]
+    d1 = np.full(X.shape, 1e9, np.float32)
+    d2 = np.full(X.shape, 1e9, np.float32)
+    idx = np.zeros(X.shape, np.int32)
+    for k, (px, py) in enumerate(P):
+        d = (X - px) ** 2 + (Y - py) ** 2
+        closer = d < d1
+        d2 = np.where(closer, d1, np.minimum(d2, d))
+        idx = np.where(closer, k, idx)
+        d1 = np.where(closer, d, d1)
+    edge = (np.sqrt(d2) - np.sqrt(d1)) * 0.5            # ~ distance to the cell border
+    gaps = np.clip(1.0 - (edge - gap * 0.5) / G.px, 0, 1)
+    base = np.zeros(G.shape + (3,), np.float32)
+    base[sl] = cols[idx] * bright[idx][..., None]
+    gm = np.zeros(G.shape, np.float32)
+    gm[sl] = gaps
+    rel = np.zeros(G.shape, np.float32)
+    rel[sl] = 0.04 * (tilt[idx, 0] * (X - P[idx, 0]) + tilt[idx, 1] * (Y - P[idx, 1]))
+    return base, gm, rel
+
+
+def stamp_signed(G, local):
+    """:func:`stamp` for signed data (relief offsets): pastes instead of taking a maximum."""
+    out = np.zeros(G.shape, np.float32)
+    h, w = local.shape[:2]
+    H, W = G.shape
+    out[:h, :w] = local
+    out[:h, W - w:] = local[:, ::-1]
+    out[H - h:, :w] = local[::-1, :]
+    out[H - h:, W - w:] = local[::-1, ::-1]
+    return out

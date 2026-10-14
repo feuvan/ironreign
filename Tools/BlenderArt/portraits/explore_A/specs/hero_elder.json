@@ -4,14 +4,16 @@
  "gender": "m",
  "age": 72,
  "archetype": "elder",
- "expression": "serene",
+ "expression": "scheming",
  "expr": {
-  "eyebrows-left-inner-up": 0.15,
-  "eyebrows-right-inner-up": 0.15
+  "eye-left-slit": 0.12,
+  "eye-right-slit": 0.18,
+  "mouth-corner-puller": 0.1
  },
  "face": {
   "nose/nose-scale-vert-decr|incr": 0.2,
-  "cheek/{s}-cheek-volume-decr|incr": -0.2
+  "cheek/{s}-cheek-volume-decr|incr": -0.2,
+  "eyes/{s}-eye-height2-decr|incr": -0.15
  },
  "identity": {
   "skin_tone": 0.45,
@@ -25,8 +27,8 @@
   "grey": 0.92,
   "recede": 0.45,
   "melanin": 0.9,
-  "count": 6000,
-  "bun": 0.016
+  "count": 9000,
+  "bun": 0.022
  },
  "brows": {
   "thick": 1.2,
@@ -57,17 +59,18 @@
   "clump": 0.6
  },
  "beard_grey": 0.95,
+ "iris": 0.38,
  "outfit": {
   "kind": "sage",
   "outer": [
-   0.025,
-   0.03,
-   0.05
+   0.02,
+   0.035,
+   0.075
   ],
   "mid": [
-   0.5,
-   0.47,
-   0.4
+   0.06,
+   0.05,
+   0.045
   ],
   "inner": [
    0.7,
@@ -76,9 +79,9 @@
   ],
   "motif": "clouds",
   "motif_rgb": [
-   0.25,
-   0.25,
-   0.28
+   0.1,
+   0.1,
+   0.13
   ],
   "band": [
    0.6,
@@ -86,7 +89,8 @@
    0.48
   ],
   "band_w": 0.05,
-  "depth": 0.15
+  "sheen": 0.12,
+  "depth": 0.11
  },
  "headgear": {
   "kind": "guan",
@@ -95,7 +99,8 @@
    0.013,
    0.012
   ],
-  "pin_metal": false
+  "pin_metal": false,
+  "size": 1.25
  },
  "camera": {
   "yaw": 22.0,

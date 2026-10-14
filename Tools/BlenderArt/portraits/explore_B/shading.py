@@ -85,7 +85,9 @@ def skin(ident, key_dir, name="Skin"):
     gc = (0.30, 0.29, 0.28)
     hcol = tuple(h + (g - h) * ident.grey * 0.6 for h, g in zip(hc, gc))
     if ident.brow_paint > 0:
-        col = nb.mix(col, hcol, nb.math("MULTIPLY", z("brow"), ident.brow_paint))
+        bm = brow_shape(nb, rest, female=(ident.brow_mask == "brow_f"), thick=ident.brow_thick,
+                        angle=ident.brow_angle)
+        col = nb.mix(col, hcol, nb.math("MULTIPLY", bm, ident.brow_paint))
     if ident.scalp_paint > 0:
         col = nb.mix(col, hcol, nb.math("MULTIPLY", z(ident.scalp_mask), ident.scalp_paint))
     if ident.beard_paint > 0:
@@ -153,6 +155,33 @@ def skin(ident, key_dir, name="Skin"):
     return m
 
 
+def brow_shape(nb, rest, female=False, thick=1.0, angle=0.0, soft=0.0009):
+    """Crisp painted eyebrow evaluated per shading point from the rest position (metres, base
+    mesh): an arched centre line and a tapering half-width, plus slanted hair strokes."""
+    sep = nb.separate(rest)
+    ax = nb.math("ABSOLUTE", sep[0])
+    u = nb.maprange(ax, 0.0, 0.07, 0.0, 1.0)
+    if female:
+        cl = [(0.0, 0.36), (0.13, 0.42), (0.29, 0.60), (0.51, 0.72), (0.71, 0.67), (0.92, 0.44), (1.0, 0.33)]
+        hw = [(0.0, 0.0), (0.12, 0.55), (0.24, 0.75), (0.57, 0.50), (0.90, 0.12), (1.0, 0.0)]
+        hmax = 0.0034
+    else:
+        cl = [(0.0, 0.30), (0.13, 0.35), (0.29, 0.62), (0.51, 0.80), (0.71, 0.74), (0.92, 0.40), (1.0, 0.30)]
+        hw = [(0.0, 0.0), (0.11, 0.85), (0.28, 1.0), (0.64, 0.75), (0.92, 0.25), (1.0, 0.0)]
+        hmax = 0.0050
+    cy = nb.maprange(nb.fcurve(u, cl), 0.0, 1.0, 0.736, 0.756)
+    cy = nb.math("ADD", cy, nb.math("MULTIPLY", nb.math("SUBTRACT", ax, 0.02), angle * 0.12))
+    half = nb.math("MULTIPLY", nb.fcurve(u, hw), hmax * thick)
+    d = nb.math("ABSOLUTE", nb.math("SUBTRACT", sep[2], cy))
+    m = nb.maprange(nb.math("SUBTRACT", d, half), soft, -soft, 0.0, 1.0, interp="SMOOTHSTEP")
+    front = nb.maprange(sep[1], -0.10, -0.125, 0.0, 1.0)
+    m = nb.math("MULTIPLY", m, front)
+    # slanted hair strokes inside the brow (lighter gaps): hairs lean laterally-up
+    st = nb.math("SINE", nb.math("ADD", nb.math("MULTIPLY", ax, 2600.0), nb.math("MULTIPLY", sep[2], 1500.0)))
+    strokes = nb.maprange(st, -1.0, 1.0, 0.72, 1.0)
+    return nb.math("MULTIPLY", m, strokes)
+
+
 def eyes(ident, name="Eye", tex_path=None):
     m, nb = material(name)
     img = bpy.data.images.load(tex_path, check_existing=True)
@@ -177,8 +206,11 @@ def eyes(ident, name="Eye", tex_path=None):
     return m
 
 
-def cornea(name="Cornea"):
-    """Clear shell in front of the iris: transparent + sharp reflection = painted catchlights."""
+def cornea(name="Cornea", catch_dir=None, catch_size=0.9965, catch_strength=6.0):
+    """Clear shell in front of the iris: transparent + sharp reflection, plus a *painter's
+    catchlight*: an emissive spot where the mirror direction points at ``catch_dir`` (a virtual
+    window up-left of the camera), so every portrait gets the same crisp highlight in both eyes
+    whatever the key light does."""
     m, nb = material(name)
     tr = nb.node("ShaderNodeBsdfTransparent")
     gl = nb.node("ShaderNodeBsdfGlossy", inputs={"Roughness": 0.03, "Color": (1, 1, 1, 1)})
@@ -187,7 +219,27 @@ def cornea(name="Cornea"):
     nb.set(mix.inputs[0], nb.math("ADD", nb.math("MULTIPLY", fr.outputs[0], 0.8), 0.06))
     nb.set(mix.inputs[1], tr.outputs[0])
     nb.set(mix.inputs[2], gl.outputs[0])
-    output(nb, mix)
+    sh = mix.outputs[0]
+    if catch_dir is not None:
+        g = nb.node("ShaderNodeNewGeometry")
+        I = g.outputs["Incoming"]
+        N = g.outputs["Normal"]
+        ndi = nb.vmath("DOT_PRODUCT", N, I)
+        R = nb.vmath("SUBTRACT", nb.vmath("SCALE", N, scale=2.0), I)
+        sc = nb.node("ShaderNodeVectorMath", operation="SCALE")
+        nb.set(sc.inputs[0], N)
+        nb.set(sc.inputs["Scale"], nb.math("MULTIPLY", ndi, 2.0))
+        R = nb.vmath("SUBTRACT", sc.outputs[0], I)
+        cd = nb.node("ShaderNodeCombineXYZ", inputs={"X": catch_dir[0], "Y": catch_dir[1], "Z": catch_dir[2]})
+        dd = nb.vmath("DOT_PRODUCT", nb.vmath("NORMALIZE", R), cd.outputs[0])
+        spot = nb.maprange(dd, catch_size, catch_size + 0.0025, 0.0, 1.0, interp="SMOOTHSTEP")
+        em = nb.node("ShaderNodeEmission", inputs={"Color": (1.0, 0.96, 0.9, 1.0)})
+        nb.set(em.inputs["Strength"], nb.math("MULTIPLY", spot, catch_strength))
+        add = nb.node("ShaderNodeAddShader")
+        nb.set(add.inputs[0], sh)
+        nb.set(add.inputs[1], em.outputs[0])
+        sh = add.outputs[0]
+    output(nb, sh)
     nb.aov("detail", 1.0)
     nb.aov("eye", 1.0)
     return m
@@ -196,6 +248,18 @@ def cornea(name="Cornea"):
 # ---------------------------------------------------------------------------------------------
 # costume materials
 # ---------------------------------------------------------------------------------------------
+def painted_strokes(nb, col, amount=0.08, scale=60.0, stretch=(1.0, 1.0, 7.0), hue=0.015):
+    """Hand-painted value/hue variation: noise stretched along ``stretch`` (object space) so it
+    reads as brush strokes, not as CG grime."""
+    obj = nb.node("ShaderNodeTexCoord").outputs["Object"]
+    v = nb.node("ShaderNodeMapping")
+    nb.set(v.inputs["Vector"], obj)
+    v.inputs["Scale"].default_value = (scale / stretch[0], scale / stretch[1], scale / stretch[2])
+    n = nb.noise(v.outputs[0], scale=1.0, detail=3.0, rough=0.6, distortion=0.4)
+    val = nb.maprange(n, 0.3, 0.7, 1.0 - amount, 1.0 + amount)
+    return nb.hsv(col, h=nb.maprange(n, 0.3, 0.7, 0.5 - hue, 0.5 + hue), s=1.0, v=val)
+
+
 def _edge_from_uv(nb, width=0.08):
     uv = nb.node("ShaderNodeTexCoord").outputs["UV"]
     s = nb.separate(uv)
@@ -206,7 +270,7 @@ def _edge_from_uv(nb, width=0.08):
 
 
 def iron_plate(name="IronPlate", color=(0.045, 0.05, 0.058), lacing=(0.30, 0.025, 0.018),
-               rough=0.38, key_dir=None, edge_bright=0.35, lace=True, rivet=True):
+               rough=0.38, key_dir=None, edge_bright=0.35, lace=True, rivet=True, inlay=None):
     """Lamellar plate: dark blued iron, polished worn edges, two laced holes near the top with
     red cord, a rivet, grime in the middle; per-plate variation from ``plate_rand``."""
     m, nb = material(name)
@@ -217,6 +281,7 @@ def iron_plate(name="IronPlate", color=(0.045, 0.05, 0.058), lacing=(0.30, 0.025
     base = nb.mix(color, (color[0] * 1.6, color[1] * 1.5, color[2] * 1.35), nb.math("MULTIPLY", pr, 0.6))
     base = nb.mix(base, (0.055, 0.035, 0.022), nb.maprange(grime, 0.45, 0.75, 0.0, 0.5))   # rust/grime
     base = nb.mix(base, (0.16, 0.16, 0.17), nb.math("MULTIPLY", edge, edge_bright))          # worn edges
+    base = painted_strokes(nb, base, amount=0.18, scale=70.0, stretch=(6.0, 6.0, 1.0), hue=0.03)
     r = nb.mixf(rough + 0.1, rough - 0.12, edge)
     r = nb.math("ADD", r, nb.math("MULTIPLY", nb.math("SUBTRACT", grime, 0.5), 0.2))
     metal = 0.92
@@ -245,6 +310,26 @@ def iron_plate(name="IronPlate", color=(0.045, 0.05, 0.058), lacing=(0.30, 0.025
         rv = nb.maprange(dr, 0.01, 0.0, 0.0, 1.0, interp="SMOOTHSTEP")
         bump_h = nb.math("ADD", bump_h, nb.math("MULTIPLY", rv, 1.5))
         base = nb.mix(base, (0.35, 0.25, 0.12), nb.math("MULTIPLY", rv, 0.8))
+    if inlay is not None:
+        # gold scroll inlay in a band (UV v range) - helmet bowls, cuirass rims
+        uvv = nb.node("ShaderNodeTexCoord").outputs["UV"]
+        sp2 = nb.separate(uvv)
+        v0, v1 = inlay.get("band", (0.06, 0.30))
+        band = nb.math("MULTIPLY", nb.maprange(sp2[1], v0, v0 + 0.02, 0.0, 1.0), nb.maprange(sp2[1], v1, v1 - 0.02, 0.0, 1.0))
+        w = nb.node("ShaderNodeTexWave", wave_type="BANDS", bands_direction="X")
+        nb.set(w.inputs["Vector"], nb.combine(nb.math("MULTIPLY", sp2[0], inlay.get("repeat", 24.0)),
+                                              nb.math("MULTIPLY", sp2[1], 6.0), 0.0))
+        w.inputs["Scale"].default_value = 1.0
+        w.inputs["Distortion"].default_value = 9.0
+        w.inputs["Detail"].default_value = 2.0
+        pat = nb.math("MULTIPLY", nb.maprange(w.outputs["Fac"], 0.62, 0.72, 0.0, 1.0), band)
+        edge_l = nb.math("MULTIPLY", nb.maprange(nb.math("ABSOLUTE", nb.math("SUBTRACT", sp2[1], v0 + 0.01)), 0.006, 0.0, 0.0, 1.0), 1.0)
+        edge_h = nb.maprange(nb.math("ABSOLUTE", nb.math("SUBTRACT", sp2[1], v1 - 0.01)), 0.006, 0.0, 0.0, 1.0)
+        pat = nb.math("MAXIMUM", pat, nb.math("MAXIMUM", edge_l, edge_h))
+        base = nb.mix(base, (0.62, 0.40, 0.13), pat)
+        metal = 1.0
+        r = nb.mixf(r, 0.25, pat)
+        bump_h = nb.math("ADD", bump_h, nb.math("MULTIPLY", pat, 0.5))
     bump = nb.bump(bump_h, strength=0.4, distance=0.0008)
     p = principled(nb, Base_Color=base, Metallic=metal, Roughness=r, Normal=bump,
                    Specular_IOR_Level=0.5)
@@ -278,7 +363,7 @@ def metal(name, color=(0.62, 0.38, 0.12), rough=0.3, vary=0.25, scale=80.0, engr
 
 def cloth(name, color, sheen=0.4, rough=0.7, pattern=None, pattern_color=None, pattern_scale=12.0,
           aniso=0.0, key_dir=None, weave=0.15, border=None, border_color=None, border_width=0.18,
-          painter=True):
+          painter=True, spec=0.12):
     """Silk / brocade / linen.  ``pattern``: None, 'cloud' (brocade cloud scrolls), 'diamond',
     'dots'.  ``border``: 'u' or 'v' -> an embroidered band along that UV edge."""
     m, nb = material(name)
@@ -324,13 +409,15 @@ def cloth(name, color, sheen=0.4, rough=0.7, pattern=None, pattern_color=None, p
         bcol = nb.mix(nb.mix(col, bc, 0.25), bc, nb.math("MULTIPLY", emb, 0.8))
         col = nb.mix(col, bcol, band)
         bump_h = nb.math("ADD", bump_h, nb.math("MULTIPLY", nb.math("MULTIPLY", band, emb), 0.5))
+    col = painted_strokes(nb, col, amount=0.10, scale=45.0, stretch=(1.0, 1.0, 6.0))
     if painter and key_dir is not None:
         col, _ = painter_tint(nb, col, key_dir, warm=(1.18, 0.95, 0.82), cool=(0.85, 0.92, 1.12),
                               warm_amt=0.6, cool_amt=0.5)
     bump = nb.bump(bump_h, strength=0.25, distance=0.0006)
-    p = principled(nb, Base_Color=col, Roughness=rough, Sheen_Weight=sheen * 0.6, Sheen_Roughness=0.4,
-                   Sheen_Tint=nb.mix(col, (1, 1, 1, 1), 0.35), Normal=bump, Anisotropic=aniso,
-                   Specular_IOR_Level=0.35)
+    # sheen tinted by the cloth itself (white sheen turns dark silk into pale felt)
+    p = principled(nb, Base_Color=col, Roughness=rough, Sheen_Weight=sheen * 0.35, Sheen_Roughness=0.45,
+                   Sheen_Tint=nb.hsv(col, s=1.2, v=2.5), Normal=bump, Anisotropic=aniso,
+                   Specular_IOR_Level=spec)
     output(nb, p)
     nb.aov("costume", 1.0)
     return m
@@ -355,6 +442,8 @@ def costume_materials(key_dir, palette=None):
     return dict(
         iron=iron_plate("IronPlate", pal["iron"], pal["lacing"], key_dir=key_dir),
         iron_plain=iron_plate("IronPlain", pal["iron"], pal["lacing"], key_dir=key_dir, lace=False, rivet=False),
+        iron_inlay=iron_plate("IronInlay", pal["iron"], pal["lacing"], key_dir=key_dir, lace=False, rivet=False,
+                              inlay=dict(band=(0.05, 0.30), repeat=20.0)),
         bronze=metal("Bronze", pal["bronze"], rough=0.32),
         gold=metal("Gold", pal["gold"], rough=0.25, engrave=0.3),
         leather=leather("Leather", pal["leather"]),

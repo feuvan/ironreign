@@ -45,7 +45,7 @@ MATS = {
     "pearl": dict(base=L("#B9B4AA"), metal=0.0, rough=0.22, coat=0.8, spec=0.5, mop=1.0),
     # ink / seal paste
     "ink": dict(base=L("#141110"), metal=0.0, rough=0.45, coat=0.0, spec=0.35),
-    "seal_paste": dict(base=L("#B0281C"), metal=0.0, rough=0.62, coat=0.0, spec=0.3),
+    "seal_paste": dict(base=L("#B52A1A"), metal=0.0, rough=0.62, coat=0.0, spec=0.3),
 }
 
 
