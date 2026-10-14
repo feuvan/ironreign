@@ -9,7 +9,7 @@
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FIronBattleBoardMathTest, "IronReign.World.BattleBoard", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::ProductFilter)
 
-bool FIronBattleBoardMathTest::RunTest(const FString& Parameters)
+bool FIronBattleBoardMathTest::RunTest(const FString& /*Parameters*/)
 {
 	// Board-local metres agree with the rules engine's hex pixels (radius 4 m), shifted so hex (0,0) is the origin.
 	for (int32 Col = 0; Col < 18; ++Col)

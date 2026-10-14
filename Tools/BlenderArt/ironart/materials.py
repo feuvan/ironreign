@@ -605,9 +605,12 @@ def rock(name="Rock", color="rock", vary=0.2):
 # people
 # ---------------------------------------------------------------------------------------------
 def skin(name="Skin", color="skin", sss=0.25, roughness=0.48, blush=0.25, vary=0.06,
-         pores=0.05, blush_attr="blush", pore_scale=160.0):
-    """Warm skin with subsurface.  ``blush_attr`` (mesh float attribute 0..1, optional) reddens
-    cheeks/nose/ears; missing attributes read as 0 so it is safe to leave."""
+         pores=0.05, blush_attr="blush", pore_scale=160.0, lip_color="#8A4436", lip=0.7,
+         mouth_color="#2A120C", mouth=0.9):
+    """Warm skin with subsurface.  Mesh float attributes (0..1, optional - missing ones read as
+    0): ``blush`` reddens cheeks/nose/ears, ``lip`` tints the lips ``lip_color``, ``mouth`` paints
+    the dark mouth line (``figure.head`` writes all three) so the mouth reads as a crisp ~1.5 px
+    line at 192 px whatever the light."""
     mat, nb, created = new(name)
     if not created:
         return mat
@@ -615,6 +618,10 @@ def skin(name="Skin", color="skin", sss=0.25, roughness=0.48, blush=0.25, vary=0
     base = _vary(nb, color, vary, 6.0, vec=obj)
     bl = nb.attr(blush_attr).outputs["Fac"]
     base = nb.mix(base, "#B0584A", nb.math("MULTIPLY", bl, blush))
+    if lip > 0:
+        base = nb.mix(base, lip_color, nb.math("MULTIPLY", nb.attr("lip").outputs["Fac"], lip))
+    if mouth > 0:
+        base = nb.mix(base, mouth_color, nb.math("MULTIPLY", nb.attr("mouth").outputs["Fac"], mouth))
     pn = nb.noise(obj, scale=pore_scale, detail=3)
     p = nb.principled(Base_Color=base, Roughness=roughness, Specular_IOR_Level=0.45,
                       Subsurface_Weight=sss, Subsurface_Radius=(1.0, 0.4, 0.25),
@@ -655,13 +662,19 @@ def hair_strands(name="HairStrands", color="hair_black", melanin=None, redness=0
 
 def hair_mesh(name="HairMesh", color="hair_black", strand_scale=180.0, roughness=0.45,
               direction="Z"):
-    """Hair/beard as a mesh shell: anisotropic strand stripes along ``direction`` (object axis)."""
+    """Hair/beard as a mesh shell: anisotropic strand stripes along ``direction`` (object axis
+    'X' / 'Y' / 'Z', or 'UV' = along the mesh v coordinate, e.g. :func:`figure.hair_cap`)."""
     mat, nb, created = new(name)
     if not created:
         return mat
-    obj = nb.coord("Object")
-    sc = {"X": (1, strand_scale, strand_scale), "Y": (strand_scale, 1, strand_scale),
-          "Z": (strand_scale, strand_scale, 2.0)}[direction]
+    if direction == "UV":
+        # strands run along v (hair_cap: hairline -> crown): stripes vary along u only
+        obj = nb.coord("UV")
+        sc = (strand_scale, 2.0, 1.0)
+    else:
+        obj = nb.coord("Object")
+        sc = {"X": (1, strand_scale, strand_scale), "Y": (strand_scale, 1, strand_scale),
+              "Z": (strand_scale, strand_scale, 2.0)}[direction]
     n = nb.noise(nb.mapping(obj, scale=sc), scale=1.0, detail=3, distortion=0.3)
     lin = palette.lin(color)
     col = nb.ramp(n.outputs["Fac"], [(0.3, tuple(c * 0.5 for c in lin) + (1,)),
