@@ -31,8 +31,8 @@
   "eyes/{s}-eye-height2-decr|incr": -0.15
  },
  "identity": {
-  "skin_tone": 0.62,
-  "skin_red": 0.6,
+  "skin_tone": 0.85,
+  "skin_red": 0.75,
   "muscle": 0.85,
   "weight": 0.5
  },

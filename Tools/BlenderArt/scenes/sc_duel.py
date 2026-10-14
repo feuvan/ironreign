@@ -36,26 +36,26 @@ def build(r):
         stops=[(0.0, "#F8A070"), (0.025, "#F08A64"), (0.07, "#D07872"), (0.16, "#8E6A8C"),
                (0.36, "#50588A"), (1.0, "#222A56")],
         strength=1.0,
-        glows=[dict(dir=SUN, color="#FF6A30", lobes=[(3, 0.5), (24, 1.3), (600, 7.0)],
+        glows=[dict(dir=SUN, color="#FF5A30", lobes=[(3, 0.4), (24, 1.0), (600, 4.5)],
                     horizon=(1.2, 0.05, 1.6))],
         discs=[dict(dir=SUN, radius_deg=0.85, color="#FFD098", strength=16.0, edge=0.06)],
         clouds=[dict(height=2400, scale=3600, coverage=0.38, softness=0.24, lit="#FFB088",
                      shadow="#6A4A68", rim_color="#FFD0A0", rim=3.0, rim_power=5.0, opacity=0.85,
                      stretch=(1.0, 0.35), fade=0.14, shade=7.0, seed=71.0, haze=0.6)],
         light=dict(strength=0.5, tint="#B8A8D0"),
-        fog=dict(haze=1.0e-4, haze_falloff=0.001, haze_h0=CLOUD_Z, haze_max=0.88, haze_zmax=0.08),
+        fog=dict(haze=3.5e-4, haze_falloff=0.001, haze_h0=CLOUD_Z, haze_max=0.9, haze_zmax=0.08),
     ))
     S.sun(SUN[0], SUN[1] + 2.5, energy=4.0, color="#FFA868", angle_deg=1.5)
     # cloud sea far below
     from sc_sect import cloud_material
     def cs(X, Y):
         # billowing heaps (inverted ridged noise) + small puffs, as in the Sect scene
-        heaps = 1.0 - T.ridged2(X, Y, 300.0, 4, sharp=1.2, seed=13)
-        return CLOUD_Z + 70.0 * heaps ** 1.6 + 14.0 * T.fbm2(X, Y, 50.0, 3, seed=14)
+        heaps = 1.0 - T.ridged2(X, Y, 260.0, 4, sharp=1.0, seed=13)
+        return CLOUD_Z + 50.0 * heaps ** 1.6 + 12.0 * T.fbm2(X, Y, 50.0, 3, seed=14)
     T.field_from(cs, -6000, 6000, 150, 9000, 24.0 if pv else 12.0).build("CloudSea", cloud_material(CLOUD_Z, "DuelCloudSea"))
     # soft layers of sunset-coloured mist over the cloud heaps: the sea reads as cloud, not dunes
-    for i, (dz, colr, dens) in enumerate([(18.0, "#9C7E9E", 0.55), (36.0, "#C48E9C", 0.5), (54.0, "#E4A29A", 0.45),
-                                          (72.0, "#F6BA9C", 0.4), (90.0, "#FFD4B4", 0.3)]):
+    for i, (dz, colr, dens) in enumerate([(14.0, "#9C7E9E", 0.8), (28.0, "#C48E9C", 0.75), (42.0, "#E4A29A", 0.7),
+                                          (56.0, "#F6BA9C", 0.6), (70.0, "#FFD4B4", 0.45)]):
         mm = T.mist_material("DuelCloudMist%d" % i, colr, strength=1.0, density=dens, scale=26.0,
                              seed=float(7 + i * 5), softness=0.55, stretch=1.6, edge=0.12)
         T.flat_card("DuelCloudMist%d" % i, (0.0, 5200.0, CLOUD_Z + dz), (12000.0, 10000.0), mm)
@@ -140,5 +140,5 @@ def build(r):
                 beams_cfg=dict(ray_length=0.22, strength=0.25, threshold=1.4),
                 glow=dict(threshold=1.0, mix=-0.8, size=9),
                 grade=dict(saturation=1.06, contrast=1.06, shadows=(0.0, -0.004, 0.02),
-                           highlights=(0.03, 0.008, -0.02), clarity=0.12, vignette=0.26,
+                           highlights=(0.03, -0.004, 0.0), clarity=0.12, vignette=0.26,
                            canvas=0.012, sharpen=0.25))

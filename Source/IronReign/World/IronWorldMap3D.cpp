@@ -18,6 +18,7 @@
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GameFramework/PlayerController.h"
+#include "HAL/PlatformTime.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
 #include "Misc/App.h"
@@ -53,6 +54,31 @@ namespace IronWorldMap3DDetail
 	constexpr double RingMaxSlope = 0.6;
 	/** A view target farther than this (cm) from the map camera is another scene (the battle board is 100 km away). */
 	constexpr double BlendMaxDistanceCm = 2.0e6;
+	/** Label anchors above the model tops (metres): city plaques and army troop tags. */
+	constexpr float CityLabelAboveM = 6.0f;
+	constexpr float ArmyLabelAboveM = 4.0f;
+
+	/** Vertex stride of the runtime terrain mesh per quality level: the full 2 m heightmap grid at Epic, 4 m below. */
+	int32 TerrainStrideFor(int32 QualityLevel)
+	{
+		return QualityLevel >= 3 ? 1 : 2;
+	}
+
+	/** Spawn parameters of the actors the map owns (terrain, camera rig): transient, never blocked by collision. */
+	FActorSpawnParameters OwnedSpawnParams(AActor* MapOwner)
+	{
+		FActorSpawnParameters SpawnParams;
+		SpawnParams.Owner = MapOwner;
+		SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+		SpawnParams.ObjectFlags |= RF_Transient;
+		return SpawnParams;
+	}
+
+	IronWorld::FAssetCheckCache& MapAssetCheck()
+	{
+		static IronWorld::FAssetCheckCache Cache;
+		return Cache;
+	}
 
 	FLinearColor HoverColor()
 	{
@@ -167,15 +193,15 @@ AIronWorldMap3D::AIronWorldMap3D()
 
 bool AIronWorldMap3D::AreAssetsAvailable()
 {
-	static bool bConfirmed = false;
-	static bool bReportedMissing = false;
-	if (bConfirmed)
-	{
-		return true;
-	}
 	if (!FApp::CanEverRender())
 	{
 		return false;
+	}
+	IronWorld::FAssetCheckCache& Cache = IronWorldMap3DDetail::MapAssetCheck();
+	const double NowSeconds = FPlatformTime::Seconds();
+	if (Cache.IsFresh(NowSeconds))
+	{
+		return Cache.bAvailable;
 	}
 
 	FString Missing;
@@ -209,17 +235,23 @@ bool AIronWorldMap3D::AreAssetsAvailable()
 		}
 	}
 
-	if (!Missing.IsEmpty())
+	if (Cache.Store(Missing, NowSeconds))
 	{
-		if (!bReportedMissing)
+		if (Missing.IsEmpty())
 		{
-			bReportedMissing = true;
-			UE_LOG(LogIronWorld, Log, TEXT("3D campaign map unavailable (missing %s); using the 2D map."), *Missing);
+			UE_LOG(LogIronWorld, Log, TEXT("The 3D campaign map assets are available now."));
 		}
-		return false;
+		else
+		{
+			UE_LOG(LogIronWorld, Log, TEXT("3D campaign map unavailable (missing %s); using the 2D map (checked again every %.0f s)."), *Missing, IronWorld::FAssetCheckCache::RetrySeconds);
+		}
 	}
-	bConfirmed = true;
-	return true;
+	return Cache.bAvailable;
+}
+
+void AIronWorldMap3D::InvalidateAssetCheck()
+{
+	IronWorldMap3DDetail::MapAssetCheck().Invalidate();
 }
 
 AIronWorldMap3D* AIronWorldMap3D::FindMap(UWorld* World)
@@ -277,11 +309,7 @@ void AIronWorldMap3D::Initialize(TSharedPtr<FIronSession> InSession, int32 InQua
 		Environment->SetQuality(QualityLevel);
 	}
 
-	FActorSpawnParameters SpawnParams;
-	SpawnParams.Owner = this;
-	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-	SpawnParams.ObjectFlags |= RF_Transient;
-
+	const FActorSpawnParameters SpawnParams = IronWorldMap3DDetail::OwnedSpawnParams(this);
 	const TSharedPtr<FIronSession> Pinned = Session.Pin();
 	Terrain = GameWorld->SpawnActor<AIronTerrain>(AIronTerrain::StaticClass(), FTransform::Identity, SpawnParams);
 	if (Terrain != nullptr)
@@ -290,7 +318,8 @@ void AIronWorldMap3D::Initialize(TSharedPtr<FIronSession> InSession, int32 InQua
 		{
 			Terrain->SetTreeExclusions(CollectTreeExclusions(Pinned->State()));
 		}
-		Terrain->BeginBuild(QualityLevel >= 3 ? 1 : 2);
+		TerrainStride = IronWorldMap3DDetail::TerrainStrideFor(QualityLevel);
+		Terrain->BeginBuild(TerrainStride);
 		if (Environment != nullptr)
 		{
 			Environment->RegisterSeasonMaterial(Terrain->GetTerrainMaterial());
@@ -301,6 +330,7 @@ void AIronWorldMap3D::Initialize(TSharedPtr<FIronSession> InSession, int32 InQua
 	if (CameraRig != nullptr)
 	{
 		CameraRig->SetTerrain(Terrain.Get());
+		CameraRig->SetFramingInsets(FramingLeft, FramingTop, FramingRight, FramingBottom, true);
 		// Read the camera after it moved this frame (tilt-shift focus, highlights).
 		AddTickPrerequisiteActor(CameraRig.Get());
 	}
@@ -474,12 +504,28 @@ bool AIronWorldMap3D::HasFailed() const
 
 void AIronWorldMap3D::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	// Whoever ends the map (the player controller, a script, a level change, the end of PIE), the screens get their
+	// state back: hidden like SetActive(false), so world rendering stays on only when the battle board is the scene.
+	SetActive(false);
+	if (EndPlayReason == EEndPlayReason::Destroyed || EndPlayReason == EEndPlayReason::RemovedFromWorld)
+	{
+		// The rig is about to go: give the view back to the controller (a world tearing down needs no view target).
+		APlayerController* Controller = GetLocalController();
+		if (IsValid(Controller) && CameraRig != nullptr && Controller->GetViewTarget() == CameraRig.Get())
+		{
+			Controller->SetViewTargetWithBlend(Controller, 0.0f);
+		}
+	}
 	if (EndPlayReason == EEndPlayReason::Destroyed)
 	{
-		// The terrain and camera belong to this map; the environment is shared and stays.
+		// The terrain(s) and camera belong to this map; the environment is shared and stays.
 		if (Terrain != nullptr)
 		{
 			Terrain->Destroy();
+		}
+		if (PendingTerrain != nullptr)
+		{
+			PendingTerrain->Destroy();
 		}
 		if (CameraRig != nullptr)
 		{
@@ -487,6 +533,7 @@ void AIronWorldMap3D::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		}
 	}
 	Terrain = nullptr;
+	PendingTerrain = nullptr;
 	CameraRig = nullptr;
 	Super::EndPlay(EndPlayReason);
 }
@@ -498,6 +545,7 @@ void AIronWorldMap3D::Tick(float DeltaSeconds)
 	{
 		return;
 	}
+	UpdateTerrainDetail();
 
 	const TSharedPtr<FIronSession> Pinned = Session.Pin();
 	if (Pinned.IsValid() && Pinned->HasGame() && Terrain != nullptr && Terrain->IsHeightReady())
@@ -591,6 +639,93 @@ void AIronWorldMap3D::SetQuality(int32 Level)
 	{
 		Environment->SetQuality(QualityLevel);
 	}
+	// The terrain mesh density follows in the next ticks (UpdateTerrainDetail).
+}
+
+void AIronWorldMap3D::UpdateTerrainDetail()
+{
+	using namespace IronWorldMap3DDetail;
+	const int32 WantedStride = TerrainStrideFor(QualityLevel);
+	if (PendingTerrain != nullptr)
+	{
+		if (PendingTerrain->HasFailed())
+		{
+			UE_LOG(LogIronWorld, Warning, TEXT("Rebuilding the 3D terrain at mesh stride %d failed; keeping stride %d."), PendingTerrainStride, TerrainStride);
+			FailedTerrainStride = PendingTerrainStride;
+			PendingTerrain->Destroy();
+			PendingTerrain = nullptr;
+		}
+		else if (WantedStride != PendingTerrainStride)
+		{
+			// The quality changed back (or again) before the new terrain was ready.
+			PendingTerrain->Destroy();
+			PendingTerrain = nullptr;
+		}
+		else if (PendingTerrain->IsBuildComplete())
+		{
+			SwapInPendingTerrain();
+		}
+		return;
+	}
+	// Only the runtime mesh has a density to change, and only once the current build finished.
+	if (Terrain == nullptr || Terrain->HasFailed() || !Terrain->IsBuildComplete() || Terrain->UsesStaticChunks() || WantedStride == TerrainStride || WantedStride == FailedTerrainStride)
+	{
+		return;
+	}
+	UWorld* GameWorld = GetWorld();
+	AIronTerrain* NewTerrain = GameWorld != nullptr ? GameWorld->SpawnActor<AIronTerrain>(AIronTerrain::StaticClass(), FTransform::Identity, OwnedSpawnParams(this)) : nullptr;
+	if (NewTerrain == nullptr)
+	{
+		FailedTerrainStride = WantedStride;
+		return;
+	}
+	// Built hidden in the background (a few components per frame); the current terrain shows until the swap.
+	NewTerrain->SetActorHiddenInGame(true);
+	const TSharedPtr<FIronSession> Pinned = Session.Pin();
+	if (Pinned.IsValid() && Pinned->HasGame())
+	{
+		NewTerrain->SetTreeExclusions(CollectTreeExclusions(Pinned->State()));
+	}
+	NewTerrain->BeginBuild(WantedStride);
+	PendingTerrain = NewTerrain;
+	PendingTerrainStride = WantedStride;
+	UE_LOG(LogIronWorld, Log, TEXT("Quality %d: rebuilding the 3D terrain at mesh stride %d in the background."), QualityLevel, WantedStride);
+}
+
+void AIronWorldMap3D::SwapInPendingTerrain()
+{
+	AIronTerrain* OldTerrain = Terrain.Get();
+	Terrain = PendingTerrain;
+	PendingTerrain = nullptr;
+	TerrainStride = PendingTerrainStride;
+	PendingTerrainStride = 0;
+	if (Environment != nullptr)
+	{
+		Environment->RegisterSeasonMaterial(Terrain->GetTerrainMaterial());
+	}
+	if (CameraRig != nullptr)
+	{
+		CameraRig->SetTerrain(Terrain.Get());
+		CameraRig->ResnapGround();
+	}
+	ApplyVisibility();
+	if (OldTerrain != nullptr)
+	{
+		OldTerrain->Destroy();
+	}
+	// Everything placed with SurfaceAt stands on the old triangles: re-place it on the new ones in this same frame
+	// (cities and sect temples, whose tree clearings are cut again; armies; the rings follow every frame anyway).
+	const TSharedPtr<FIronSession> Pinned = Session.Pin();
+	if (bCitiesBuilt && Pinned.IsValid() && Pinned->HasGame())
+	{
+		const IronSim::FGameState& State = Pinned->State();
+		BuildCities(State);
+		if (bMapActive)
+		{
+			SyncArmies(State, 0.0f);
+		}
+	}
+	UE_LOG(LogIronWorld, Log, TEXT("The 3D terrain now uses mesh stride %d."), TerrainStride);
 }
 
 void AIronWorldMap3D::SnapCameraToPlayer(const IronSim::FGameState& State)
@@ -1158,16 +1293,17 @@ void AIronWorldMap3D::UpdateHighlights()
 // Picking and projection
 // ---------------------------------------------------------------------------------------------------------------------
 
-bool AIronWorldMap3D::PickMapPoint(const FVector2D& ViewportPixel, FVector2D& OutMapPointM) const
+const FIronViewProjection& AIronWorldMap3D::GetViewProjection() const
 {
-	const APlayerController* Controller = GetLocalController();
-	if (!bMapActive || Controller == nullptr)
-	{
-		return false;
-	}
+	FrameView.Refresh(GetLocalController());
+	return FrameView;
+}
+
+bool AIronWorldMap3D::TraceMapPoint(const FIronViewProjection& View, const FVector2D& ViewportPixel, FVector2D& OutMapPointM) const
+{
 	FVector RayOrigin;
 	FVector RayDirection;
-	if (!Controller->DeprojectScreenPositionToWorld(static_cast<float>(ViewportPixel.X), static_cast<float>(ViewportPixel.Y), RayOrigin, RayDirection))
+	if (!View.Deproject(ViewportPixel, RayOrigin, RayDirection))
 	{
 		return false;
 	}
@@ -1187,33 +1323,27 @@ bool AIronWorldMap3D::PickMapPoint(const FVector2D& ViewportPixel, FVector2D& Ou
 	return false;
 }
 
-bool AIronWorldMap3D::ProjectToViewport(const FVector2D& MapPointM, float HeightM, FVector2D& OutViewportPixel) const
+bool AIronWorldMap3D::PickMapPoint(const FVector2D& ViewportPixel, FVector2D& OutMapPointM) const
 {
-	const APlayerController* Controller = GetLocalController();
-	if (Controller == nullptr)
-	{
-		return false;
-	}
-	FVector2D ScreenPosition;
-	if (!Controller->ProjectWorldLocationToScreen(IronWorld::MapToWorld(MapPointM, static_cast<double>(HeightM)), ScreenPosition, false))
-	{
-		return false;
-	}
-	OutViewportPixel = ScreenPosition;
-	return true;
+	return bMapActive && TraceMapPoint(GetViewProjection(), ViewportPixel, OutMapPointM);
 }
 
-int32 AIronWorldMap3D::PickCity(const FVector2D& ViewportPixel) const
+bool AIronWorldMap3D::ProjectToViewport(const FVector2D& MapPointM, float HeightM, FVector2D& OutViewportPixel, float& OutDepthCm) const
 {
-	if (!bMapActive || CityVisuals.Num() == 0)
-	{
-		return -1;
-	}
+	return GetViewProjection().Project(IronWorld::MapToWorld(MapPointM, static_cast<double>(HeightM)), OutViewportPixel, OutDepthCm);
+}
+
+bool AIronWorldMap3D::ProjectToViewport(const FVector2D& MapPointM, float HeightM, FVector2D& OutViewportPixel) const
+{
+	float DepthCm = 0.0f;
+	return ProjectToViewport(MapPointM, HeightM, OutViewportPixel, DepthCm);
+}
+
+int32 AIronWorldMap3D::FindCityAt(const FIronViewProjection& View, const FVector2D& ViewportPixel, const FVector2D& GroundM, bool bHasGround, float& OutScore) const
+{
 	// Within a footprint radius that grows with the zoom, measured on the ground under the cursor or around the
 	// projected middle of the model (tall roofs seen from a steep angle cover ground behind the city).
 	const double Slack = static_cast<double>(GetCameraDistanceM()) * 0.02;
-	FVector2D GroundPoint = FVector2D::ZeroVector;
-	const bool bHasGround = PickMapPoint(ViewportPixel, GroundPoint);
 	int32 Best = -1;
 	double BestScore = 1.0;
 	for (int32 CityIndex = 0; CityIndex < CityVisuals.Num(); ++CityIndex)
@@ -1222,17 +1352,17 @@ int32 AIronWorldMap3D::PickCity(const FVector2D& ViewportPixel) const
 		const double Radius = static_cast<double>(IronWorldMap3DDetail::CityRadius(Visual.CitySize)) + Slack;
 		if (bHasGround)
 		{
-			const double GroundScore = FVector2D::Distance(GroundPoint, Visual.MapPoint) / Radius;
+			const double GroundScore = FVector2D::Distance(GroundM, Visual.MapPoint) / Radius;
 			if (GroundScore < BestScore)
 			{
 				BestScore = GroundScore;
 				Best = CityIndex;
 			}
 		}
-		const float MiddleM = Visual.GroundM + Visual.TopM * 0.5f;
+		const double MiddleM = static_cast<double>(Visual.GroundM + Visual.TopM * 0.5f);
 		FVector2D Centre;
 		FVector2D Edge;
-		if (ProjectToViewport(Visual.MapPoint, MiddleM, Centre) && ProjectToViewport(Visual.MapPoint + FVector2D(Radius, 0.0), MiddleM, Edge))
+		if (View.Project(IronWorld::MapToWorld(Visual.MapPoint, MiddleM), Centre) && View.Project(IronWorld::MapToWorld(Visual.MapPoint + FVector2D(Radius, 0.0), MiddleM), Edge))
 		{
 			const double PixelRadius = FMath::Max(12.0, FVector2D::Distance(Centre, Edge));
 			const double ScreenScore = FVector2D::Distance(ViewportPixel, Centre) / PixelRadius;
@@ -1243,18 +1373,13 @@ int32 AIronWorldMap3D::PickCity(const FVector2D& ViewportPixel) const
 			}
 		}
 	}
+	OutScore = static_cast<float>(BestScore);
 	return Best;
 }
 
-int32 AIronWorldMap3D::PickArmy(const FVector2D& ViewportPixel) const
+int32 AIronWorldMap3D::FindArmyAt(const FIronViewProjection& View, const FVector2D& ViewportPixel, const FVector2D& GroundM, bool bHasGround, float& OutScore) const
 {
-	if (!bMapActive || ArmyVisuals.Num() == 0)
-	{
-		return -1;
-	}
 	const double Radius = static_cast<double>(IronWorldMap3DDetail::ArmyPickRadiusM) + static_cast<double>(GetCameraDistanceM()) * 0.015;
-	FVector2D GroundPoint = FVector2D::ZeroVector;
-	const bool bHasGround = PickMapPoint(ViewportPixel, GroundPoint);
 	int32 Best = -1;
 	double BestScore = 1.0;
 	for (const TPair<int32, FIronArmyVisual>& Pair : ArmyVisuals)
@@ -1262,17 +1387,17 @@ int32 AIronWorldMap3D::PickArmy(const FVector2D& ViewportPixel) const
 		const FIronArmyVisual& Visual = Pair.Value;
 		if (bHasGround)
 		{
-			const double GroundScore = FVector2D::Distance(GroundPoint, Visual.MapPoint) / Radius;
+			const double GroundScore = FVector2D::Distance(GroundM, Visual.MapPoint) / Radius;
 			if (GroundScore < BestScore)
 			{
 				BestScore = GroundScore;
 				Best = Pair.Key;
 			}
 		}
-		const float MiddleM = Visual.GroundM + Visual.TopM * 0.5f;
+		const double MiddleM = static_cast<double>(Visual.GroundM + Visual.TopM * 0.5f);
 		FVector2D Centre;
 		FVector2D Edge;
-		if (ProjectToViewport(Visual.MapPoint, MiddleM, Centre) && ProjectToViewport(Visual.MapPoint + FVector2D(Radius, 0.0), MiddleM, Edge))
+		if (View.Project(IronWorld::MapToWorld(Visual.MapPoint, MiddleM), Centre) && View.Project(IronWorld::MapToWorld(Visual.MapPoint + FVector2D(Radius, 0.0), MiddleM), Edge))
 		{
 			const double PixelRadius = FMath::Max(10.0, FVector2D::Distance(Centre, Edge));
 			const double ScreenScore = FVector2D::Distance(ViewportPixel, Centre) / PixelRadius;
@@ -1283,27 +1408,133 @@ int32 AIronWorldMap3D::PickArmy(const FVector2D& ViewportPixel) const
 			}
 		}
 	}
+	OutScore = static_cast<float>(BestScore);
 	return Best;
 }
 
-bool AIronWorldMap3D::ProjectCityLabel(int32 CityIndex, FVector2D& OutViewportPixel) const
+FIronMapPick AIronWorldMap3D::PickAt(const FVector2D& ViewportPixel) const
+{
+	FIronMapPick Pick;
+	if (!bMapActive)
+	{
+		return Pick;
+	}
+	const FIronViewProjection& View = GetViewProjection();
+	Pick.bHasGround = TraceMapPoint(View, ViewportPixel, Pick.GroundPointM);
+	float CityScore = 1.0f;
+	float ArmyScore = 1.0f;
+	const int32 City = FindCityAt(View, ViewportPixel, Pick.GroundPointM, Pick.bHasGround, CityScore);
+	const int32 ArmyId = FindArmyAt(View, ViewportPixel, Pick.GroundPointM, Pick.bHasGround, ArmyScore);
+	// Scores are relative to each model's reach: the one the cursor is more centred on wins, an army on a tie (it is
+	// the smaller target and camps right beside its city).
+	if (ArmyId >= 0 && (City < 0 || ArmyScore <= CityScore))
+	{
+		Pick.Kind = EIronMapPickKind::Army;
+		Pick.Id = ArmyId;
+		Pick.Score = ArmyScore;
+	}
+	else if (City >= 0)
+	{
+		Pick.Kind = EIronMapPickKind::City;
+		Pick.Id = City;
+		Pick.Score = CityScore;
+	}
+	return Pick;
+}
+
+int32 AIronWorldMap3D::PickCity(const FVector2D& ViewportPixel, float& OutScore) const
+{
+	OutScore = 1.0f;
+	if (!bMapActive || CityVisuals.Num() == 0)
+	{
+		return -1;
+	}
+	const FIronViewProjection& View = GetViewProjection();
+	FVector2D GroundPoint = FVector2D::ZeroVector;
+	const bool bHasGround = TraceMapPoint(View, ViewportPixel, GroundPoint);
+	return FindCityAt(View, ViewportPixel, GroundPoint, bHasGround, OutScore);
+}
+
+int32 AIronWorldMap3D::PickCity(const FVector2D& ViewportPixel) const
+{
+	float Score = 1.0f;
+	return PickCity(ViewportPixel, Score);
+}
+
+int32 AIronWorldMap3D::PickArmy(const FVector2D& ViewportPixel, float& OutScore) const
+{
+	OutScore = 1.0f;
+	if (!bMapActive || ArmyVisuals.Num() == 0)
+	{
+		return -1;
+	}
+	const FIronViewProjection& View = GetViewProjection();
+	FVector2D GroundPoint = FVector2D::ZeroVector;
+	const bool bHasGround = TraceMapPoint(View, ViewportPixel, GroundPoint);
+	return FindArmyAt(View, ViewportPixel, GroundPoint, bHasGround, OutScore);
+}
+
+int32 AIronWorldMap3D::PickArmy(const FVector2D& ViewportPixel) const
+{
+	float Score = 1.0f;
+	return PickArmy(ViewportPixel, Score);
+}
+
+bool AIronWorldMap3D::GetCityLabelWorldLocation(int32 CityIndex, FVector& OutWorldLocationCm, float AboveModelM) const
 {
 	if (!CityVisuals.IsValidIndex(CityIndex))
 	{
 		return false;
 	}
 	const FIronCityVisual& Visual = CityVisuals[CityIndex];
-	return ProjectToViewport(Visual.MapPoint, Visual.GroundM + Visual.TopM + 6.0f, OutViewportPixel);
+	OutWorldLocationCm = IronWorld::MapToWorld(Visual.MapPoint, static_cast<double>(Visual.GroundM + Visual.TopM + AboveModelM));
+	return true;
 }
 
-bool AIronWorldMap3D::ProjectArmyLabel(int32 ArmyId, FVector2D& OutViewportPixel) const
+bool AIronWorldMap3D::GetArmyLabelWorldLocation(int32 ArmyId, FVector& OutWorldLocationCm, float AboveModelM) const
 {
 	const FIronArmyVisual* Visual = ArmyVisuals.Find(ArmyId);
 	if (Visual == nullptr)
 	{
 		return false;
 	}
-	return ProjectToViewport(Visual->MapPoint, Visual->GroundM + Visual->TopM + 4.0f, OutViewportPixel);
+	OutWorldLocationCm = IronWorld::MapToWorld(Visual->MapPoint, static_cast<double>(Visual->GroundM + Visual->TopM + AboveModelM));
+	return true;
+}
+
+bool AIronWorldMap3D::GetArmyMapPoint(int32 ArmyId, FVector2D& OutMapPointM) const
+{
+	const FIronArmyVisual* Visual = ArmyVisuals.Find(ArmyId);
+	if (Visual == nullptr)
+	{
+		return false;
+	}
+	OutMapPointM = Visual->MapPoint;
+	return true;
+}
+
+bool AIronWorldMap3D::ProjectCityLabel(int32 CityIndex, FVector2D& OutViewportPixel, float& OutDepthCm) const
+{
+	FVector Anchor;
+	return GetCityLabelWorldLocation(CityIndex, Anchor, IronWorldMap3DDetail::CityLabelAboveM) && GetViewProjection().Project(Anchor, OutViewportPixel, OutDepthCm);
+}
+
+bool AIronWorldMap3D::ProjectCityLabel(int32 CityIndex, FVector2D& OutViewportPixel) const
+{
+	float DepthCm = 0.0f;
+	return ProjectCityLabel(CityIndex, OutViewportPixel, DepthCm);
+}
+
+bool AIronWorldMap3D::ProjectArmyLabel(int32 ArmyId, FVector2D& OutViewportPixel, float& OutDepthCm) const
+{
+	FVector Anchor;
+	return GetArmyLabelWorldLocation(ArmyId, Anchor, IronWorldMap3DDetail::ArmyLabelAboveM) && GetViewProjection().Project(Anchor, OutViewportPixel, OutDepthCm);
+}
+
+bool AIronWorldMap3D::ProjectArmyLabel(int32 ArmyId, FVector2D& OutViewportPixel) const
+{
+	float DepthCm = 0.0f;
+	return ProjectArmyLabel(ArmyId, OutViewportPixel, DepthCm);
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -1337,6 +1568,27 @@ void AIronWorldMap3D::Rotate(float DeltaDegrees)
 	}
 }
 
+void AIronWorldMap3D::ResetCameraRotation()
+{
+	if (CameraRig != nullptr)
+	{
+		CameraRig->ResetRotation();
+	}
+}
+
+void AIronWorldMap3D::SetFramingInsets(float Left, float Top, float Right, float Bottom)
+{
+	FramingLeft = Left;
+	FramingTop = Top;
+	FramingRight = Right;
+	FramingBottom = Bottom;
+	if (CameraRig != nullptr)
+	{
+		// The rig ignores unchanged values and applies at once while the map is hidden (its tick is off).
+		CameraRig->SetFramingInsets(Left, Top, Right, Bottom);
+	}
+}
+
 void AIronWorldMap3D::FocusCity(int32 CityIndex, float DistanceM)
 {
 	if (CameraRig == nullptr)
@@ -1352,6 +1604,26 @@ void AIronWorldMap3D::FocusCity(int32 CityIndex, float DistanceM)
 	if (Pinned.IsValid() && Pinned->HasGame() && CityIndex >= 0 && CityIndex < static_cast<int32>(Pinned->State().Cities.size()))
 	{
 		CameraRig->FocusOn(IronWorld::FromSim(Pinned->State().Cities[static_cast<size_t>(CityIndex)].Position), DistanceM);
+	}
+}
+
+void AIronWorldMap3D::FocusArmy(int32 ArmyId, float DistanceM)
+{
+	if (CameraRig == nullptr)
+	{
+		return;
+	}
+	FVector2D Point = FVector2D::ZeroVector;
+	if (GetArmyMapPoint(ArmyId, Point))
+	{
+		CameraRig->FocusOn(Point, DistanceM);
+		return;
+	}
+	const TSharedPtr<FIronSession> Pinned = Session.Pin();
+	const IronSim::FArmy* Army = Pinned.IsValid() && Pinned->HasGame() ? Pinned->State().FindArmy(ArmyId) : nullptr;
+	if (Army != nullptr)
+	{
+		CameraRig->FocusOn(IronWorld::FromSim(Pinned->State().ArmyPosition(*Army, FractionalDay)), DistanceM);
 	}
 }
 

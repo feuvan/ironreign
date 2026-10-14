@@ -135,9 +135,9 @@ def warlord_armour(spec, b, surf, kd, rng, col):
             ang = rng2.random(S) * 6.283
             rr = 0.010 * np.sqrt(rng2.random(S))
             roots = root + np.stack([np.cos(ang) * rr, np.sin(ang) * rr, np.zeros(S)], 1).astype(np.float32)
-            d = np.stack([np.cos(ang), np.sin(ang), np.full(S, 1.1)], 1).astype(np.float32)
-            L = 0.10 * (0.75 + 0.4 * rng2.random(S))
-            pts = HR.grow(roots, d, L, 16, gravity=1.0, stiff=0.45, rng=rng2, noise=0.015)
+            d = np.stack([np.cos(ang), np.sin(ang), np.full(S, 0.7)], 1).astype(np.float32)
+            L = 0.12 * (0.7 + 0.5 * rng2.random(S))
+            pts = HR.grow(roots, d, L, 16, gravity=1.0, stiff=0.35, rng=rng2, noise=0.02)
             pts = HR.clump(pts, 60, 0.55, rng2)
             pts = HR.collide(surf2, pts, 0.004)
             tm = HR.hair_material("Tassel", melanin=0.05, redness=1.0, roughness=0.3,

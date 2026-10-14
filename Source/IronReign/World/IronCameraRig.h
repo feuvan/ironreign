@@ -14,6 +14,10 @@ class USceneComponent;
  * Every value follows its goal through a critically damped spring; FocusOn flies along an arc. The actor itself is the
  * camera (view target for APlayerController::SetViewTargetWithBlend).
  *
+ * Framing insets (SetFramingInsets) shift the camera sideways, keeping its direction and perspective, so the target
+ * point is drawn in the middle of the part of the viewport the Slate panels leave uncovered instead of the viewport
+ * centre: FocusOn, SnapTo and the zoom pivot all centre there.
+ *
  * Input comes from Slate through AIronWorldMap3D (Pan / Zoom / Rotate); there is no Unreal input binding.
  */
 UCLASS(NotBlueprintable)
@@ -39,6 +43,14 @@ public:
 	void Rotate(float DeltaDegrees);
 	/** Back to looking north. */
 	void ResetRotation();
+	/**
+	 * Fractions (each clamped to 0..0.45) of the viewport covered by opaque panels on each side. The target point is
+	 * then drawn at the centre of the uncovered rectangle. Changes glide (~0.25 s) unless bInstant or while the rig does
+	 * not tick (hidden map); unchanged values cost nothing, so the UI may pass its measured layout every frame.
+	 */
+	void SetFramingInsets(float Left, float Top, float Right, float Bottom, bool bInstant = false);
+	/** Where the target point is drawn, as a fraction of the viewport (0.5, 0.5 without insets). */
+	FVector2D GetFramingCentre() const;
 	/** Flies to a map point along an arc (the camera rises mid-flight on long trips). */
 	void FocusOn(const FVector2D& MapPointM, float DistanceM, float DurationSeconds = 1.2f);
 	/** Jumps without animation. */
@@ -49,7 +61,10 @@ public:
 	 */
 	void ResnapGround();
 
-	/** Current camera-to-target distance in cm, after terrain clearance (drives the tilt-shift focus). */
+	/**
+	 * Depth of the target point along the view direction in cm, after terrain clearance: the focal distance of the
+	 * tilt-shift (depth of field measures scene depth, not the slant distance of an off-centre target).
+	 */
 	float GetCameraDistanceCm() const;
 	float GetCameraDistanceM() const { return GetCameraDistanceCm() * 0.01f; }
 	float GetFieldOfView() const;
@@ -68,6 +83,7 @@ private:
 	double GroundUnderTarget(const FVector2D& MapPointM) const;
 	double SurfaceAt(const FVector2D& MapPointM) const;
 	static double PitchForDistance(double DistanceM);
+	FVector2D GetViewportSizePx() const;
 	void UpdatePose();
 
 	UPROPERTY(VisibleAnywhere, Category = "Iron Reign")
@@ -92,6 +108,15 @@ private:
 	double GroundZM = 0.0;
 	double GroundVelocity = 0.0;
 	bool bGroundInitialized = false;
+
+	/** Framing insets (viewport fractions) and the screen offset of the target point they ask for, in clip space (+Y up). */
+	float InsetLeft = 0.0f;
+	float InsetTop = 0.0f;
+	float InsetRight = 0.0f;
+	float InsetBottom = 0.0f;
+	FVector2D GoalScreenOffset = FVector2D::ZeroVector;
+	FVector2D CurrentScreenOffset = FVector2D::ZeroVector;
+	FVector2D ScreenOffsetVelocity = FVector2D::ZeroVector;
 
 	bool bFlying = false;
 	double FlightElapsed = 0.0;

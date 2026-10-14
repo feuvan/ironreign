@@ -102,4 +102,45 @@ namespace IronWorld
 
 	/** Dynamic instance of Base with the vector parameter "Color" (BasicShapeMaterial, M_IronHighlight). */
 	UMaterialInstanceDynamic* MakeColoredMaterial(UMaterialInterface* Base, UObject* Outer, const FLinearColor& Color);
+
+	/**
+	 * Remembered answer of an AreAssetsAvailable probe (AIronWorldMap3D, AIronBattleBoard3D). A positive answer is kept
+	 * until Invalidate(); a negative one is probed again once RetrySeconds have passed, so an asset import finishing
+	 * while the game runs is picked up without probing (loading) the assets every frame. Game thread only.
+	 */
+	struct FAssetCheckCache
+	{
+		static constexpr double RetrySeconds = 30.0;
+
+		/** The remembered answer may be used at NowSeconds (FPlatformTime::Seconds). */
+		bool IsFresh(double NowSeconds) const
+		{
+			return bChecked && (bAvailable || NowSeconds - CheckedAtSeconds < RetrySeconds);
+		}
+
+		/** Remembers a probe (Missing empty = available). True when the outcome differs from the last one reported. */
+		bool Store(const FString& Missing, double NowSeconds)
+		{
+			bChecked = true;
+			bAvailable = Missing.IsEmpty();
+			CheckedAtSeconds = NowSeconds;
+			if (Missing == ReportedMissing)
+			{
+				return false;
+			}
+			ReportedMissing = Missing;
+			return true;
+		}
+
+		void Invalidate()
+		{
+			bChecked = false;
+		}
+
+		bool bChecked = false;
+		bool bAvailable = false;
+		double CheckedAtSeconds = 0.0;
+		/** What the last reported probe missed (empty: nothing, or nothing reported yet). */
+		FString ReportedMissing;
+	};
 }

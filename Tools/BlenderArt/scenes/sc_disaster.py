@@ -75,8 +75,10 @@ def build(r):
         # furrows
         h += 0.12 * np.sin(X * 1.6) * T.smoothstep(300.0, 0.0, Y)
         return h
-    g = T.field_from(hfn, -500, 700, -20, 3000, 1.0 if pv else 0.5)
+    # fine near field (cracks, furrows) + coarse far field (overlap sunk 5 cm: no z-fight)
+    g = T.field_from(hfn, -500, 700, -20, 330, 1.0 if pv else 0.5)
     g.build("Field", cracked_material())
+    T.field_from(lambda X, Y: hfn(X, Y) - 0.05 * (Y < 332.0), -1500, 1700, 320, 3000, 3.0).build("FieldFar", cracked_material())
     # dead stalks (instanced brown tufts) in rows
     sm = {"Grass": F.foliage_material("DeadStalk", ("#6A5232", "#9A7E50"), translucency=0.2, vary=0.5),
           "BarkDead": F.bark_material("DBark", ("#3A3028", "#5A4A3C"))}

@@ -169,7 +169,7 @@ def brow_shape(nb, rest, female=False, thick=1.0, angle=0.0, soft=0.0009):
         cl = [(0.0, 0.30), (0.13, 0.35), (0.29, 0.62), (0.51, 0.80), (0.71, 0.74), (0.92, 0.40), (1.0, 0.30)]
         hw = [(0.0, 0.0), (0.11, 0.85), (0.28, 1.0), (0.64, 0.75), (0.92, 0.25), (1.0, 0.0)]
         hmax = 0.0050
-    cy = nb.maprange(nb.fcurve(u, cl), 0.0, 1.0, 0.736, 0.756)
+    cy = nb.maprange(nb.fcurve(u, cl), 0.0, 1.0, 0.734 - (0.002 if female else 0.0), 0.754 - (0.002 if female else 0.0))
     cy = nb.math("ADD", cy, nb.math("MULTIPLY", nb.math("SUBTRACT", ax, 0.02), angle * 0.12))
     half = nb.math("MULTIPLY", nb.fcurve(u, hw), hmax * thick)
     d = nb.math("ABSOLUTE", nb.math("SUBTRACT", sep[2], cy))
@@ -379,14 +379,18 @@ def cloth(name, color, sheen=0.4, rough=0.7, pattern=None, pattern_color=None, p
         pc = lin(pattern_color or "#C9A24A")
         sv = nb.vmath("SCALE", uv, scale=pattern_scale)
         if pattern == "cloud":
-            w = nb.node("ShaderNodeTexWave", wave_type="RINGS", rings_direction="SPHERICAL")
-            nb.set(w.inputs["Vector"], sv)
-            w.inputs["Scale"].default_value = 1.0
-            w.inputs["Distortion"].default_value = 3.0
-            w.inputs["Detail"].default_value = 1.0
-            vo = nb.voronoi(sv, scale=1.0, feature="F1", out="Distance")
-            pat = nb.math("MULTIPLY", nb.maprange(w.outputs["Fac"], 0.75, 0.9, 0.0, 1.0),
-                          nb.maprange(vo, 0.55, 0.35, 0.0, 1.0))
+            # brocade roundels: a ring + a curl in every tile, alternate rows offset
+            sp = nb.separate(sv)
+            row = nb.math("FLOOR", sp[1])
+            off = nb.math("MULTIPLY", nb.math("MODULO", row, 2.0), 0.5)
+            tu = nb.math("SUBTRACT", nb.math("FRACT", nb.math("ADD", sp[0], off)), 0.5)
+            tv = nb.math("SUBTRACT", nb.math("FRACT", sp[1]), 0.5)
+            r = nb.math("SQRT", nb.math("ADD", nb.math("MULTIPLY", tu, tu), nb.math("MULTIPLY", tv, tv)))
+            ring = nb.maprange(nb.math("ABSOLUTE", nb.math("SUBTRACT", r, 0.32)), 0.05, 0.025, 0.0, 1.0)
+            ang = nb.math("ARCTAN2", tv, tu)
+            curl = nb.maprange(nb.math("ABSOLUTE", nb.math("SUBTRACT", r, nb.math("ADD", 0.08, nb.math("MULTIPLY", ang, 0.025)))),
+                               0.035, 0.015, 0.0, 1.0)
+            pat = nb.math("MAXIMUM", ring, nb.math("MULTIPLY", curl, nb.maprange(r, 0.26, 0.22, 0.0, 1.0)))
         elif pattern == "diamond":
             sp = nb.separate(sv)
             a = nb.math("ABSOLUTE", nb.math("SINE", nb.math("ADD", sp[0], sp[1])))
@@ -443,7 +447,7 @@ def costume_materials(key_dir, palette=None):
         iron=iron_plate("IronPlate", pal["iron"], pal["lacing"], key_dir=key_dir),
         iron_plain=iron_plate("IronPlain", pal["iron"], pal["lacing"], key_dir=key_dir, lace=False, rivet=False),
         iron_inlay=iron_plate("IronInlay", pal["iron"], pal["lacing"], key_dir=key_dir, lace=False, rivet=False,
-                              inlay=dict(band=(0.05, 0.30), repeat=20.0)),
+                              inlay=dict(band=(0.30, 0.52), repeat=16.0)),
         bronze=metal("Bronze", pal["bronze"], rough=0.32),
         gold=metal("Gold", pal["gold"], rough=0.25, engrave=0.3),
         leather=leather("Leather", pal["leather"]),

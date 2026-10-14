@@ -135,7 +135,7 @@ def build(r):
     # the terrace pillar (camera) and the temple pillar
     tz = 980.0
     terrace_c = pillar(rocks, random.Random(1), (0.0, 20.0), tz, 46.0, flare=0.1, round_top=False)
-    temple_c = pillar(rocks, random.Random(2), (200.0, 320.0), 1040.0, 46.0, flare=0.2, round_top=False)
+    temple_c = pillar(rocks, random.Random(2), (200.0, 320.0), 972.0, 46.0, flare=0.2, round_top=False)
     tops = []
     for i in range(40):
         x = rng.uniform(-1800, 2400)
@@ -230,11 +230,11 @@ def build(r):
         mm = T.mist_material("SMist%d" % i, "#F2D8D4", strength=1.0, density=0.5, seed=float(i),
                              softness=0.5, stretch=3.5)
         T.card("SMist%d" % i, (x, y, CLOUD_Z + rng.uniform(40, 120)), (rng.uniform(300, 700), rng.uniform(60, 140)), mm)
-    cz = terrace_c.z + 10.0
+    cz = terrace_c.z + 5.4
     ccx, ccy = terrace_c.x - 20.0, terrace_c.y - 14.0
     cam = L.camera((ccx, ccy, cz), (ccx + 300.0 * math.cos(math.radians(56)),
                                     ccy + 300.0 * math.sin(math.radians(56)),
-                                    cz - 300.0 * math.tan(math.radians(4.0))),
+                                    cz - 300.0 * math.tan(math.radians(2.0))),
                    focal_mm=30.0, dof=(40.0, 11.0))
     return dict(camera=cam, beams=tuple(S.dir_from(*SUN) * 30000.0),
                 beams_cfg=dict(ray_length=0.25, strength=0.3, threshold=1.3),

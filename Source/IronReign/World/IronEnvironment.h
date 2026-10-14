@@ -89,8 +89,12 @@ public:
 	 * from the focus distance and field of view so the miniature blur looks the same at every zoom. 0 disables DOF.
 	 */
 	void SetTiltShift(float InFocusDistanceCm, float HorizontalFovDegrees = 40.0f);
-	/** 0..1 scale of the tilt-shift blur (default 1). */
+	/**
+	 * Scale of the tilt-shift blur, 0..2 (default 1; 0 turns depth of field off). It applies to every 3D scene: the
+	 * strategy map's focus here, and the battle board's own camera (AIronBattleBoard3D reads GetTiltShiftStrength).
+	 */
 	void SetTiltShiftStrength(float Strength);
+	float GetTiltShiftStrength() const { return TiltShiftStrength; }
 	/**
 	 * 0..1 strength of the M_IronInk outline pass (no-op when the material was not imported). A material blendable's
 	 * weight does not fade it, so this scales the instance's "Strength" parameter; 0 removes the pass.

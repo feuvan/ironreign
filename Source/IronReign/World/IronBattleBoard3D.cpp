@@ -20,6 +20,7 @@
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GameFramework/PlayerController.h"
+#include "HAL/PlatformTime.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
 #include "Math/RotationMatrix.h"
@@ -59,6 +60,12 @@ namespace IronBattleBoard3DDetail
 	constexpr double UnitPickRadiusCm = 230.0;
 	constexpr double MaxPlinthLiftCm = 60.0;
 	constexpr float FlashEmissive = 4.0f;
+	/** The "acted" look: side colour desaturated by this much and darkened to this brightness, faded over ActedFadeSeconds. */
+	constexpr float ActedDesaturation = 0.65f;
+	constexpr float ActedBrightness = 0.5f;
+	constexpr float ActedFadeSeconds = 0.3f;
+	/** Gate top used when the gate tile has no mesh (metres above the board). */
+	constexpr float DefaultGateTopM = 6.0f;
 
 	// Camera.
 	constexpr float FieldOfViewDegrees = 38.0f;
@@ -96,6 +103,8 @@ namespace IronBattleBoard3DDetail
 	constexpr double GateSwapSeconds = 0.3;
 	constexpr double CastSeconds = 0.3;
 	constexpr double EffectDelaySeconds = 0.15;
+	/** A fire tactic's burst strikes its target this long after the effect starts. */
+	constexpr double FireHitDelaySeconds = 0.3;
 	constexpr double FireSeconds = 1.2;
 	constexpr double SwirlSeconds = 1.3;
 	constexpr double PulseSeconds = 1.1;
@@ -217,6 +226,22 @@ namespace IronBattleBoard3DDetail
 		FLinearColor Result = Color;
 		Result.A = static_cast<float>(FMath::Clamp(Alpha, 0.0, 1.0));
 		return Result;
+	}
+
+	/** Side colour of a unit that already acted this turn: toward grey and darker, still telling the sides apart. */
+	FLinearColor ActedColor(const FLinearColor& SideColor)
+	{
+		const float Luminance = SideColor.GetLuminance();
+		const FLinearColor Grey(Luminance, Luminance, Luminance, 1.0f);
+		FLinearColor Result = FMath::Lerp(SideColor, Grey, ActedDesaturation) * ActedBrightness;
+		Result.A = SideColor.A;
+		return Result;
+	}
+
+	IronWorld::FAssetCheckCache& BoardAssetCheck()
+	{
+		static IronWorld::FAssetCheckCache Cache;
+		return Cache;
 	}
 
 	FString HexModelName(int32 TerrainIndex)
@@ -373,15 +398,15 @@ AIronBattleBoard3D::AIronBattleBoard3D()
 bool AIronBattleBoard3D::AreAssetsAvailable()
 {
 	using namespace IronBattleBoard3DDetail;
-	static bool bConfirmed = false;
-	static bool bReportedMissing = false;
-	if (bConfirmed)
-	{
-		return true;
-	}
 	if (!FApp::CanEverRender())
 	{
 		return false;
+	}
+	IronWorld::FAssetCheckCache& Cache = BoardAssetCheck();
+	const double NowSeconds = FPlatformTime::Seconds();
+	if (Cache.IsFresh(NowSeconds))
+	{
+		return Cache.bAvailable;
 	}
 
 	FString Missing;
@@ -416,17 +441,23 @@ bool AIronBattleBoard3D::AreAssetsAvailable()
 		Missing = IronWorld::MaterialObjectPath(TEXT("M_IronHighlight"));
 	}
 
-	if (!Missing.IsEmpty())
+	if (Cache.Store(Missing, NowSeconds))
 	{
-		if (!bReportedMissing)
+		if (Missing.IsEmpty())
 		{
-			bReportedMissing = true;
-			UE_LOG(LogIronWorld, Log, TEXT("3D battle board unavailable (missing %s); using the 2D hex board."), *Missing);
+			UE_LOG(LogIronWorld, Log, TEXT("The 3D battle board assets are available now."));
 		}
-		return false;
+		else
+		{
+			UE_LOG(LogIronWorld, Log, TEXT("3D battle board unavailable (missing %s); using the 2D hex board (checked again every %.0f s)."), *Missing, IronWorld::FAssetCheckCache::RetrySeconds);
+		}
 	}
-	bConfirmed = true;
-	return true;
+	return Cache.bAvailable;
+}
+
+void AIronBattleBoard3D::InvalidateAssetCheck()
+{
+	IronBattleBoard3DDetail::BoardAssetCheck().Invalidate();
 }
 
 AIronBattleBoard3D* AIronBattleBoard3D::FindBoard(UWorld* World)
@@ -1115,17 +1146,21 @@ void AIronBattleBoard3D::BuildUnits(const IronSim::FBattle& Battle)
 			TopM = FMath::Max(TopM, static_cast<float>(PlinthTopCm * IronWorld::MetresPerCm) + MeshTopM(FlagMesh.Get(), Scale));
 		}
 		Visual.TopM = TopM;
+		Visual.SideColor = SideColor;
 
 		// Side colour on every Tint slot, then a dynamic instance on every other figure / plinth slot for the hit flash.
 		UStaticMeshComponent* const Parts[3] = {Visual.Figure.Get(), Visual.Base.Get(), Visual.Flag.Get()};
-		for (UStaticMeshComponent* Part : Parts)
+		TObjectPtr<UMaterialInstanceDynamic>* const PartTints[3] = {&Visual.FigureTint, &Visual.BaseTint, &Visual.FlagTint};
+		for (int32 PartIndex = 0; PartIndex < 3; ++PartIndex)
 		{
+			UStaticMeshComponent* Part = Parts[PartIndex];
 			if (Part == nullptr)
 			{
 				continue;
 			}
 			if (UMaterialInstanceDynamic* Tint = IronWorld::ApplyTint(Part, SideColor, nullptr, TintMaterial.Get()))
 			{
+				*PartTints[PartIndex] = Tint;
 				Visual.Materials.AddUnique(Tint);
 			}
 			if (Part == Visual.Flag.Get())
@@ -1344,9 +1379,31 @@ void AIronBattleBoard3D::SetGridVisible(bool bVisible)
 	FillHexLayer(IronBoard3D::ELayer::Grid, AllHexes);
 }
 
+void AIronBattleBoard3D::SetDimActedUnits(bool bDim)
+{
+	bDimActedUnits = bDim;
+	if (!bBoardActive)
+	{
+		// Inactive boards do not tick: apply the look now.
+		ApplyUnitTransforms(1.0f);
+	}
+}
+
 void AIronBattleBoard3D::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	// Whoever ends the board, the screens get their state back: deactivated like SetActive(false), so the shared sun
+	// returns to the map's season and world rendering stays on only when the strategy map is the scene.
+	SetActive(false);
 	RestoreSun();
+	if (EndPlayReason == EEndPlayReason::Destroyed || EndPlayReason == EEndPlayReason::RemovedFromWorld)
+	{
+		// The battle camera is about to go: give the view back to the controller (a world tearing down needs none).
+		APlayerController* Controller = GetLocalController();
+		if (IsValid(Controller) && BoardCamera != nullptr && Controller->GetViewTarget() == BoardCamera.Get())
+		{
+			Controller->SetViewTargetWithBlend(Controller, 0.0f);
+		}
+	}
 	if (EndPlayReason == EEndPlayReason::Destroyed && BoardCamera != nullptr)
 	{
 		BoardCamera->Destroy();
@@ -1583,6 +1640,8 @@ void AIronBattleBoard3D::SyncFromBattle(const IronSim::FBattle& Battle)
 		Visual.TargetHex = BattleUnit.Pos;
 		Visual.bTargetOnField = BattleUnit.IsActive();
 		Visual.bTargetConfused = BattleUnit.IsActive() && BattleUnit.ConfusedDays > 0;
+		// The battle screen's rule for dimmed unit plates: acted, on the side to move, while the battle runs.
+		Visual.bTargetActed = BattleUnit.IsActive() && BattleUnit.bActed && BattleUnit.Side == Battle.ActiveSide() && !Battle.IsOver();
 	}
 
 	TargetBurning.Reset();
@@ -1671,20 +1730,26 @@ void AIronBattleBoard3D::SnapToSnapshot()
 // Event animation
 // ---------------------------------------------------------------------------------------------------------------------
 
-void AIronBattleBoard3D::PlayEvents(const TArray<IronSim::FBattleEvent>& Events)
+TArray<FIronBoardEventTiming> AIronBattleBoard3D::PlayEvents(const TArray<IronSim::FBattleEvent>& Events)
 {
+	TArray<FIronBoardEventTiming> Timings;
+	Timings.Reserve(Events.Num());
 	for (const IronSim::FBattleEvent& Event : Events)
 	{
-		PlayEvent(Event);
+		Timings.Add(PlayEvent(Event));
 	}
+	return Timings;
 }
 
-void AIronBattleBoard3D::PlayEvents(const std::vector<IronSim::FBattleEvent>& Events)
+TArray<FIronBoardEventTiming> AIronBattleBoard3D::PlayEvents(const std::vector<IronSim::FBattleEvent>& Events)
 {
+	TArray<FIronBoardEventTiming> Timings;
+	Timings.Reserve(static_cast<int32>(Events.size()));
 	for (const IronSim::FBattleEvent& Event : Events)
 	{
-		PlayEvent(Event);
+		Timings.Add(PlayEvent(Event));
 	}
+	return Timings;
 }
 
 void AIronBattleBoard3D::AddTrack(IronBoard3D::FTrack&& Track)
@@ -1709,28 +1774,35 @@ void AIronBattleBoard3D::QueueHit(int32 UnitId, const IronSim::FHex& Hex, double
 	AddTrack(MoveTemp(Impact));
 }
 
-void AIronBattleBoard3D::PlayEvent(const IronSim::FBattleEvent& Event)
+FIronBoardEventTiming AIronBattleBoard3D::PlayEvent(const IronSim::FBattleEvent& Event)
 {
 	using namespace IronBattleBoard3DDetail;
 	using IronBoard3D::ETrack;
 	using IronBoard3D::FTrack;
 	using EEvent = IronSim::EBattleEventType;
 
-	if (Event.Type == EEvent::DayStart)
+	FIronBoardEventTiming Timing;
+	if (!bBuilt || !bBoardActive)
 	{
+		if (Event.Type == EEvent::DayStart)
+		{
+			TargetDay = Event.Value;
+			GoalDayAlpha = DayAlphaFor(Event.Value);
+		}
+		return Timing;
+	}
+	// Every event gets a slot after the animations already queued; ImpactAt moves to the blow / effect below.
+	const double EventStart = FMath::Max(Clock, AnimCursor);
+	double ImpactAt = EventStart;
+	const int32 FirstNewTrack = AnimTracks.Num();
+	switch (Event.Type)
+	{
+	case EEvent::DayStart:
 		// Dawn of a new day: the sun moves on (smoothly, without holding the battle back).
 		TargetDay = Event.Value;
 		GoalDayAlpha = DayAlphaFor(Event.Value);
-		return;
-	}
-	if (!bBuilt || !bBoardActive)
-	{
-		return;
-	}
+		break;
 
-	const double EventStart = FMath::Max(Clock, AnimCursor);
-	switch (Event.Type)
-	{
 	case EEvent::Move:
 		if (IsValidUnit(Event.Unit) && Event.From != Event.To)
 		{
@@ -1753,6 +1825,7 @@ void AIronBattleBoard3D::PlayEvent(const IronSim::FBattleEvent& Event)
 				Walk.Duration = MoveSecondsPerHex * static_cast<double>(FMath::Max(1, Walk.Path.Num() - 1));
 			}
 			AnimCursor = EventStart + Walk.Duration;
+			ImpactAt = EventStart + Walk.Duration;
 			AddTrack(MoveTemp(Walk));
 		}
 		break;
@@ -1775,6 +1848,7 @@ void AIronBattleBoard3D::PlayEvent(const IronSim::FBattleEvent& Event)
 			const double HitAt = EventStart + (bRanged ? VolleySeconds - 0.08 : LungeHitSeconds);
 			const float Strength = 0.7f + FMath::Clamp(static_cast<float>(Event.Value) / 800.0f, 0.0f, 0.8f);
 			QueueHit(Event.Target, Event.To, HitAt, Strength, Rgb(HitRgb));
+			ImpactAt = HitAt;
 			AnimCursor = EventStart + (bRanged ? VolleySeconds + 0.05 : LungeSeconds);
 		}
 		break;
@@ -1806,6 +1880,7 @@ void AIronBattleBoard3D::PlayEvent(const IronSim::FBattleEvent& Event)
 			AddTrack(MoveTemp(Shake));
 		}
 		QueueHit(INDEX_NONE, Event.To, EventStart + LungeHitSeconds, 0.8f, Rgb(BurnRgb));
+		ImpactAt = EventStart + LungeHitSeconds;
 		AnimCursor = EventStart + LungeSeconds + 0.05;
 		break;
 	}
@@ -1826,6 +1901,7 @@ void AIronBattleBoard3D::PlayEvent(const IronSim::FBattleEvent& Event)
 			AddTrack(MoveTemp(Break));
 		}
 		QueueHit(INDEX_NONE, Event.To, EventStart + GateSwapSeconds, 1.5f, Rgb(BurnRgb));
+		ImpactAt = EventStart + GateSwapSeconds;
 		AnimCursor = EventStart + GateBreakSeconds * 0.8;
 		break;
 	}
@@ -1843,6 +1919,7 @@ void AIronBattleBoard3D::PlayEvent(const IronSim::FBattleEvent& Event)
 			AddTrack(MoveTemp(Casting));
 		}
 		const double EffectStart = EventStart + EffectDelaySeconds;
+		ImpactAt = EffectStart;
 		FTrack Effect;
 		Effect.Other = Event.Target;
 		Effect.To = Event.To;
@@ -1857,7 +1934,8 @@ void AIronBattleBoard3D::PlayEvent(const IronSim::FBattleEvent& Event)
 		{
 			Effect.Kind = ETrack::FireBurst;
 			Effect.Duration = FireSeconds;
-			QueueHit(Event.Target, Event.To, EffectStart + 0.3, 1.2f, Rgb(BurnRgb));
+			QueueHit(Event.Target, Event.To, EffectStart + FireHitDelaySeconds, 1.2f, Rgb(BurnRgb));
+			ImpactAt = EffectStart + FireHitDelaySeconds;
 			AnimCursor = EffectStart + 0.6;
 		}
 		else if (Event.Tactic == static_cast<int32>(IronSim::ETactic::Confuse))
@@ -1919,6 +1997,22 @@ void AIronBattleBoard3D::PlayEvent(const IronSim::FBattleEvent& Event)
 	default:
 		break;
 	}
+
+	// The event's own blocking tracks (the queue only grows here) give its end.
+	double EndAt = EventStart;
+	for (int32 TrackIndex = FirstNewTrack; TrackIndex < AnimTracks.Num(); ++TrackIndex)
+	{
+		const IronBoard3D::FTrack& Track = AnimTracks[TrackIndex];
+		if (Track.bBlocking)
+		{
+			EndAt = FMath::Max(EndAt, Track.Start + Track.Duration);
+		}
+	}
+	Timing.bAnimated = AnimTracks.Num() > FirstNewTrack;
+	Timing.StartSeconds = static_cast<float>(EventStart - Clock);
+	Timing.ImpactSeconds = static_cast<float>(ImpactAt - Clock);
+	Timing.EndSeconds = static_cast<float>(EndAt - Clock);
+	return Timing;
 }
 
 bool AIronBattleBoard3D::IsAnimating() const
@@ -2509,6 +2603,31 @@ void AIronBattleBoard3D::ApplyUnitVisibility(FIronBoardUnitVisual& Visual)
 	Visual.bAppliedShown = Visual.bShown;
 }
 
+void AIronBattleBoard3D::ApplyActedLook(int32 UnitId, FIronBoardUnitVisual& Visual, float DeltaSeconds)
+{
+	using namespace IronBattleBoard3DDetail;
+	// A unit dims once its own animations (the attack it just made, the walk) are over; the next turn restores it.
+	const bool bDimmed = bDimActedUnits && Visual.bTargetActed && !HasUnitTrack(UnitId, false);
+	const float Goal = bDimmed ? 1.0f : 0.0f;
+	const float Step = FMath::Max(0.0f, DeltaSeconds) / ActedFadeSeconds;
+	Visual.Acted = Visual.Acted < Goal ? FMath::Min(Goal, Visual.Acted + Step) : FMath::Max(Goal, Visual.Acted - Step);
+	if (FMath::IsNearlyEqual(Visual.Acted, Visual.AppliedActed, 0.02f) && (Visual.Acted != Goal || Visual.AppliedActed == Goal))
+	{
+		return;
+	}
+	Visual.AppliedActed = Visual.Acted;
+	const FLinearColor Color = FMath::Lerp(Visual.SideColor, ActedColor(Visual.SideColor), Visual.Acted);
+	UStaticMeshComponent* const Parts[3] = {Visual.Figure.Get(), Visual.Base.Get(), Visual.Flag.Get()};
+	UMaterialInstanceDynamic* const PartTints[3] = {Visual.FigureTint.Get(), Visual.BaseTint.Get(), Visual.FlagTint.Get()};
+	for (int32 PartIndex = 0; PartIndex < 3; ++PartIndex)
+	{
+		if (Parts[PartIndex] != nullptr && PartTints[PartIndex] != nullptr)
+		{
+			IronWorld::ApplyTint(Parts[PartIndex], Color, PartTints[PartIndex], TintMaterial.Get());
+		}
+	}
+}
+
 void AIronBattleBoard3D::ApplyUnitTransforms(float DeltaSeconds)
 {
 	using namespace IronBattleBoard3DDetail;
@@ -2520,6 +2639,7 @@ void AIronBattleBoard3D::ApplyUnitTransforms(float DeltaSeconds)
 		{
 			continue;
 		}
+		ApplyActedLook(UnitId, Visual, DeltaSeconds);
 		// Facing: along the path / toward the target while acting, else toward the nearest enemy. Settled units stop
 		// touching their transform (keeps virtual shadow map pages cached).
 		const float GoalYaw = Visual.bYawDriven ? Visual.DrivenYaw : IdleYawFor(UnitId);
@@ -2981,16 +3101,17 @@ APlayerController* AIronBattleBoard3D::GetLocalController() const
 	return GameWorld != nullptr ? GameWorld->GetFirstPlayerController() : nullptr;
 }
 
+const FIronViewProjection& AIronBattleBoard3D::GetViewProjection() const
+{
+	FrameView.Refresh(GetLocalController());
+	return FrameView;
+}
+
 bool AIronBattleBoard3D::DeprojectToBoard(const FVector2D& ViewportPixel, FVector2D& OutLocalM) const
 {
-	const APlayerController* Controller = GetLocalController();
-	if (!bBoardActive || Controller == nullptr)
-	{
-		return false;
-	}
 	FVector RayOrigin;
 	FVector RayDirection;
-	if (!Controller->DeprojectScreenPositionToWorld(static_cast<float>(ViewportPixel.X), static_cast<float>(ViewportPixel.Y), RayOrigin, RayDirection))
+	if (!bBoardActive || !GetViewProjection().Deproject(ViewportPixel, RayOrigin, RayDirection))
 	{
 		return false;
 	}
@@ -3016,10 +3137,10 @@ bool AIronBattleBoard3D::PickHex(const FVector2D& ViewportPixel, IronSim::FHex& 
 	{
 		return false;
 	}
-	// Units first: a squad model covers the hexes behind it, and players click the model they see.
-	const FVector CameraLocation = BoardCamera != nullptr ? BoardCamera->GetActorLocation() : GetActorLocation();
+	// Units first: a squad model covers the hexes behind it, and players click the model they see (the nearest one).
+	const FIronViewProjection& View = GetViewProjection();
 	int32 BestUnit = INDEX_NONE;
-	double BestDepth = TNumericLimits<double>::Max();
+	float BestDepth = TNumericLimits<float>::Max();
 	for (int32 UnitId = 0; UnitId < UnitVisuals.Num(); ++UnitId)
 	{
 		const FIronBoardUnitVisual& Visual = UnitVisuals[UnitId];
@@ -3030,7 +3151,8 @@ bool AIronBattleBoard3D::PickHex(const FVector2D& ViewportPixel, IronSim::FHex& 
 		const FVector Middle = GetActorLocation() + Visual.Location + Visual.Offset + FVector(0.0, 0.0, static_cast<double>(Visual.TopM) * 0.45 * IronWorld::CmPerMetre);
 		FVector2D Centre;
 		FVector2D Edge;
-		if (!ProjectToViewport(Middle, Centre) || !ProjectToViewport(Middle + FVector(UnitPickRadiusCm, 0.0, 0.0), Edge))
+		float Depth = 0.0f;
+		if (!View.Project(Middle, Centre, Depth) || !View.Project(Middle + FVector(UnitPickRadiusCm, 0.0, 0.0), Edge))
 		{
 			continue;
 		}
@@ -3039,7 +3161,6 @@ bool AIronBattleBoard3D::PickHex(const FVector2D& ViewportPixel, IronSim::FHex& 
 		{
 			continue;
 		}
-		const double Depth = FVector::DistSquared(CameraLocation, Middle);
 		if (Depth < BestDepth)
 		{
 			BestDepth = Depth;
@@ -3060,20 +3181,15 @@ bool AIronBattleBoard3D::PickHex(const FVector2D& ViewportPixel, IronSim::FHex& 
 	return LocalMToHex(LocalM, BoardCols, BoardRows, OutHex);
 }
 
+bool AIronBattleBoard3D::ProjectToViewport(const FVector& WorldLocationCm, FVector2D& OutViewportPixel, float& OutDepthCm) const
+{
+	return bBoardActive && GetViewProjection().Project(WorldLocationCm, OutViewportPixel, OutDepthCm);
+}
+
 bool AIronBattleBoard3D::ProjectToViewport(const FVector& WorldLocationCm, FVector2D& OutViewportPixel) const
 {
-	const APlayerController* Controller = GetLocalController();
-	if (!bBoardActive || Controller == nullptr)
-	{
-		return false;
-	}
-	FVector2D ScreenPosition;
-	if (!Controller->ProjectWorldLocationToScreen(WorldLocationCm, ScreenPosition, false))
-	{
-		return false;
-	}
-	OutViewportPixel = ScreenPosition;
-	return true;
+	float DepthCm = 0.0f;
+	return ProjectToViewport(WorldLocationCm, OutViewportPixel, DepthCm);
 }
 
 bool AIronBattleBoard3D::ProjectToViewport(const IronSim::FHex& Hex, float HeightM, FVector2D& OutViewportPixel) const
@@ -3090,6 +3206,42 @@ bool AIronBattleBoard3D::ProjectUnitToViewport(int32 UnitId, FVector2D& OutViewp
 	const FIronBoardUnitVisual& Visual = UnitVisuals[UnitId];
 	const double HeightCm = (static_cast<double>(Visual.TopM) + static_cast<double>(AboveModelM)) * IronWorld::CmPerMetre;
 	return ProjectToViewport(GetActorLocation() + Visual.Location + Visual.Offset + FVector(0.0, 0.0, HeightCm), OutViewportPixel);
+}
+
+float AIronBattleBoard3D::GetGateTopHeightM(const IronSim::FHex& Hex) const
+{
+	using namespace IronBattleBoard3DDetail;
+	const int32 GateIndex = GateIndexAt(Hex);
+	if (GateIndex == INDEX_NONE)
+	{
+		return 0.0f;
+	}
+	// The tile as drawn now: the gatehouse, or the rubble once UpdateGates swapped the mesh.
+	const UStaticMeshComponent* Tile = GateTiles.IsValidIndex(GateIndex) ? GateTiles[GateIndex].Get() : nullptr;
+	const UStaticMesh* TileMesh = Tile != nullptr ? Tile->GetStaticMesh() : nullptr;
+	if (TileMesh == nullptr)
+	{
+		return DefaultGateTopM;
+	}
+	return FMath::Max(0.5f, MeshTopM(TileMesh, Tile->GetRelativeScale3D().Z));
+}
+
+bool AIronBattleBoard3D::GetGateTopWorldLocation(const IronSim::FHex& Hex, FVector& OutWorldLocationCm) const
+{
+	const int32 GateIndex = GateIndexAt(Hex);
+	if (GateIndex == INDEX_NONE)
+	{
+		return false;
+	}
+	const FVector Shake = GateOffsets.IsValidIndex(GateIndex) ? GateOffsets[GateIndex] : FVector::ZeroVector;
+	OutWorldLocationCm = GetActorLocation() + HexLocalCm(Hex, static_cast<double>(GetGateTopHeightM(Hex))) + Shake;
+	return true;
+}
+
+bool AIronBattleBoard3D::ProjectGateToViewport(const IronSim::FHex& Hex, FVector2D& OutViewportPixel, float AboveTopM) const
+{
+	FVector Top;
+	return GetGateTopWorldLocation(Hex, Top) && ProjectToViewport(Top + FVector(0.0, 0.0, static_cast<double>(AboveTopM) * IronWorld::CmPerMetre), OutViewportPixel);
 }
 
 bool AIronBattleBoard3D::IsUnitShown(int32 UnitId) const
@@ -3112,7 +3264,7 @@ float AIronBattleBoard3D::GetHexPixelSize() const
 	const FVector Target = GetActorLocation() + FVector(CurrentTargetM.X * IronWorld::CmPerMetre, CurrentTargetM.Y * IronWorld::CmPerMetre, 0.0);
 	FVector2D Centre;
 	FVector2D Edge;
-	if (!ProjectToViewport(Target, Centre) || !ProjectToViewport(Target + FVector(2.0 * IronBattleBoard3DDetail::HexRadiusCm, 0.0, 0.0), Edge))
+	if (!bBoardActive || !GetViewProjection().Project(Target, Centre) || !GetViewProjection().Project(Target + FVector(2.0 * IronBattleBoard3DDetail::HexRadiusCm, 0.0, 0.0), Edge))
 	{
 		return 0.0f;
 	}
@@ -3346,9 +3498,15 @@ void AIronBattleBoard3D::UpdateCamera(float DeltaSeconds)
 		return;
 	}
 	// Tilt-shift: focus on the camera target, aperture solved for a fixed blur fraction at infinity (the same thin-lens
-	// model as AIronEnvironment::SetTiltShift, with a gentler blur so the board stays readable).
+	// model as AIronEnvironment::SetTiltShift, with a gentler blur so the board stays readable). The camera's settings
+	// override the environment's volume, so they follow its quality and tilt-shift strength here (the strategy map's
+	// focus in the environment is never touched). A focal distance of 0 turns depth of field off.
 	FPostProcessSettings& Settings = CameraComponent->PostProcessSettings;
-	const bool bDepthOfField = Environment == nullptr || Environment->GetQuality() >= 1;
+	Settings.bOverride_DepthOfFieldFocalDistance = true;
+	Settings.bOverride_DepthOfFieldFstop = true;
+	const int32 SceneQuality = Environment != nullptr ? Environment->GetQuality() : QualityLevel;
+	const double Strength = Environment != nullptr ? static_cast<double>(Environment->GetTiltShiftStrength()) : 1.0;
+	const bool bDepthOfField = SceneQuality >= 1 && Strength > 0.001;
 	const double FocusCm = CurrentDistanceM * IronWorld::CmPerMetre;
 	if (!bDepthOfField)
 	{
@@ -3358,7 +3516,7 @@ void AIronBattleBoard3D::UpdateCamera(float DeltaSeconds)
 	const double HalfFovRadians = FMath::DegreesToRadians(static_cast<double>(FieldOfViewDegrees) * 0.5);
 	const double FocalLengthMm = 0.5 * SensorWidthMm / FMath::Tan(HalfFovRadians);
 	const double FocusMm = FocusCm * 10.0;
-	const double Fstop = 0.5 * FocalLengthMm * FocalLengthMm / (FMath::Max(1.0, FocusMm - FocalLengthMm) * SensorWidthMm * TiltShiftCoc);
+	const double Fstop = 0.5 * FocalLengthMm * FocalLengthMm / (FMath::Max(1.0, FocusMm - FocalLengthMm) * SensorWidthMm * TiltShiftCoc * Strength);
 	Settings.DepthOfFieldFocalDistance = static_cast<float>(FocusCm);
 	Settings.DepthOfFieldFstop = static_cast<float>(FMath::Clamp(Fstop, 0.0001, 32.0));
 	Settings.DepthOfFieldFocalRegion = static_cast<float>(FocusCm * 0.1);

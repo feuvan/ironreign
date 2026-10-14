@@ -41,7 +41,8 @@ def base_height(X, Y):
     far = np.maximum(Y - 120.0, 0.0) * 0.26 + 0.0004 * X * X * T.smoothstep(120.0, 300.0, Y)
     spurs = (13.0 * np.sin(X / 21.0 + 1.6 * np.sin(Y / 70.0)) + 7.0 * np.sin(X / 47.0 + 2.0)) * T.smoothstep(140.0, 300.0, Y)
     near = np.maximum(80.0 - Y, 0.0) * 0.25 + 4.0 * np.sin(X / 45.0) * T.smoothstep(60.0, -20.0, Y)
-    h = VALLEY_Z + far + spurs + near + 6.0 * (w - 0.5) + 6.0 * (v - 0.5) * T.smoothstep(100.0, 260.0, Y)
+    h = VALLEY_Z + far + spurs + near + 6.0 * (w - 0.5) * T.smoothstep(60.0, 150.0, np.abs(Y - 100.0)) \
+        + 6.0 * (v - 0.5) * T.smoothstep(100.0, 260.0, Y) - 0.6 * T.smoothstep(40.0, 10.0, np.abs(Y - 100.0))
     h = np.minimum(h, 128.0 + 6.0 * w)                     # the ridge top (hamlet)
     h += T.smoothstep(700.0, 1300.0, Y) * 280.0 * T.ridged2(X, Y, 520.0, 5, seed=6)
     return h
@@ -198,9 +199,9 @@ def build(r):
     rcol = F.prototypes([lambda mb, i=i: F.grass_tuft(mb, random.Random(i), 0.95, 22, "Grass", 0.18)
                          for i in range(4)], rice_m, "Rice")
     rp = []
-    for _ in range(14000 if pv else 70000):
-        x = rng.uniform(-90, 110)
-        y = rng.uniform(-62, 40)
+    for _ in range(16000 if pv else 80000):
+        x = rng.uniform(-40, 60) if rng.random() < 0.75 else rng.uniform(-90, 110)
+        y = rng.uniform(-58, -8) if rng.random() < 0.75 else rng.uniform(-8, 40)
         z = near.z(x, y)
         if near.nz_at(x, y, 0.3) < 0.97:
             continue
@@ -212,8 +213,10 @@ def build(r):
     F.instance("RicePlants", rp, rcol)
     # ---- farmers and sheaves -----------------------------------------------------------------
     crowd = MeshBuilder()
-    spots = [(-4.0, -44.0, "farm_bend", "sickle", 0.4), (1.5, -41.0, "farm_bend", "sickle", -0.3),
-             (14.0, -38.0, "carry", None, 1.9), (-16.0, -30.0, "farm_bend", "sickle", 0.2),
+    spots = [(4.0, -51.0, "farm_bend", "sickle", 0.4), (17.0, -49.0, "farm_bend", "sickle", -0.3),
+             (-5.0, -46.0, "carry", None, 1.9), (26.0, -44.0, "farm_bend", "sickle", 0.2),
+             (-4.0, -40.0, "farm_bend", "sickle", 0.4), (1.5, -37.0, "farm_bend", "sickle", -0.3),
+             (14.0, -34.0, "carry", None, 1.9), (-16.0, -30.0, "farm_bend", "sickle", 0.2),
              (24.0, -32.0, "stand", None, 2.4), (6.0, -24.0, "farm_bend", "sickle", 0.9),
              (32.0, -18.0, "farm_bend", None, -0.5), (-24.0, -14.0, "walk", None, 1.2),
              (12.0, -6.0, "farm_bend", "sickle", 0.1), (-8.0, 6.0, "carry", None, -1.0),
@@ -235,8 +238,8 @@ def build(r):
             sheaf(crowd, rng, (x, y, z - 0.02))
     crowd.build("Farmers", mats)
     # mist over the flooded valley floor, hamlet cooking smoke
-    for i in range(5):
-        mm = T.mist_material("VMist%d" % i, "#F4D8BC", strength=1.1, density=0.5, seed=float(i * 3),
+    for i in range(3):
+        mm = T.mist_material("VMist%d" % i, "#F4D8BC", strength=1.1, density=0.3, seed=float(i * 3),
                              softness=0.5, stretch=4.0)
         T.card("VMist%d" % i, (rng.uniform(-300, 300), 110.0 + i * 22.0, VALLEY_Z + rng.uniform(4, 9)),
                (rng.uniform(300, 600), rng.uniform(10, 18)), mm)

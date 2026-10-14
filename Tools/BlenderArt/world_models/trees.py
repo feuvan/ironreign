@@ -27,7 +27,9 @@ SPECS = {
 BARK_EXT = {"pine": (1.6, 3.2), "broad": (1.6, 3.2), "bamboo": (0.6, 3.0)}
 
 
-def textures(name, tex_dir, preview=False, reuse=False):
+def textures(name, tex_dir, preview=False, reuse=False, reuse_leaves=False):
+    """Leaf atlas + bark tile for ``name``.  ``reuse``: take both from ``tex_dir`` when present;
+    ``reuse_leaves``: only the (slow) leaf atlas."""
     leaf, bark, H, fn, seed, lpx, bpx = SPECS[name]
     if reuse:
         keys = {"base": "Base", "normal": "Normal", "orm": "ORM"}
@@ -35,7 +37,12 @@ def textures(name, tex_dir, preview=False, reuse=False):
         bt = {k: os.path.join(tex_dir, "%s_Bark_%s.png" % (bark.capitalize(), v)) for k, v in keys.items()}
         if all(os.path.isfile(p) for p in list(la.values()) + list(bt.values())):
             return la, bt
-    la = WT.leaf_atlas(leaf, tex_dir, size=512 if preview else lpx, ss=2, seed=seed)
+    lp = {k: os.path.join(tex_dir, "%s_Leaves_%s.png" % (leaf.capitalize(), v))
+          for k, v in {"base": "Base", "normal": "Normal", "orm": "ORM"}.items()}
+    if reuse_leaves and all(os.path.isfile(p) for p in lp.values()):
+        la = lp
+    else:
+        la = WT.leaf_atlas(leaf, tex_dir, size=512 if preview else lpx, ss=2, seed=seed)
     bt = WT.bark_texture(bark, tex_dir, size=(bpx[0] // 2, bpx[1] // 2) if preview else bpx,
                          ext=BARK_EXT[bark])
     return la, bt
@@ -60,7 +67,7 @@ def main():
     for name in names:
         t0 = time.time()
         tex_dir = common.out("textures")
-        la, bt = textures(name, tex_dir, fl["preview"], "--reuse" in sys.argv)
+        la, bt = textures(name, tex_dir, fl["preview"], "--reuse" in sys.argv, "--reuse-leaves" in sys.argv)
         scene.reset(SPECS[name][4])
         obj = build(name, la, bt)
         tris = WB.tri_count(obj)

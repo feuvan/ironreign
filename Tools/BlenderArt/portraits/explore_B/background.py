@@ -93,7 +93,7 @@ def paint(path, W, H, opts=None, seed=1):
         s2 = np.asarray(strokes(W, H, rng, n=int(900 * o["strokes"]), length=(0.03, 0.12),
                                 width=(0.004, 0.012), alpha=(5, 18), angle=-35, spread=25),
                         np.float32) / 128.0 - 1.0
-        col *= (1 + 0.9 * s1 + 0.5 * s2)[..., None]
+        col *= (1 + 0.7 * s1 + 0.4 * s2)[..., None]
     # canvas grain
     grain = rng.normal(size=(H, W)).astype(np.float32)
     grain = np.asarray(Image.fromarray(np.clip(grain * 40 + 128, 0, 255).astype(np.uint8)).filter(

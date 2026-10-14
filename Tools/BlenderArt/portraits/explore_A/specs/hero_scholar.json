@@ -13,17 +13,20 @@
  },
  "face": {
   "eyes/{s}-eye-scale-decr|incr": 0.3,
-  "eyes/{s}-eye-height2-decr|incr": -0.2,
+  "eyes/{s}-eye-height2-decr|incr": -0.45,
   "head/head-oval": 0.7,
-  "head/head-scale-horiz-decr|incr": -0.3,
+  "head/head-scale-horiz-decr|incr": -0.45,
+  "head/head-scale-vert-decr|incr": 0.3,
   "chin/chin-width-decr|incr": -0.4,
+  "chin/chin-height-decr|incr": 0.4,
   "nose/nose-scale-horiz-decr|incr": -0.3,
   "head/head-invertedtriangular": 0.45,
   "cheek/{s}-cheek-inner-decr|incr": -0.3,
   "eyes/{s}-eye-corner2-down|up": 0.4,
   "mouth/mouth-upperlip-volume-decr|incr": -0.35,
   "mouth/mouth-lowerlip-volume-decr|incr": -0.2,
-  "mouth/mouth-scale-horiz-decr|incr": -0.15,
+  "mouth/mouth-scale-horiz-decr|incr": 0.1,
+  "neck/neck-scale-horiz-decr|incr": -0.4,
   "neck/neck-scale-vert-decr|incr": -0.4,
   "forehead/forehead-scale-vert-decr|incr": -0.2
  },
@@ -41,7 +44,7 @@
  "hair": {
   "style": "lady",
   "grey": 0.0,
-  "recede": -0.35,
+  "recede": -0.5,
   "count": 12000,
   "bun": 0.045,
   "puff": 0.004,
@@ -119,7 +122,7 @@
  },
  "camera": {
   "yaw": -14.0,
-  "pitch": 2.0,
+  "pitch": -1.0,
   "head_frac": 0.42,
   "eye_line": 0.42
  },

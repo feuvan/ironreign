@@ -1,9 +1,10 @@
 """Event: Flood - the river bursts its banks over the fields in a storm.
 
-From a knoll where villagers have fled, the viewer looks across the drowned fields to the levee:
-the swollen river pours through a breach in a white torrent that fans out over the paddies,
-sweeping round half-submerged thatched houses and willows; men with sandbags on the levee ends;
-low storm clouds with a pale break on the horizon, slanting rain, lightning over the far bank.
+Looking across the drowned fields to the levee: the swollen river pours through a breach in a
+white torrent that fans out over the paddies, sweeping round half-submerged thatched houses and
+willows; a family waits on the ridge of a drowned house in the foreground, men with sandbags
+stand on the broken levee ends; low storm clouds with a pale break on the horizon, slanting
+rain, lightning over the far bank.
 """
 
 import math
@@ -61,14 +62,7 @@ def land_h(X, Y):
     lev = 5.3 * T.smoothstep(13.0, 3.5, d) + 0.4 * T.fbm2(X, Y, 6.0, 3, seed=3)
     lev = lev * (1.0 - 0.97 * breach_mask(X, Y))
     plain = 0.5 * T.fbm2(X, Y, 40.0, 4, seed=2) - 0.25
-    # paddy bunds just breaking the surface (washed out by the torrent)
-    a = 0.35
-    xr, yr = X * math.cos(a) + Y * math.sin(a), -X * math.sin(a) + Y * math.cos(a)
-    bx = np.abs(np.mod(xr, 26.0) - 13.0)
-    by = np.abs(np.mod(yr + 5.0, 19.0) - 9.5)
-    bund = T.smoothstep(12.0, 12.8, np.maximum(bx, by * 13.0 / 9.5))
-    plain = np.maximum(plain, (PLAIN_W + 0.22) * bund * (1.0 - torrent(X, Y)) - 0.1)
-    # knoll in the right foreground (the villagers' refuge, the camera stands on its back)
+    # a low wooded island in the drowned fields on the right
     kd = np.hypot((X - 120.0) / 30.0, (Y - 40.0) / 24.0)
     knoll = 6.0 * np.exp(-kd * kd * 1.6) + 0.5 * T.fbm2(X, Y, 5.0, 3, seed=5) * T.smoothstep(1.2, 0.4, kd)
     h = np.maximum(plain, lev - 0.2)
@@ -246,7 +240,7 @@ def build(r):
             vil.sphere((x, y, float(land_h(np.array([x]), np.array([y]))[0]) + 0.15), 0.42, "Straw", 8, 4,
                        scale=(1.0, 0.6, 0.38))
     vil.build("Hamlet", mats)
-    # ---- people: refugees on the knoll (foreground), men fighting the breach on the levee ---------
+    # ---- people: a family on a roof (foreground), men fighting the breach on the levee -----------
     ppl = MeshBuilder()
     # a family stranded on the ridge of a drowned house in the foreground
     rx, ry, rrz = 13.0, 64.0, 0.45
@@ -275,7 +269,7 @@ def build(r):
             ppl.extend(f, Matrix.Translation((x, y, float(land_h(np.array([x]), np.array([y]))[0]))) @
                        Matrix.Rotation(math.atan2(_TN[1], _TN[0]) + (math.pi / 2 if side > 0 else -math.pi / 2), 4, "Z"))
     ppl.build("Villagers", mats)
-    # ---- trees: willows half drowned on the plain, a dark stand on the knoll, the far bank -----
+    # ---- trees: willows half drowned on the plain, a stand on the island, the far bank --------
     fm = {"Leaves": F.foliage_material("FLeaves", ("#2A3420", "#46502E"), translucency=0.1),
           "LeavesCore": F.foliage_material("FLeavesCore", ("#1A2216", "#2A3220"), core=True, translucency=0.0),
           "Bark": F.bark_material("FBark", ("#221E1A", "#3A322A"))}
@@ -336,9 +330,6 @@ def build(r):
     cz = CAM[2]
     tgt = (CAM[0] + vd[0] * 100.0, CAM[1] + vd[1] * 100.0, cz - 100.0 * math.tan(math.radians(9.0)))
     cam = L.camera((CAM[0], CAM[1], cz), tgt, focal_mm=28.0)
-    import os
-    if os.environ.get("FLOOD_DBG"):
-        cam = L.camera((XB + 10.0, by - 70.0, 40.0), (XB, by, 0.0), focal_mm=28.0)
     return dict(camera=cam, beams=tuple(S.dir_from(88.0, 1.0) * 5000.0),
                 beams_cfg=dict(ray_length=0.12, strength=0.12, threshold=0.8),
                 glow=dict(threshold=0.95, mix=-0.75, size=9),

@@ -1,6 +1,7 @@
 """World Models family - ONE entry point that regenerates every output deterministically.
 
     Tools/BlenderArt/render.sh Tools/BlenderArt/world_models/build.py [--preview] [--no-render] [--skip-sprites]
+                               [--reuse-leaves]
                                [only: trees cities props sprites | Tree_Pine City_2 Banner ...]
 
 Order (each step uses the previous one's files):
@@ -33,6 +34,7 @@ MODELS = ["Tree_Pine", "Tree_Broad", "Tree_Bamboo", "City_1", "City_2", "City_3"
 
 def main():
     fl = common.flags()
+    argv0 = list(sys.argv)
     want = set(fl["names"])
     t0 = time.time()
     times = {}
@@ -42,7 +44,8 @@ def main():
 
     if on("trees", "Tree_Pine", "Tree_Broad", "Tree_Bamboo"):
         sys.argv = [sys.argv[0], "--"] + [n.replace("Tree_", "") for n in want if n.startswith("Tree_")] + \
-            (["--preview"] if fl["preview"] else []) + ([] if fl["render"] else ["--no-render"])
+            (["--preview"] if fl["preview"] else []) + ([] if fl["render"] else ["--no-render"]) + \
+            (["--reuse-leaves"] if "--reuse-leaves" in argv0 else [])
         t = time.time()
         trees.main()
         times["trees"] = time.time() - t

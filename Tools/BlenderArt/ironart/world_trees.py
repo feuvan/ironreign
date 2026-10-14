@@ -348,7 +348,7 @@ def _vor4(w, vec, wv, scale, feature="DISTANCE_TO_EDGE", aniso=None, out="Distan
 def bark_material(kind, ext=(1.6, 3.2)):
     """Periodic bark (UV0 0..1 = one tile of ``ext`` metres): 'pine' (plated, reddish),
     'broad' (grey furrowed), 'bamboo' (green culm with nodes)."""
-    name = "BarkSrc_" + kind
+    name = "TrunkSrc_" + kind      # not "Bark*": world_bake skips final Bark materials
     m = bpy.data.materials.get(name)
     if m:
         return m

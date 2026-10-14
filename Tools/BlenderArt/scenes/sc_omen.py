@@ -83,7 +83,7 @@ def build(r):
     S.sun(250.0, 40.0, energy=0.1, color="#4A5AA0", angle_deg=20.0, name="NightFill", shadow=False)
     def hfn(X, Y):
         return 0.5 * T.fbm2(X, Y, 80.0, 3, seed=1) + T.smoothstep(1900.0, 3000.0, Y) * 300.0 * T.ridged2(X, Y, 700.0, 5, seed=2)
-    g = T.field_from(hfn, -2600, 2600, -60, 5200, 4.0 if pv else 2.5)
+    g = T.field_from(hfn, -2600, 2600, -60, 5200, 6.0 if pv else 4.0)
     gm = T.terrain_material("OmenGround", grass=("#2A2E22", "#3A3A2A"), dirt="#3A3228",
                             rock=("#34302E", "#4A4440"), grass_scale=0.01)
     g.build("Ground", gm)

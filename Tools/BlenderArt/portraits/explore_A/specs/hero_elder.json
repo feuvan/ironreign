@@ -13,7 +13,8 @@
  "face": {
   "nose/nose-scale-vert-decr|incr": 0.2,
   "cheek/{s}-cheek-volume-decr|incr": -0.2,
-  "eyes/{s}-eye-height2-decr|incr": -0.15
+  "eyes/{s}-eye-height2-decr|incr": -0.4,
+  "eyes/{s}-eye-eyefold-down|up": -0.4
  },
  "identity": {
   "skin_tone": 0.45,

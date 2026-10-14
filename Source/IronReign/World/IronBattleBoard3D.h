@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "Sim/IronBattle.h"
+#include "World/IronViewProjection.h"
 
 #include <vector>
 
@@ -35,6 +36,28 @@ struct FIronBoardHighlights
 	int32 SelectedUnit = -1;
 	/** Cream ring under the cursor (Col -1 = none). */
 	IronSim::FHex HoveredHex = {-1, -1};
+};
+
+/**
+ * Where one rules event landed on the board's animation timeline (AIronBattleBoard3D::PlayEvent). Seconds from the
+ * moment of the call, on the board clock: it advances with the world's frame time (each frame clamped to 0.1 s), so
+ * at normal frame rates it runs with the wall clock; add the values to FPlatformTime::Seconds() taken at the call.
+ */
+struct FIronBoardEventTiming
+{
+	/** The event's animation starts (0 = now; later while earlier animations are still playing). */
+	float StartSeconds = 0.0f;
+	/**
+	 * The moment the result shows, for floating numbers, flashes and sounds: the blow lands (melee 0.15 s after the
+	 * start, volley 0.42 s, gate hit 0.15 s), the gate collapses (0.3 s), a fire tactic strikes (0.45 s), the confuse /
+	 * rally / failed-tactic effect appears on the target (0.15 s), a move arrives. StartSeconds for events whose result
+	 * is immediate (burn, duel result, falls) and for events the board does not animate.
+	 */
+	float ImpactSeconds = 0.0f;
+	/** The event's blocking animations are over (hit reactions included). StartSeconds when nothing was queued. */
+	float EndSeconds = 0.0f;
+	/** The board queued animations for the event. False when it ignored it (inactive or unbuilt board, DayStart, narration). */
+	bool bAnimated = false;
 };
 
 /** Plain (non-reflected) animation state of AIronBattleBoard3D. */
@@ -125,6 +148,17 @@ struct FIronBoardUnitVisual
 	UPROPERTY()
 	TArray<TObjectPtr<UMaterialInstanceDynamic>> Materials;
 
+	/** The side-colour instance of each part (IronWorld::ApplyTint), recoloured for the "acted" look. */
+	UPROPERTY()
+	TObjectPtr<UMaterialInstanceDynamic> FigureTint = nullptr;
+
+	UPROPERTY()
+	TObjectPtr<UMaterialInstanceDynamic> BaseTint = nullptr;
+
+	UPROPERTY()
+	TObjectPtr<UMaterialInstanceDynamic> FlagTint = nullptr;
+
+	FLinearColor SideColor = FLinearColor::White;
 	int32 Side = 0;
 	int32 TroopType = 0;
 	bool bCommander = false;
@@ -135,6 +169,11 @@ struct FIronBoardUnitVisual
 	IronSim::FHex TargetHex = {-1, -1};
 	bool bTargetOnField = true;
 	bool bTargetConfused = false;
+	/** Acted this turn on the side whose turn it is (dimmed once its animations finished). */
+	bool bTargetActed = false;
+	/** 0..1 blend toward the dimmed side colour, and the value last applied to the tint materials. */
+	float Acted = 0.0f;
+	float AppliedActed = 0.0f;
 
 	/** Currently drawn (false once it left the field). */
 	bool bShown = true;
@@ -205,16 +244,20 @@ struct FIronBoardLight
  *       Board->Build(*Battle); Board->SetSeason(Month); Board->SetFramingInsets(...);
  *       StrategyMap3D->SetActive(false); Board->SetActive(true);   // either order works
  *   }
- *   ConsumeEvents:  Board->PlayEvents(Battle->Events()); Board->SyncFromBattle(*Battle); Battle->ClearEvents();
+ *   ConsumeEvents:  per event T = Board->PlayEvent(Event) (texts / sounds at now + T.ImpactSeconds);
+ *                   Board->SyncFromBattle(*Battle); Battle->ClearEvents();
  *   Driver tick:    bAnimating = Board->IsAnimating();  (instead of SIronHexView::GetBusyUntil)
  *   Fast-forward:   Board->FinishAnimations(); Board->SyncFromBattle(*Battle);
  *   Selection:      Board->SetHighlights(...) whenever the highlights change; SetHoveredHex on mouse move.
  *   Input:          PickHex (click / hover), Pan (drag), Zoom (wheel), ResetView (key), FocusHex (AI acting off screen).
- *   Overlay:        ProjectUnitToViewport (troop bars, names follow the animation), ProjectToViewport (hex numbers).
+ *   Overlay:        GetViewProjection() once per paint, then ProjectUnitToViewport (troop bars, names follow the
+ *                   animation), ProjectGateToViewport (gate HP bars), ProjectToViewport (hex numbers) - all share it.
+ *   Graphics:       SetQuality; the tilt-shift follows AIronEnvironment::SetTiltShiftStrength by itself.
  *   Leaving:        Board->SetActive(false); StrategyMap3D->SetActive(true) (either order; the map cuts back).
+ *                   Destroy() (or any EndPlay) also deactivates and hands a held view target back to the controller.
  *
  * Viewport pixels are those of APlayerController::DeprojectScreenPositionToWorld / ProjectWorldLocationToScreen: game
- * viewport render pixels, origin top-left (Slate local coordinates x Geometry.Scale for a full-viewport widget).
+ * viewport render pixels, origin top-left (see FIronViewProjection; the UI maps Slate geometry onto them).
  * Every asset is optional at runtime except those checked by AreAssetsAvailable(); nothing here touches the rules.
  */
 UCLASS(NotBlueprintable)
@@ -231,9 +274,12 @@ public:
 	 * True when the 3D board can be shown: rendering is possible, the asset import completed
 	 * (/Game/IronReign/IronReignAssetVersion) and SM_Hex_<all 13 terrains>, SM_Unit_Infantry/Cavalry/Archer,
 	 * SM_Unit_Base, M_IronTint and M_IronHighlight (or MI_IronHighlightHex) load. Otherwise keep the 2D hex view.
-	 * Cheap after the first positive answer; logs the first missing asset once.
+	 * Cached like AIronWorldMap3D::AreAssetsAvailable: a positive answer is kept, a negative one is probed again at
+	 * most every 30 seconds or after InvalidateAssetCheck(); each new missing asset is logged once. Game thread.
 	 */
 	static bool AreAssetsAvailable();
+	/** Forgets the cached AreAssetsAvailable answer: the next call probes the assets again (after an import). */
+	static void InvalidateAssetCheck();
 	static AIronBattleBoard3D* FindBoard(UWorld* World);
 	/** Finds the world's board or spawns one (transient, hidden until SetActive(true)). */
 	static AIronBattleBoard3D* SpawnBoard(UWorld* World);
@@ -258,28 +304,41 @@ public:
 
 	/** Month 1..12 of the battle: environment season (instant) and the ground colour around the board. */
 	void SetSeason(int32 Month);
-	/** 0 Low .. 3 Epic (forwards to AIronEnvironment::SetQuality; Low drops the depth of field and most embers). */
+	/**
+	 * 0 Low .. 3 Epic (forwards to AIronEnvironment::SetQuality; Low drops the depth of field and most embers, Epic
+	 * gives effect lights shadows). Takes effect at once: nothing on the board depends on the quality at build time.
+	 */
 	void SetQuality(int32 Level);
 	/** Faint hex grid over the playable board (default on). */
 	void SetGridVisible(bool bVisible);
+	/** Dims the side colour of units that already acted this turn (default on; see SyncFromBattle). */
+	void SetDimActedUnits(bool bDim);
 
 	// ----- Battle state and animation -----
 
 	/**
-	 * Remembers the rules state (unit hexes and status, confusion, burning hexes, gate HP, day). Units and gates with
-	 * queued animations keep their animated state until those animations finish, the rest follows at once (a unit
-	 * whose hex changed without a Move event glides there). Cheap: may be called every frame. Rebuilds the board when
-	 * Battle is a different battle (other size or unit count).
+	 * Remembers the rules state (unit hexes and status, confusion, acted flags, burning hexes, gate HP, day). Units and
+	 * gates with queued animations keep their animated state until those animations finish, the rest follows at once
+	 * (a unit whose hex changed without a Move event glides there). Units of the side whose turn it is that already
+	 * acted (FBattleUnit::bActed, battle not over) fade to a dimmed, desaturated side colour once their own animations
+	 * finished; the next turn restores them. Cheap: may be called every frame. Rebuilds the board when Battle is a
+	 * different battle (other size or unit count).
 	 */
 	void SyncFromBattle(const IronSim::FBattle& Battle);
 	/**
 	 * Queues the animations of rules events in order (moves hop along their path at 0.25 s per hex; attacks lunge,
 	 * counters follow; tactics, gate hits, falls...). Call before ClearEvents(). Ignored while the board is inactive.
+	 * Returns each event's timing, in order (see PlayEvent).
 	 */
-	void PlayEvents(const TArray<IronSim::FBattleEvent>& Events);
+	TArray<FIronBoardEventTiming> PlayEvents(const TArray<IronSim::FBattleEvent>& Events);
 	/** Same for IronSim::FBattle::Events(). */
-	void PlayEvents(const std::vector<IronSim::FBattleEvent>& Events);
-	void PlayEvent(const IronSim::FBattleEvent& Event);
+	TArray<FIronBoardEventTiming> PlayEvents(const std::vector<IronSim::FBattleEvent>& Events);
+	/**
+	 * Queues one event and tells where it sits on the animation timeline: schedule its floating numbers and sounds at
+	 * ImpactSeconds instead of mirroring the board's private durations. Every event gets a slot (StartSeconds) after
+	 * the animations already queued, also those the board does not animate (bAnimated false).
+	 */
+	FIronBoardEventTiming PlayEvent(const IronSim::FBattleEvent& Event);
 	/** True while queued or running animations should hold back the next AI step / the result dialog. */
 	bool IsAnimating() const;
 	float GetRemainingAnimationSeconds() const;
@@ -296,16 +355,35 @@ public:
 	// ----- Picking and projection (viewport pixels) -----
 
 	/**
+	 * The local player's view this frame: one snapshot shared by every projection and pick below, recaptured when the
+	 * frame, the camera update or the viewport size changed (FIronViewProjection::Refresh). Check IsValid().
+	 */
+	const FIronViewProjection& GetViewProjection() const;
+	/**
 	 * Hex under the cursor: a unit model under the cursor wins (its figure stands in front of the hexes behind it),
 	 * else the board plane Z = 0 is hit and converted with IronSim::HexMath::FromPixel (metres). False off the board.
 	 */
 	bool PickHex(const FVector2D& ViewportPixel, IronSim::FHex& OutHex) const;
-	/** Viewport pixel of a hex centre HeightM above the board; false when off screen / behind the camera. */
+	/**
+	 * Viewport pixel of a hex centre HeightM above the board; false while the board is inactive or the point is behind
+	 * the camera (points beside the screen still project, outside 0..size).
+	 */
 	bool ProjectToViewport(const IronSim::FHex& Hex, float HeightM, FVector2D& OutViewportPixel) const;
-	/** Viewport pixel of a world location (cm). */
+	/** Viewport pixel of a world location (cm); OutDepthCm is its depth along the view direction. */
 	bool ProjectToViewport(const FVector& WorldLocationCm, FVector2D& OutViewportPixel) const;
+	bool ProjectToViewport(const FVector& WorldLocationCm, FVector2D& OutViewportPixel, float& OutDepthCm) const;
 	/** Anchor AboveModelM above the unit's model top at its animated position (troop bars, names). */
 	bool ProjectUnitToViewport(int32 UnitId, FVector2D& OutViewportPixel, float AboveModelM = 0.6f) const;
+	/**
+	 * World location (cm) of the top of the gate tile on Hex as drawn now: above the gatehouse while it stands, above
+	 * the rubble once it fell (mid-way through the GateBroken animation), shaking with the blows. False when Hex holds
+	 * no gate of this board.
+	 */
+	bool GetGateTopWorldLocation(const IronSim::FHex& Hex, FVector& OutWorldLocationCm) const;
+	/** Height (m) of that gate top above the board plane; 0 when Hex holds no gate. */
+	float GetGateTopHeightM(const IronSim::FHex& Hex) const;
+	/** Viewport pixel AboveTopM above the gate top (gate HP bars); false when no gate, inactive or behind the camera. */
+	bool ProjectGateToViewport(const IronSim::FHex& Hex, FVector2D& OutViewportPixel, float AboveTopM = 0.5f) const;
 	/** The unit is drawn (on the field and not finished sinking). */
 	bool IsUnitShown(int32 UnitId) const;
 	/** Animated world location (cm) of the unit's feet. */
@@ -342,6 +420,11 @@ public:
 	virtual void Tick(float DeltaSeconds) override;
 
 protected:
+	/**
+	 * Any reason: deactivates like SetActive(false) (animations finish, the shared sun is restored, world rendering
+	 * stays on only for an active strategy map). When the board is destroyed or removed during play it also hands the
+	 * view target back to the player controller if the battle camera still holds it, and destroys that camera.
+	 */
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 private:
@@ -382,6 +465,8 @@ private:
 	void EndTrack(IronBoard3D::FTrack& Track);
 	void ApplyUnitTransforms(float DeltaSeconds);
 	void ApplyUnitVisibility(FIronBoardUnitVisual& Visual);
+	/** Fades the unit's side colour toward the dimmed "acted" look (DeltaSeconds >= the fade time snaps). */
+	void ApplyActedLook(int32 UnitId, FIronBoardUnitVisual& Visual, float DeltaSeconds);
 	void UpdateGates();
 	void UpdateBurning();
 	void UpdateHalos();
@@ -549,4 +634,8 @@ private:
 	bool bBoardActive = false;
 	bool bGridVisible = true;
 	bool bHighlightsDirty = true;
+	bool bDimActedUnits = true;
+
+	/** Per-frame view snapshot behind GetViewProjection (a cache, hence mutable). */
+	mutable FIronViewProjection FrameView;
 };

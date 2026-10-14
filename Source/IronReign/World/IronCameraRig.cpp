@@ -5,6 +5,9 @@
 
 #include "Camera/CameraComponent.h"
 #include "Components/SceneComponent.h"
+#include "Engine/GameViewportClient.h"
+#include "Engine/World.h"
+#include "Math/RotationMatrix.h"
 
 namespace IronCameraRigDetail
 {
@@ -18,6 +21,9 @@ namespace IronCameraRigDetail
 	constexpr double MinClearanceM = 40.0;
 	constexpr double MaxFlightLiftM = 900.0;
 	constexpr double MaxStepSeconds = 0.1;
+	/** Framing changes (panels opening, window resizes) glide over about this long. */
+	constexpr double FramingSmoothTime = 0.25;
+	constexpr float MaxInset = 0.45f;
 }
 
 AIronCameraRig::AIronCameraRig()
@@ -118,6 +124,8 @@ void AIronCameraRig::Tick(float DeltaSeconds)
 		CurrentDistanceM = IronWorld::SmoothDamp(CurrentDistanceM, GoalDistanceM, DistanceVelocity, IronCameraRigDetail::DistanceSmoothTime, StepSeconds);
 	}
 	CurrentYawOffset = IronWorld::SmoothDamp(CurrentYawOffset, GoalYawOffset, YawVelocity, IronCameraRigDetail::YawSmoothTime, StepSeconds);
+	CurrentScreenOffset.X = IronWorld::SmoothDamp(CurrentScreenOffset.X, GoalScreenOffset.X, ScreenOffsetVelocity.X, IronCameraRigDetail::FramingSmoothTime, StepSeconds);
+	CurrentScreenOffset.Y = IronWorld::SmoothDamp(CurrentScreenOffset.Y, GoalScreenOffset.Y, ScreenOffsetVelocity.Y, IronCameraRigDetail::FramingSmoothTime, StepSeconds);
 
 	const double Ground = GroundUnderTarget(CurrentTarget);
 	if (!bGroundInitialized)
@@ -133,20 +141,49 @@ void AIronCameraRig::Tick(float DeltaSeconds)
 	UpdatePose();
 }
 
+FVector2D AIronCameraRig::GetViewportSizePx() const
+{
+	FVector2D Size(1920.0, 1080.0);
+	const UWorld* GameWorld = GetWorld();
+	const UGameViewportClient* GameViewport = GameWorld != nullptr ? GameWorld->GetGameViewport() : nullptr;
+	if (GameViewport != nullptr)
+	{
+		FVector2D Measured = FVector2D::ZeroVector;
+		GameViewport->GetViewportSize(Measured);
+		if (Measured.X > 1.0 && Measured.Y > 1.0)
+		{
+			Size = Measured;
+		}
+	}
+	return Size;
+}
+
 void AIronCameraRig::UpdatePose()
 {
 	CurrentPitchDegrees = PitchForDistance(FMath::Min(CurrentDistanceM, IronWorld::CameraMaxDistanceM));
 	const FRotator ViewRotation(-CurrentPitchDegrees, IronWorld::NorthYawDegrees + CurrentYawOffset, 0.0);
 	const FVector Focus = GetFocusWorldLocation();
-	FVector CameraLocation = Focus - ViewRotation.Vector() * (CurrentDistanceM * IronWorld::CmPerMetre);
+	const double DistanceCm = CurrentDistanceM * IronWorld::CmPerMetre;
+
+	// Framing insets: the point drawn at the viewport centre (Aim) lies beside the focus, so the focus lands at clip
+	// position CurrentScreenOffset, the middle of the uncovered part of the screen. The horizontal field of view is the
+	// camera's (aspect-ratio axis constraint "maintain X FOV", the engine default); the vertical one follows the aspect.
+	const FVector2D ViewportSize = GetViewportSizePx();
+	const double TanHalfH = FMath::Tan(FMath::DegreesToRadians(static_cast<double>(GetFieldOfView()) * 0.5));
+	const double TanHalfV = TanHalfH * ViewportSize.Y / FMath::Max(1.0, ViewportSize.X);
+	const FRotationMatrix ViewAxes(ViewRotation);
+	const FVector Right = ViewAxes.GetScaledAxis(EAxis::Y);
+	const FVector Up = ViewAxes.GetScaledAxis(EAxis::Z);
+	const FVector Aim = Focus - Right * (CurrentScreenOffset.X * DistanceCm * TanHalfH) - Up * (CurrentScreenOffset.Y * DistanceCm * TanHalfV);
+	FVector CameraLocation = Aim - ViewRotation.Vector() * DistanceCm;
 	FRotator CameraRotation = ViewRotation;
 
-	// Close to mountains the camera rises instead of clipping into them, still aiming at the focus point.
+	// Close to mountains the camera rises instead of clipping into them, still aiming at the same screen-centre point.
 	const double MinZ = (SurfaceAt(IronWorld::WorldToMap(CameraLocation)) + IronCameraRigDetail::MinClearanceM) * IronWorld::CmPerMetre;
 	if (CameraLocation.Z < MinZ)
 	{
 		CameraLocation.Z = MinZ;
-		CameraRotation = (Focus - CameraLocation).Rotation();
+		CameraRotation = (Aim - CameraLocation).Rotation();
 	}
 	SetActorLocationAndRotation(CameraLocation, CameraRotation);
 }
@@ -158,7 +195,40 @@ FVector AIronCameraRig::GetFocusWorldLocation() const
 
 float AIronCameraRig::GetCameraDistanceCm() const
 {
-	return static_cast<float>(FVector::Distance(GetActorLocation(), GetFocusWorldLocation()));
+	const double Depth = FVector::DotProduct(GetFocusWorldLocation() - GetActorLocation(), GetActorForwardVector());
+	return static_cast<float>(FMath::Max(1.0, Depth));
+}
+
+void AIronCameraRig::SetFramingInsets(float Left, float Top, float Right, float Bottom, bool bInstant)
+{
+	using IronCameraRigDetail::MaxInset;
+	const float NewLeft = FMath::Clamp(Left, 0.0f, MaxInset);
+	const float NewTop = FMath::Clamp(Top, 0.0f, MaxInset);
+	const float NewRight = FMath::Clamp(Right, 0.0f, MaxInset);
+	const float NewBottom = FMath::Clamp(Bottom, 0.0f, MaxInset);
+	const bool bChanged = !FMath::IsNearlyEqual(NewLeft, InsetLeft, 1.0e-4f) || !FMath::IsNearlyEqual(NewTop, InsetTop, 1.0e-4f)
+		|| !FMath::IsNearlyEqual(NewRight, InsetRight, 1.0e-4f) || !FMath::IsNearlyEqual(NewBottom, InsetBottom, 1.0e-4f);
+	if (!bChanged && !bInstant)
+	{
+		return;
+	}
+	InsetLeft = NewLeft;
+	InsetTop = NewTop;
+	InsetRight = NewRight;
+	InsetBottom = NewBottom;
+	// Centre of the uncovered rectangle in clip space: x = left - right, y = bottom - top (clip +Y is up).
+	GoalScreenOffset = FVector2D(static_cast<double>(InsetLeft - InsetRight), static_cast<double>(InsetBottom - InsetTop));
+	if (bInstant || !IsActorTickEnabled())
+	{
+		CurrentScreenOffset = GoalScreenOffset;
+		ScreenOffsetVelocity = FVector2D::ZeroVector;
+		UpdatePose();
+	}
+}
+
+FVector2D AIronCameraRig::GetFramingCentre() const
+{
+	return FVector2D(0.5 + 0.5 * CurrentScreenOffset.X, 0.5 - 0.5 * CurrentScreenOffset.Y);
 }
 
 void AIronCameraRig::CancelFlight()
@@ -251,6 +321,8 @@ void AIronCameraRig::SnapTo(const FVector2D& MapPointM, float DistanceM)
 	CurrentDistanceM = GoalDistanceM;
 	TargetVelocity = FVector2D::ZeroVector;
 	DistanceVelocity = 0.0;
+	CurrentScreenOffset = GoalScreenOffset;
+	ScreenOffsetVelocity = FVector2D::ZeroVector;
 	GroundZM = GroundUnderTarget(CurrentTarget);
 	GroundVelocity = 0.0;
 	bGroundInitialized = true;
