@@ -86,7 +86,7 @@ def build(spec, preview=False, out=None):
     rig.reset()
     W, H = 384, 480
     ss = spec.get("ss", 2)
-    spp = spec.get("spp", 40)
+    spp = spec.get("spp", 32)
     if preview:
         ss, spp = 1, max(16, spp // 3)
     sc = rig.cycles(samples=spp, w=W, h=H, ss=ss, transparent=True,

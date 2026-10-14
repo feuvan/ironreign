@@ -226,7 +226,7 @@ def setup(spec, sc, out, ss):
     # region masks
     aov = {a: rl.outputs.get(a) for a in AOVS}
     s = ss / 2.0
-    k_face = _kuwa(nt, over, P.get("face_size", 5) * s, P.get("face_ecc", 1.0), P.get("face_sharp", 0.6))
+    k_face = _kuwa(nt, over, P.get("face_size", 4) * s, P.get("face_ecc", 1.0), P.get("face_sharp", 0.6))
     k_hair = _kuwa_half(nt, over, P.get("hair_size", 8) * s, P.get("hair_ecc", 2.0), 0.5)
     k_cost = _kuwa_half(nt, over, P.get("cost_size", 12) * s, P.get("cost_ecc", 1.6), 0.45)
     skin = _blur(nt, aov["skin"], 2 * s)
