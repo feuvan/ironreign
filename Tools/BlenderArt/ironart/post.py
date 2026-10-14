@@ -12,14 +12,17 @@ Two halves:
 Image convention for the numpy helpers: ``float32`` arrays ``H x W x 4``, **sRGB-encoded**,
 **straight** (un-premultiplied) alpha, values 0..1.  :func:`load` / :func:`save` convert.
 
-Standard finishing recipe (what the style frames do)::
+Finishing is driven by the family recipe (``ironart.recipes.finish``), which does::
 
     img = post.load(raw_png)                       # 2x/4x render, compositor already painted it
-    img = post.downsample(img, factor=ss)          # Lanczos, premultiplied
-    img = post.grade(img, saturation=0.92, warmth=0.03)
-    img = post.apply_paper(img, post.paper_texture(w, h, seed), strength=0.06)
+    img = post.downsample(img, factor=ss)          # Lanczos, premultiplied, ringing clamped
+    img = post.grade(img, **recipe["grade"])       # single values per family (STYLE.md 5)
+    img = post.unsharp(img, *recipe["unsharp"])
+    img = post.apply_paper(img, post.paper_texture(w, h, seed), strength=recipe["paper"])
+    img = post.neutralize(img, tint_mask)          # tint plates only
+    img = post.drop_shadow(img, **recipe["shadow"])
     img = post.alpha_cleanup(img)                  # sprites: kill dust, bleed edge colour
-    post.save(img, final_png)
+    post.save_asset(img, "Art/Map/City_2.png")     # validates against the manifest
 """
 
 import math

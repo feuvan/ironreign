@@ -24,6 +24,12 @@ FRAMES = [("sf_terrain_512x320.png", "(a) terrain 512x320", 1),
           ("sf_panel_128.png", "(e) panel 128 (x2)", 2)]
 
 
+EXTRAS = [("sf_city_1_96.png", "City_1 town (x2)", 2),
+          ("sf_city_3_96.png", "City_3 great city (x2)", 2),
+          ("arch_scholar_192x240.png", "archetype: scholar (preview)", 1),
+          ("arch_female_192x240.png", "archetype: female (preview)", 1)]
+
+
 def _load(d, name):
     p = os.path.join(d, name)
     return post.load(p) if os.path.exists(p) else None
@@ -73,6 +79,13 @@ def main():
     if not items:
         print("[make_sheet] ERROR: no style frames found in %s" % d, file=sys.stderr)
         sys.exit(1)
+    # optional extras: the city tiers and the portrait archetypes (1:1)
+    for name, label, scale in EXTRAS:
+        img = _load(d, name)
+        if img is not None:
+            if scale != 1:
+                img = post.resize(img, (img.shape[1] * scale, img.shape[0] * scale), "nearest")
+            items.append((img, label))
     out = os.path.join(d, "styleframes_overview.png")
     post.save(post.contact_sheet(items, cols=3), out)
     print("[make_sheet] wrote", out, "(%d frames)" % len(items))

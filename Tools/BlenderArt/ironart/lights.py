@@ -15,7 +15,7 @@ table (:data:`SUN`, STYLE.md section 4) - every rig default below equals it:
     sprites    155 / 52 (world    sun 4.6, 6 deg soft     sun 0.25 -30/35 cool,    1.2     sky x0.18
                elev 40 from WSW: the oblique camera needs it to split tops / west / south)
                                                           zenith 0.45 shadowless
-    portraits  135 / 35           area 0.5 m, 40 W        14 W cool, bounce 4 W    26 W    #3A3530 x0.04
+    portraits  135 / 35           area 0.5 m, 40 W        12 W cool, bounce 9 W    26 W    #3A3530 x0.04
     UI         135 / 50           sun solved: flat = 1.0 x albedo, white key, white ambient
 
 Shadows therefore fall towards screen 315 deg (bottom-right) everywhere; on the map and hex tiles
@@ -181,7 +181,7 @@ def rig_map(cam=None, key=3.4, sky=0.55, azimuth_deg=SUN["angle"], elevation_deg
     return rig
 
 
-def rig_portrait(cam, target, key=40.0, fill=14.0, bounce=4.0, rim=26.0, sky=0.04,
+def rig_portrait(cam, target, key=40.0, fill=12.0, bounce=9.0, rim=26.0, sky=0.04,
                  key_angle=SUN["angle"], key_elev=35.0, distance=1.6, key_size=0.5):
     """Painted bust lighting: soft warm key from the upper left at 35 deg (Rembrandt triangle on
     the shadow cheek), broad cool fill from the right, warm low bounce from below-front (lifts the
@@ -189,8 +189,9 @@ def rig_portrait(cam, target, key=40.0, fill=14.0, bounce=4.0, rim=26.0, sky=0.0
     beard out of the ground.
 
     Energies are Watts for area lights at ``distance`` metres from ``target`` (head ~0.23 m).
-    Calibrated on the warrior style frame (Filmic Medium Contrast): lit cheek ~#C08660, shadow
-    cheek >= 35 % of it, armour midtones 55-95, frame mean luma 65-80.
+    Calibrated on the warrior style frame (Filmic Medium Contrast, measured): frame mean luma 65,
+    background 67, lit cheek luma ~138 / shadow cheek ~98 (0.71; the floor is 0.35), armour
+    midtones ~64 - the asserted targets are 65-80 / 45-70 / >= 0.35 / 55-95.
     """
     t = Vector(target)
     kd = screen_dir(cam, key_angle, key_elev)

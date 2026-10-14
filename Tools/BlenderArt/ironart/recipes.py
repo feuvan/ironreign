@@ -67,8 +67,8 @@ RECIPES = {
         margins=(2, 2, 6, 6), anchor="ground", anchor_frac=(0.5, 0.70), alpha="cleanup",
         tint=False,
         notes="City_1..3, Sect: each fitted independently to fill its canvas (the UI scales the "
-              "tiers 46/58/74 px); ground centre at (0.5, 0.75) of the canvas; City pennant "
-              "keep-out x 56-83, y 0-23 (alpha < 0.1)"),
+              "tiers 46/58/74 px); ground centre at (0.5, 0.70) of the canvas; City pennant "
+              "keep-out x 56-83, y 0-23 (alpha < 0.1); 1 px border alpha 0"),
     "tint_plate": dict(
         ss=4, spp=64, preset="sprite", view="Standard", look="None", transparent=True,
         camera=("sprite", dict(elevation_deg=35.0, azimuth_deg=-20.0)),
@@ -103,17 +103,18 @@ RECIPES = {
         ss=2, spp=56, preset="portrait", view="Filmic", look="Medium Contrast", transparent=True,
         camera=("portrait", dict(head_height=0.232, yaw_deg=20.0, pitch_deg=-4.0, eye_line=0.38,
                                  head_frac=0.48)),
-        rig=("rig_portrait", dict(key=40.0, fill=14.0, bounce=4.0, rim=26.0, key_elev=35.0)),
+        rig=("rig_portrait", dict(key=40.0, fill=12.0, bounce=9.0, rim=26.0, key_elev=35.0)),
         ink=None,
-        kuwahara=dict(size=4.0, sharpness=0.5, eccentricity=2.0, amount=0.85, detail_index=1,
-                      detail_size=1.25, detail_eccentricity=1.0),
+        kuwahara=dict(size=3.0, sharpness=0.5, eccentricity=2.0, amount=0.85, detail_index=1,
+                      detail_size=1.5, detail_eccentricity=1.0),
         grade=dict(saturation=0.96, contrast=1.02, warmth=0.008),
         paper=0.07, unsharp=(0.7, 0.4), vignette=0.12, shadow=None, margins=None, anchor=None,
         alpha=None, tint=False,
-        notes="192x240 opaque; eyes at 38 % from the top, head 48 % of the frame, plume >= 6 px "
-              "from the top; face objects pass_index 1 (fine Kuwahara), rest big directional "
-              "strokes; background base (0.20,0.16,0.12) lite (0.52,0.44,0.33); targets: mean "
-              "luma 65-80, shadow cheek >= 35 % of lit cheek"),
+        notes="192x240 opaque; figure.bust(archetype); eyes at 38 % from the top aimed at the "
+              "camera, head 48 % of the frame, headwear >= 6 px from the top; face objects "
+              "pass_index 1 (fine Kuwahara), rest big directional strokes; umber paper background "
+              "base (0.20,0.16,0.12) halo (0.46,0.39,0.30); asserted: mean luma 65-80, background "
+              "45-70, shadow cheek >= 35 % of the lit cheek, armour 55-95, catchlights"),
     "ui": dict(
         ss=4, spp=48, preset="ui", view="Standard", look="None", transparent=True,
         camera=("top", {}),
@@ -166,6 +167,8 @@ RECIPES = {
 RECIPES["background"] = copy.deepcopy(RECIPES["event"])
 RECIPES["background"]["kuwahara"]["size"] = 5.0
 RECIPES["background"]["ink"]["thickness_px"] = 2.0
+RECIPES["background"]["notes"] = ("Duel 1280x720, Title 1920x1080, Battle background: as 'event' "
+                                  "with bigger strokes (5 px) and ink 2.0")
 RECIPES["mask"] = dict(ss=1, spp=0, preset=None, view=None, look=None, transparent=True,
                        camera=None, rig=None, ink=None, kuwahara=None, grade=None, paper=0.0,
                        unsharp=None, shadow=None, margins=None, anchor=None, alpha=None, tint=True,
@@ -378,3 +381,37 @@ def table_markdown():
     for k, v in UI_PIECES.items():
         rows.append("| %s | %s |" % (k, v))
     return "\n".join(rows)
+
+
+# ---------------------------------------------------------------------------------------------
+# STYLE.md generation
+# ---------------------------------------------------------------------------------------------
+#: generated blocks in STYLE.md: ``<!-- BEGIN name -->`` ... ``<!-- END name -->``
+def _blocks():
+    from . import palette
+    return {"recipes": table_markdown(), "palette": palette.table_markdown()}
+
+
+def update_style_md(path=None):
+    """Rewrite the generated blocks of STYLE.md from :data:`RECIPES` and the palette, so the
+    numbers artists read are the numbers the code uses::
+
+        python3 -c "import sys; sys.path.insert(0, 'Tools/BlenderArt'); \\
+                    from ironart import recipes; recipes.update_style_md()"
+
+    Returns the list of blocks replaced; raises if a marker is missing."""
+    import os
+    import re
+    path = path or os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                "STYLE.md")
+    text = open(path, encoding="utf-8").read()
+    done = []
+    for name, body in _blocks().items():
+        pat = re.compile(r"(<!-- BEGIN %s -->\n)(?:.*?\n)?(<!-- END %s -->)" % (name, name), re.S)
+        if not pat.search(text):
+            raise ValueError("STYLE.md has no generated block %r" % name)
+        text = pat.sub(lambda m: m.group(1) + body + "\n" + m.group(2), text)
+        done.append(name)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(text)
+    return done

@@ -122,8 +122,16 @@ def qa_terrain(img, f, albedo):
     """Measured palette / structure checks (asserted)."""
     q = post.QA("terrain")
     land1 = T.resize(f["land"], (W, H)) > 0.5
-    # plains patch (south-east lowland between river and range, no forest/river)
-    q.hue("plains patch", post.region_mean(img, (150, 130, 190, 160)), 70, 90)
+    # open plains: lowland land pixels away from forest, rivers, steppe and hills
+    def down(a):
+        return T.resize(a, (W, H))
+    hn = down(f["height"] / max(1e-6, f["height"].max()))
+    plains = (land1 & (down(f["forest"]) < 0.02) & (down(f["river"]) < 0.02)
+              & (down(f["steppe"]) < 0.05) & (hn < 0.05) & (down(f["mountains"]) < 0.05))
+    pm = post.region_mean(img, mask=plains)
+    print("[ironart] plains mean #%02X%02X%02X over %d px" % (tuple(int(round(c)) for c in pm)
+                                                          + (int(plains.sum()),)))
+    q.hue("open plains (mask)", pm, 75, 85)
     q.color("steppe patch", post.region_mean(img, (10, 10, 50, 40)), "#C7AC76", 14)
     fm = T.resize(f["forest"], (W, H)) > 0.8
     lum = post.luma8(img)

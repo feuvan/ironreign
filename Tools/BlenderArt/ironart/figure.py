@@ -5,11 +5,13 @@ at the origin, the face looks towards **-Y**, +Z up.  ``head()`` returns *landma
 nose tip, mouth, chin, brow line, ears, crown, neck) that every other builder uses, so a helmet or
 beard follows any head shape.
 
-The head is sculpted numerically: a UV sphere is shaped into an egg skull, the lower face is
-tapered to a jaw/chin profile, then facial features are added as anisotropic gaussian
-displacements (brow ridge, sockets, nose bridge/tip/wings, cheekbones, lips, chin).  It is not a
-likeness engine - it is a sturdy, controllable base that reads as a Koei painted bust after the
-painterly pass.  :class:`HeadParams` exposes the knobs archetypes need (jaw, nose, brow, age...).
+The head is sculpted numerically: rays from the skull centre find the surface of a smooth SDF
+union of anatomical masses (:func:`head_masses`: skull, forehead, face/jaw, chin, jaw angles), then
+smooth relief adds the features (:func:`face_relief`: brow ridge, cheekbones, nose, philtrum,
+lips, mouth line, chin), the lids conform to spheres around the eyeballs and the opening is carved
+behind them.  It is not a likeness engine - it is a sturdy, controllable base that reads as a Koei
+painted bust after the painterly pass.  :class:`HeadParams` exposes the knobs archetypes need, and
+:data:`ARCHETYPES` / :func:`bust` build complete warrior / scholar / female busts.
 
 Material slot names used (provide them to ``MeshBuilder.build``):
     Skin, Eye, Brow, Hair, Beard, Iron, IronDark, Lamellar, Bronze, Gold, Leather, Silk,
@@ -46,6 +48,7 @@ class HeadParams:
     eye_size: float = 1.0
     socket: float = 1.0         # eye-socket depth
     lips: float = 1.0
+    lower: float = 1.0          # lower-face length (mouth, chin, jaw angles) - female ~0.9
     age: float = 0.3            # 0 young .. 1 old (sagging cheeks, deeper sockets)
     lid_upper: float = 0.25     # upper lid edge elevation (rad) above the eye axis at the centre
     lid_lower: float = 0.22     # lower lid edge elevation (rad) below the eye axis
@@ -105,7 +108,7 @@ def head_masses(p):
 
     Proportions (head height 232 mm): face mass narrows from 128 mm at the cheekbones to a
     ~100 mm jaw angle and a ~45 mm chin; the chin sits ~6 mm behind the lower lip."""
-    j, ch = p.jaw, p.chin
+    j, ch, lo = p.jaw, p.chin, p.lower
     W = p.width / 0.150
     D = p.depth / 0.190
     Hh = p.height / 0.232
@@ -114,9 +117,9 @@ def head_masses(p):
         ((0, -0.022 * D, 0.030 * Hh), (0.066 * W, 0.064 * D, 0.064 * Hh), 0.012),    # forehead
         ((0, -0.016 * D, -0.034 * Hh), (0.063 * W * (0.55 + 0.45 * j), 0.074 * D, 0.077 * Hh),
          0.016),                                                                      # face + jaw
-        ((0, -0.045 * D, -0.086 * Hh), (0.027 * ch, 0.040 * ch, 0.024 * Hh), 0.018),  # chin
-        ((0.041 * W * j, -0.004 * D, -0.067 * Hh), (0.012, 0.026, 0.015), 0.022),     # jaw angles
-        ((-0.041 * W * j, -0.004 * D, -0.067 * Hh), (0.012, 0.026, 0.015), 0.022),
+        ((0, -0.045 * D, -0.086 * Hh * lo), (0.027 * ch, 0.040 * ch, 0.024 * Hh), 0.018),  # chin
+        ((0.041 * W * j, -0.004 * D, -0.067 * Hh * lo), (0.012, 0.026, 0.015), 0.022),  # jaw angles
+        ((-0.041 * W * j, -0.004 * D, -0.067 * Hh * lo), (0.012, 0.026, 0.015), 0.022),
     ]
 
 
@@ -171,7 +174,7 @@ def face_relief(p, x, z, d):
     off += 0.0032 * p.brow * _g2(x, z - 0.024, 0.040, 0.0075) * fw
     off -= 0.0030 * _g2(x, z - 0.011, 0.006, 0.005) * fw
     # cheekbones (front-side)
-    off += 0.0050 * p.cheekbone * _g2(ax - 0.043, z + 0.008, 0.015, 0.012) * fs
+    off += 0.0055 * p.cheekbone * _g2(ax - 0.044, z + 0.006, 0.016, 0.011) * fs
     # nose
     z_root, z_tip = 0.009, -0.029 * nl
     span = z_root - z_tip
@@ -186,7 +189,7 @@ def face_relief(p, x, z, d):
     off -= 0.0014 * _g2(ax - 0.0170 * nw, z - (z_tip - 0.002), 0.0016, 0.0052) * fw  # alar crease
     # mouth (50 mm wide at MZ): maxillary fullness, 14 mm philtrum, lips, a crisp mouth line that
     # stops at the corners, mentolabial sulcus, chin boss
-    MZ = MOUTH_Z
+    MZ = MOUTH_Z * p.height / 0.232 * p.lower
     cut = np.clip((0.0255 - ax) / 0.004, 0, 1)                    # nothing past the mouth corners
     off += 0.0035 * _g2(x, z - (MZ + 0.002), 0.022, 0.016) * fw
     off -= 0.0007 * _g2(x, z - (MZ + 0.013), 0.0030, 0.0050) * fw              # philtrum groove
@@ -196,7 +199,7 @@ def face_relief(p, x, z, d):
     off -= 0.0020 * _g2(x * 0.0, z - MZ, 1.0, 0.0010) * fw * cut                # mouth line
     off -= 0.0010 * _g2(ax - 0.0255, z - MZ, 0.0030, 0.0032) * fw              # corners
     off -= 0.0012 * _g2(x, z - (MZ - 0.0150), 0.0120, 0.0032) * fw             # sulcus
-    off += 0.0030 * p.chin * _g2(x, z + 0.089, 0.013, 0.010) * fw              # chin boss
+    off += 0.0030 * p.chin * _g2(x, z + 0.089 * p.height / 0.232 * p.lower, 0.013, 0.010) * fw  # chin
     return off
 
 
@@ -285,9 +288,10 @@ def head(params=None, segments=320, rings=224, mat="Skin", blend=0.014):
                  + _g2(x, z - tip_z, 0.01, 0.01) * 0.6, 0, 1)
     fr = (newV[:, 1] < -0.04).astype(np.float64)
     cut = np.clip((0.0255 - np.abs(x)) / 0.004, 0, 1) * fr
-    lip = np.clip(1.6 * (_g2(x, z - (MOUTH_Z + 0.0036), 0.0160, 0.0030)
-                         + _g2(x, z - (MOUTH_Z - 0.0046), 0.0135, 0.0036)), 0, 1) * cut
-    mouth = _g2(0.0, z - MOUTH_Z, 1.0, 0.0011) * cut
+    MZ = MOUTH_Z * p.height / 0.232 * p.lower
+    lip = np.clip(1.6 * (_g2(x, z - (MZ + 0.0036), 0.0160, 0.0030)
+                         + _g2(x, z - (MZ - 0.0046), 0.0135, 0.0036)), 0, 1) * cut
+    mouth = np.clip(1.3 * _g2(0.0, z - MZ, 1.0, 0.0015), 0, 1) * cut
     bva = mb.vattr.setdefault("blush", {})
     lva = mb.vattr.setdefault("lip", {})
     mva = mb.vattr.setdefault("mouth", {})
@@ -312,7 +316,7 @@ def head(params=None, segments=320, rings=224, mat="Skin", blend=0.014):
 
     rz_top = float(newV[:, 2].max())
     rz_bot = float(-newV[:, 2].min())
-    mz = MOUTH_Z
+    mz = MOUTH_Z * p.height / 0.232 * p.lower
     lm = {
         "params": p,
         "eye_l": eye_specs[0][0],                                      # subject's left = +x
@@ -512,7 +516,7 @@ def neck(mb, lm, mat="Skin", radius=0.052, length=0.12):
 # ---------------------------------------------------------------------------------------------
 def helmet(mb, lm, style="dome", plume=True, mat="Iron", trim="Gold", plume_mat="Plume",
            neck_guard="Lamellar", ribs=12, brim_z=None, scale=1.0, rng=None, guard_len=0.075,
-           visor=0.11, finial="cup"):
+           visor=0.11, finial="cup", guard_flare=0.16):
     """Chinese general's helmet (兜鍪): ribbed dome, gold brim band with a brow peak, spike finial
     with a red tassel plume, and lamellar neck/cheek guards that cover the ears.
     """
@@ -579,7 +583,7 @@ def helmet(mb, lm, style="dome", plume=True, mat="Iron", trim="Gold", plume_mat=
     def guard(u, v):
         a = math.radians(-60 + 300 * u)          # from front-left round the back to front-right
         a = -math.pi / 2 + math.radians(60) + math.radians(240) * u
-        rr = 1.03 + 0.16 * v ** 1.3
+        rr = 1.03 + guard_flare * v ** 1.3
         z = bz - 0.008 - guard_len * v
         return (cx + math.cos(a) * sx * rr, cy + math.sin(a) * sy * rr, z)
     mb.grid(guard, 40, 6, neck_guard, lambda u, v: (u * 0.5, v * 0.09), smooth=True)
@@ -624,7 +628,7 @@ def hair_cap(mb, lm, mat="Hair", thickness=0.004, crown=0.012, nu=64, nv=18, hai
         el = el0 + (math.pi / 2 - 0.02 - el0) * v
         dvec = np.array([[math.sin(az) * math.cos(el), -math.cos(az) * math.cos(el), math.sin(el)]])
         r = float(_ray_radius(dvec, masses)[0])
-        th = thickness + (crown - thickness) * (v ** 0.7)
+        th = 0.0006 + (thickness - 0.0006) * min(1.0, v * 6.0) + (crown - thickness) * (v ** 0.7)
         th *= 1.0 - part * math.exp(-((az / 0.08) ** 2)) * (v > 0.05)
         return tuple(dvec[0] * (r + th))
     mb.grid(fn, nu, nv, mat, lambda u, v: (u * 0.6, v * 0.25), smooth=True)
@@ -670,9 +674,10 @@ def guan(mb, lm, mat="Guan", pin="Gold", height=0.05):
 def _torso_profile(shoulder_w=0.44, chest_d=0.24, slope=1.0):
     """(half-width, half-depth, dz, superellipse exponent) rings from the neck base down."""
     hw, hd = shoulder_w / 2, chest_d / 2
-    return [(0.060, 0.055, 0.0, 2.0), (0.085, 0.070, -0.012 * slope, 2.2),
-            (0.135, 0.085, -0.032 * slope, 2.6), (0.180, 0.100, -0.055 * slope, 3.0),
-            (hw * 0.97, hd * 0.95, max(-0.085 * slope, -0.112), 3.2), (hw, hd, -0.125, 3.2),
+    k = hw / 0.22                       # trapezius/shoulder widths follow the shoulder width
+    return [(0.060, 0.055, 0.0, 2.0), (0.085 * k ** 0.5, 0.070, -0.012 * slope, 2.2),
+            (0.135 * k, 0.085, -0.032 * slope, 2.6), (0.180 * k, 0.100, -0.055 * slope, 3.0),
+            (hw * 0.97, hd * 0.95, max(-0.085 * slope, -0.112), 3.2), (hw, hd, -0.125 - 0.01 * (slope - 1), 3.2),
             (hw * 0.98, hd, -0.20, 3.0), (hw * 0.93, hd * 0.98, -0.32, 2.8)]
 
 
@@ -680,7 +685,7 @@ def torso_surface(lm, shoulder_w=0.44, chest_d=0.24, slope=1.0):
     """``f(a, z, off=0) -> Vector``: point on the :func:`torso` surface at angle ``a`` (radians;
     -pi/2 = front centre, 0 = subject's left side, pi/2 = back) and height ``z``, pushed ``off``
     metres outward - for collars, straps and anything that must lie on the chest."""
-    top = lm["neck"].z - 0.045
+    top = lm["neck"].z - lm.get("torso_drop", 0.045)
     prof = _torso_profile(shoulder_w, chest_d, slope)
     zs = [top + q[2] for q in prof]
 
@@ -699,20 +704,25 @@ def torso_surface(lm, shoulder_w=0.44, chest_d=0.24, slope=1.0):
 
 
 def torso(mb, lm, shoulder_w=0.44, chest_d=0.24, mat="Lamellar", segments=48, slope=1.0,
-          collar=0.0, collar_mat=None, trim="Bronze", top_mat=None, top_rings=2):
+          collar=0.0, collar_mat=None, trim="Bronze", top_mat=None, top_rings=2, collar_r=0.074,
+          folds=0.0, fold_count=9):
     """Upper body: neck base -> sloping trapezius -> rounded shoulders -> chest, as stacked
     superellipse rings (boxy but soft).  ``top_mat`` (e.g. 'SilkInner') covers the first
     ``top_rings`` ring strips around the neck base: the robe under the armour, which shows inside
     a :func:`cross_collar` V.  Returns the shoulder-line z."""
-    top = lm["neck"].z - 0.045
+    top = lm["neck"].z - lm.get("torso_drop", 0.045)
     prof = _torso_profile(shoulder_w, chest_d, slope)
     rings = []
-    for (sx, sy, dz, e) in prof:
+    for k, (sx, sy, dz, e) in enumerate(prof):
         ring = []
+        # cloth folds (robes): soft vertical ridges growing from the shoulders down
+        fa = folds * min(1.0, max(0.0, (k - 3) / 3.0))
         for i in range(segments):
             a = TAU * i / segments
             ca, sa = math.cos(a), math.sin(a)
             r = (abs(ca) ** e + abs(sa) ** e) ** (-1 / e)
+            if fa:
+                r *= 1.0 + fa * (0.6 * math.sin(a * fold_count + 0.7) + 0.4 * math.sin(a * fold_count * 2.3 + 2.1))
             ring.append(mb.v((ca * r * sx, 0.02 + sa * r * sy, top + dz)))
         rings.append(ring)
     for k in range(len(rings) - 1):
@@ -720,65 +730,94 @@ def torso(mb, lm, shoulder_w=0.44, chest_d=0.24, mat="Lamellar", segments=48, sl
         mb.quad_strip(rings[k + 1], rings[k], m, True, True)     # outward winding
     if collar > 0:
         # high stand-up collar (lamellar neck guard) hiding the neck: ``collar`` = height in m
-        mb.lathe([(0.074, top - 0.01), (0.078, top + collar * 0.5), (0.074, top + collar)],
+        cr = collar_r
+        mb.lathe([(cr, top - 0.01), (cr + 0.004, top + collar * 0.5), (cr + 0.009, top + collar)],
                  collar_mat or mat, 40, center=(0, 0.02, 0), scale_xy=(1.0, 0.92))
-        mb.lathe([(0.072, top + collar), (0.077, top + collar + 0.004), (0.07, top + collar + 0.007)],
+        mb.lathe([(cr + 0.007, top + collar), (cr + 0.012, top + collar + 0.004),
+                  (cr + 0.006, top + collar + 0.007)],
                  trim, 40, center=(0, 0.02, 0), scale_xy=(1.0, 0.92))
     return top - 0.055 * slope
 
 
-def cross_collar(mb, lm, outer="Silk", inner="SilkInner", width=0.024, inner_width=0.009,
-                 cross_z=-0.10, end_z=-0.15, shoulder_w=0.44, chest_d=0.24, slope=1.0,
-                 lift=0.006):
+def cross_collar(mb, lm, outer="Silk", inner="SilkInner", width=0.018, inner_width=0.006,
+                 cross_z=-0.085, end_z=-0.12, shoulder_w=0.44, chest_d=0.24, slope=1.0,
+                 lift=0.005, neck_x=0.060, stand=0.0, neck_r=0.060):
     """Crossed jiaoling collar (交领右衽): two lapel bands from the back of the neck over the
-    shoulders, crossing in a symmetric V on the sternum at ``cross_z`` (relative to the neck
-    base), the subject's left lapel on top (right-over-left is reserved for the dead).
+    trapezius, down the front in a symmetric V that crosses on the sternum at ``cross_z``
+    (relative to the neck base), the subject's left lapel on top (right-over-left is reserved
+    for the dead).
 
     Each lapel = an ``inner`` (cream) edge band ``inner_width`` wide along the V edge plus the
-    ``outer`` (silk red) band ``width`` wide outside it - the bust's colour accent around the
+    ``outer`` (silk red) band ``width`` wide outside it - the bust's colour accent beside the
     beard.  Lies ``lift`` m above the :func:`torso` surface (same shape args)."""
     surf = torso_surface(lm, shoulder_w, chest_d, slope)
-    # V edge of the subject's-left lapel in (angle deg, dz from the neck base); mirrored for the
-    # right lapel (angle -> 180 - angle)
-    edge = [(100, 0.004), (60, 0.0), (20, -0.006), (-20, -0.016), (-48, -0.034),
-            (-66, -0.060), (-80, cross_z * 0.8), (-90, cross_z), (-102, (cross_z + end_z) / 2),
-            (-112, end_z)]
-    top = lm["neck"].z - 0.045
+    top = lm["neck"].z - lm.get("torso_drop", 0.045)
 
-    def band(pts_ad, s, w0, w1, off, mat, under):
-        # pts in (a, z); band from offset w0 to w1 (metres, measured outward from the V edge)
-        P = [(math.radians(a if s > 0 else 180 - a), top + dz) for a, dz in pts_ad]
+    def front_angle(x, z):
+        # angle on the front half of the torso surface whose x equals ``x`` (bisection)
+        lo, hi = -math.pi, 0.0
+        for _ in range(40):
+            m = 0.5 * (lo + hi)
+            if surf(m, z).x < x:
+                lo = m
+            else:
+                hi = m
+        return 0.5 * (lo + hi)
+
+    # V edge of the subject's-left lapel as (x, dz): round the back of the neck, then down the
+    # front from the side of the neck to the crossing and a little past it
+    back = [(math.radians(a), dz) for a, dz in ((100, 0.004), (70, 0.002), (40, 0.0), (10, -0.004))]
+    frontpts = [(neck_x, -0.010), (neck_x * 0.80, -0.024), (neck_x * 0.55, cross_z * 0.55),
+                (neck_x * 0.28, cross_z * 0.80), (0.0, cross_z), (-neck_x * 0.22, (cross_z + end_z) / 2),
+                (-neck_x * 0.42, end_z)]
+
+    def edge_pts(s):
+        pts = []
+        for a, dz in back:
+            pts.append((a if s > 0 else math.pi - a, top + dz))
+        for x, dz in frontpts:
+            z = top + dz
+            pts.append((front_angle(s * x, z), z))
+        return pts
+
+    def band(P, s, w0, w1, off, mat):
+        R = 0.12
         rows = []
         for i, (a, z) in enumerate(P):
             a0, z0 = P[max(0, i - 1)]
             a1, z1 = P[min(len(P) - 1, i + 1)]
-            R = 0.12
-            du, dz_ = (a1 - a0) * R * (1 if s > 0 else -1), (z1 - z0)
+            du, dz_ = (a1 - a0) * R * s, (z1 - z0)
             ln = math.hypot(du, dz_) or 1.0
-            nu, nz = -dz_ / ln, du / ln          # outward: down / away from the opening
+            nu, nz = -dz_ / ln, du / ln          # away from the V opening: down / outwards
             if nz > 0:
                 nu, nz = -nu, -nz
+            fade = min(1.0, (len(P) - 1 - i) / 1.5)          # tuck the band end in
             row = []
             for w in (w0, (w0 + w1) / 2, w1):
-                aa = a + (nu * w / R) * (1 if s > 0 else -1)
+                aa = a + (nu * w / R) * s
                 zz = z + nz * w
-                bulge = 0.0015 * math.sin(math.pi * (w - w0) / max(1e-6, w1 - w0))
-                fade = min(1.0, (len(P) - 1 - i) / 1.5)          # tuck the band end in
-                row.append(mb.v(tuple(surf(aa, zz, (off + bulge) * fade + under))))
+                bulge = 0.0012 * math.sin(math.pi * (w - w0) / max(1e-6, w1 - w0))
+                row.append(mb.v(tuple(surf(aa, zz, (off + bulge) * fade))))
             rows.append(row)
         for i in range(len(rows) - 1):
             for j in range(2):
                 q = (rows[i][j], rows[i][j + 1], rows[i + 1][j + 1], rows[i + 1][j])
                 mb.face(q if s > 0 else q[::-1], mat, None, True)
 
+    if stand > 0:
+        # low standing inner collar hugging the neck base (hides the neck/torso junction)
+        mb.lathe([(neck_r + 0.004, top - 0.012), (neck_r + 0.006, top + stand * 0.6),
+                  (neck_r + 0.003, top + stand)], inner, 32, center=(0, 0.014, 0), smooth=True,
+                 scale_xy=(1.0, 0.95))
     for s in (-1, 1):                       # right lapel first (under), left lapel on top
-        under = 0.0 if s > 0 else -0.0015
-        band(edge, s, 0.0, inner_width, lift, inner, under)
-        band(edge, s, inner_width, inner_width + width, lift + 0.001, outer, under)
+        P = edge_pts(s)
+        lf = lift + (0.0025 if s > 0 else 0.0)
+        band(P, s, 0.0, inner_width, lf, inner)
+        band(P, s, inner_width, inner_width + width, lf + 0.0008, outer)
 
 
 def robe_collar(mb, lm, mat="SilkInner", outer="Silk", width=0.04):
-    """Crossed (jiaoling) collar: two bands forming a V from the neck down the chest."""
+    """Deprecated (flat bands that do not follow the torso): use :func:`cross_collar`."""
     n = lm["neck"]
     z0 = n.z - 0.03
     for sgn in (1, -1):
@@ -795,8 +834,9 @@ def robe_collar(mb, lm, mat="SilkInner", outer="Silk", width=0.04):
 
 
 def neck_scarf(mb, lm, mat="Silk", inner="SilkInner", radius=0.068, height=0.055, folds=9):
-    """Silk scarf wrapped around the neck base (general's red neckerchief) with soft folds, over a
-    cream inner collar."""
+    """Silk scarf wrapped around the neck base with soft folds, over a cream inner collar.
+    Deprecated for portraits (at 192 px it reads as a lump on the neck): use :func:`cross_collar`
+    and the torso's lamellar ``collar``."""
     nz = lm["neck"].z - 0.012
     cy = 0.018
     prof = []
@@ -815,7 +855,8 @@ def neck_scarf(mb, lm, mat="Silk", inner="SilkInner", radius=0.068, height=0.055
 
 
 def cape(mb, lm, shoulder_w=0.44, mat="Silk", length=0.4, folds=7, spread=1.0):
-    """Cloak hanging behind the shoulders (visible at the sides and behind the neck)."""
+    """Cloak hanging behind the shoulders.  Not used by the portrait busts (in a 3/4 bust it
+    shows as a colour band behind the head); keep for full figures / events."""
     top = lm["neck"].z - 0.05
 
     def fn(u, v):
@@ -831,26 +872,27 @@ def cape(mb, lm, shoulder_w=0.44, mat="Silk", length=0.4, folds=7, spread=1.0):
     mb.grid(fn, 40, 10, mat, smooth=True)
 
 
-def pauldrons(mb, lm, shoulder_w=0.44, tiers=3, mat="Lamellar", trim="Bronze", size=1.0):
-    """Layered shoulder guards (披膊): overlapping ellipsoidal bands over each shoulder, each with
-    a metal edge, stepping down the upper arm."""
-    top = lm["neck"].z - 0.045
+def pauldrons(mb, lm, shoulder_w=0.44, tiers=3, mat="Lamellar", trim="Bronze", size=1.0, slope=1.0):
+    """Layered shoulder guards (披膊): overlapping ellipsoidal caps over each shoulder, each tier
+    a little larger and lower so they read as stacked lamellar layers with a bronze edge."""
+    top = lm["neck"].z - lm.get("torso_drop", 0.045)
     for sgn in (1, -1):
-        c0 = Vector((sgn * (shoulder_w / 2 - 0.035), 0.02, top - 0.05))
+        c0 = Vector((sgn * (shoulder_w / 2 - 0.05), 0.02, top - 0.035 * slope - 0.03))
         for t in range(tiers):
-            c = c0 + Vector((sgn * 0.012 * t, 0.0, -0.034 * t))
-            R = Vector((0.07 + 0.008 * t, 0.095 + 0.006 * t, 0.06)) * size
-            th0, th1 = math.radians(25 + 14 * t), math.radians(70 + 14 * t)
+            c = c0 + Vector((sgn * 0.010 * t, 0.0, -0.030 * t))
+            R = Vector((0.080 + 0.006 * t, 0.105 + 0.006 * t, 0.060)) * size
+            th0 = math.radians(0 if t == 0 else 30 + 6 * t)
+            th1 = math.radians(78 + 3 * t)
 
             def fn(u, v, c=c, R=R, th0=th0, th1=th1):
-                ph = math.radians(-75 + 150 * u)
+                ph = math.radians(-80 + 160 * u)
                 th = th0 + (th1 - th0) * v
-                return (c.x + sgn * R.x * math.sin(th) * math.cos(ph) * 1.0,
+                return (c.x + sgn * R.x * math.sin(th) * math.cos(ph),
                         c.y + R.y * math.sin(th) * math.sin(ph),
                         c.z + R.z * math.cos(th))
-            mb.grid(fn, 20, 5, mat, lambda u, v: (u * 0.25, v * 0.06), smooth=True,
+            mb.grid(fn, 22, 6, mat, lambda u, v: (u * 0.28, v * 0.07), smooth=True,
                     flip=(sgn < 0))
-            mb.tube([fn(u, 1.0) for u in np.linspace(0, 1, 20)], 0.0032, trim, 5)
+            mb.tube([fn(u, 1.0) for u in np.linspace(0, 1, 22)], 0.0035, trim, 6)
 
 
 def mirror_plate(mb, lm, radius=0.055, mat="Bronze", rim="Gold", z_offset=-0.17, y=-0.125,
@@ -897,7 +939,9 @@ def beard_strands(lm, count=4000, length=0.15, spread=1.0, converge=0.75, bulge=
     mz = lm["mouth"].z
     x, y, z = V[:, 0], V[:, 1], V[:, 2]
     az = np.arctan2(x, -y)                                  # 0 = front
-    zmax = np.where(np.abs(az) < 0.5, tip_z - 0.012, tip_z + 0.012 if sideburns else tip_z - 0.01)
+    # mouth zone (|x| < 3.2 cm): the beard starts under the lower lip so the lips and the mouth
+    # line stay visible between it and the mustache; cheeks/sideburns from the nose-tip level
+    zmax = np.where(np.abs(x) < 0.032, mz - 0.010, tip_z + 0.006 if sideburns else tip_z - 0.01)
     if top is not None:                          # e.g. a goatee from under the lower lip
         zmax = np.minimum(zmax, top)
     region = (z < zmax) & (z > -0.13) & (np.abs(az) < 1.85 * side_extent) & (y < 0.012)
@@ -951,7 +995,7 @@ def mustache_strands(lm, count=700, length=0.05, droop=1.0, rng=None, spread=1.0
     for k in range(count):
         sgn = 1 if k % 2 else -1
         t0 = rng.random()
-        rx = sgn * (0.005 + 0.016 * t0 * spread)
+        rx = sgn * (0.0065 + 0.0145 * t0 * spread)
         rz = tip.z - 0.009 - 0.003 * t0 + rng.uniform(-0.0015, 0.0015)
         root = Vector((rx, sy(rx, rz) + 0.0004, rz))
         L = length * rng.uniform(0.75, 1.05) * (0.7 + 0.3 * t0)
@@ -978,7 +1022,7 @@ def brow_strands(lm, count=500, thickness=1.0, angle=0.3, rng=None, length=0.011
         sgn = 1 if k % 2 else -1
         t = rng.random()
         bx = sgn * (es - 0.018 + 0.038 * t)
-        bz = lm["brow_z"] + 0.002 + 0.006 * math.sin(math.pi * min(1.0, t * 1.15)) \
+        bz = lm["brow_z"] - 0.003 + 0.003 * math.sin(math.pi * min(1.0, t * 1.15)) \
             + angle * 0.012 * t + rng.uniform(-1, 1) * 0.0028 * thickness * (1 - 0.5 * t)
         by = lm["surf_y"](bx, bz) + 0.0003
         root = Vector((bx, by, bz))
@@ -1021,14 +1065,14 @@ def plume_strands(lm, count=900, length=0.07, rng=None, top=None, radius=0.034, 
 #: officer portrait starts from one of these and varies seed / params / colours.
 ARCHETYPES = {
     "warrior": dict(
-        head=dict(jaw=1.15, chin=1.1, brow=1.12, cheekbone=1.2, nose_len=1.0, nose_width=0.88,
-                  nose_bridge=1.15, socket=1.1, eye_size=0.95, lid_upper=0.34, lid_lower=0.27,
-                  age=0.45),
-        skin="#A26A4C", iris="#2E1C10", hair="#17120F", melanin=0.88, lash=1.0,
+        head=dict(jaw=1.15, chin=1.1, brow=1.12, cheekbone=1.2, nose_len=0.9, nose_width=0.88,
+                  nose_bridge=1.05, socket=1.6, eye_size=0.95, lid_upper=0.31, lid_lower=0.26,
+                  age=0.5),
+        skin="#A26A4C", iris="#2E1C10", hair="#17120F", melanin=0.88, lash=1.3,
         headwear="helmet", beard="full", mustache="full",
         brows=dict(count=700, thickness=1.4, angle=0.5),
         body="armour", collar=("#8A2A20", "#D8CBB0"), robe=None, shoulder_w=0.44, chest_d=0.24,
-        slope=1.3, neck_r=0.060),
+        slope=1.3, neck_r=0.068),
     "scholar": dict(
         head=dict(jaw=0.97, chin=1.0, brow=0.95, cheekbone=1.05, nose_len=1.04, nose_width=0.84,
                   nose_bridge=1.08, eye_size=0.95, lid_upper=0.30, lid_lower=0.24, age=0.35,
@@ -1036,17 +1080,18 @@ ARCHETYPES = {
         skin="#B07E5E", iris="#2A1A10", hair="#1A1512", melanin=0.9, lash=1.0,
         headwear="guan", beard="goatee", mustache="thin",
         brows=dict(count=420, thickness=0.9, angle=0.25),
-        body="robe", collar=("#22303A", "#E6DCC6"), robe="#3A5260", shoulder_w=0.40,
-        chest_d=0.22, slope=1.6, neck_r=0.054),
+        body="robe", collar=("#22303A", "#E6DCC6"), robe="#3A5260", shoulder_w=0.42,
+        chest_d=0.22, slope=1.35, neck_r=0.056),
     "female": dict(
-        head=dict(width=0.142, depth=0.182, height=0.222, jaw=0.84, chin=0.88, brow=0.5,
-                  cheekbone=1.08, nose_len=0.9, nose_width=0.78, nose_bridge=0.92, eye_size=1.0,
-                  lid_upper=0.33, lid_lower=0.22, lips=1.35, age=0.0, eye_tilt=0.11, socket=0.8),
-        skin="#C49272", iris="#2A1A10", hair="#15110E", melanin=0.92, lash=1.35,
+        head=dict(width=0.142, depth=0.182, height=0.218, jaw=0.80, chin=0.85, brow=0.45,
+                  cheekbone=1.0, nose_len=0.80, nose_width=0.78, nose_bridge=0.82, eye_size=1.04,
+                  lid_upper=0.36, lid_lower=0.26, lips=1.5, age=0.0, eye_tilt=0.12, socket=0.7,
+                  eye_width=1.3, lower=0.9),
+        skin="#C8977A", lip_color="#A23C34", lip=0.85, blush=0.6, pores=0.03, torso_drop=0.035, iris="#2A1A10", hair="#15110E", melanin=0.92, lash=1.35,
         headwear="bun", beard=None, mustache=None,
         brows=dict(count=300, thickness=0.55, angle=0.12),
-        body="robe", collar=("#8A2A20", "#E8DCC6"), robe="#5A2A3A", shoulder_w=0.36,
-        chest_d=0.20, slope=1.8, neck_r=0.046),
+        body="robe", collar=("#8A2A20", "#E8DCC6"), robe="#5A2A3A", shoulder_w=0.37,
+        chest_d=0.20, slope=1.5, neck_r=0.046),
 }
 
 
@@ -1070,16 +1115,17 @@ def portrait_materials(kind="warrior", **over):
     A = archetype(kind, **over)
     outer, inner = A["collar"]
     return {
-        "Skin": M.skin("Skin", A["skin"], sss=0.18, roughness=0.55, blush=0.45, vary=0.10,
-                       pores=0.08, pore_scale=90.0),
-        "Eye": M.eye("Eye", iris=A["iris"], sclera="#C9BEAC"),
+        "Skin": M.skin("Skin", A["skin"], sss=0.18, roughness=0.55, blush=A.get("blush", 0.45),
+                       vary=0.10, pores=A.get("pores", 0.08), pore_scale=90.0,
+                       lip_color=A.get("lip_color", "#8A4436"), lip=A.get("lip", 0.7)),
+        "Eye": M.eye("Eye", iris=A["iris"], sclera="#B4A894"),
         "Brow": M.principled("Brow", "#1C1714", 0.6),
-        "Iron": M.iron("Iron", "#4E535B", roughness=0.32),
+        "Iron": M.iron("Iron", "#565C65", roughness=0.32),
         "Gold": M.gold_leaf("Gold", "#A88238", roughness=0.35),
         "Bronze": M.gold_leaf("Bronze", "#8A6A3A", roughness=0.35),
-        "Lamellar": M.lamellar("Lamellar", "#4E535B", lacing="#4A1510", plate=(0.008, 0.016),
-                               metallic=0.7, roughness=0.32, specular=0.5, bump=0.6,
-                               lacing_width=0.03, band_every=5, band_color="#8A6A3A"),
+        "Lamellar": M.lamellar("Lamellar", "#5A606A", lacing="#4A1510", plate=(0.008, 0.016),
+                               metallic=0.45, roughness=0.34, specular=0.5, bump=0.6,
+                               lacing_width=0.03, band_every=7, band_color="#6E5A3E"),
         "Plume": M.hair_strands("Plume", "#8A1A10", roughness=0.5, random_color=0.2,
                                 reflection=0.5),
         "Silk": M.cloth("Silk", outer, sheen=0.5, roughness=0.55),
@@ -1106,6 +1152,7 @@ def bust(kind="warrior", rng=None, mats=None, **over):
     mats = mats or portrait_materials(kind, **over)
     p = HeadParams(**A["head"], seed=A.get("seed", 0))
     mb, lm = head(p)
+    lm["torso_drop"] = A.get("torso_drop", 0.045)
     ears(mb, lm)
     specs = eyes(mb, lm, lash=A["lash"])
     neck(mb, lm, radius=A["neck_r"])
@@ -1119,8 +1166,8 @@ def bust(kind="warrior", rng=None, mats=None, **over):
     helm = None
     hw = A["headwear"]
     if hw == "helmet":
-        helm = helmet(gb, lm, plume=False, rng=rng, brim_z=lm["brow_z"] + 0.042, guard_len=0.088,
-                      visor=0.07)
+        helm = helmet(gb, lm, plume=False, rng=rng, brim_z=lm["brow_z"] + 0.037, guard_len=0.112,
+                      visor=0.07, guard_flare=0.30)
         top_z = helm["finial_z"]
     elif hw == "guan":
         hair_cap(gb, lm, "Hair", hairline=dict(front=0.07, temple=0.052))
@@ -1128,21 +1175,26 @@ def bust(kind="warrior", rng=None, mats=None, **over):
         guan(gb, lm)
         top_z = lm["rz_top"] + 0.06
     elif hw == "bun":
-        hair_cap(gb, lm, "Hair", hairline=dict(front=0.064, temple=0.046, side=0.022),
-                 part=0.5, crown=0.016)
+        hair_cap(gb, lm, "Hair", hairline=dict(front=0.062, temple=0.040, side=-0.004),
+                 part=0.5, crown=0.018, thickness=0.006)
         bun(gb, lm, "Hair", size=0.03, pos=(0.0, 0.025, -0.006), pin="Gold", pin_len=0.11,
             tilt=0.01)
         top_z = lm["rz_top"] + 0.05
     sw, cd, sl = A["shoulder_w"], A["chest_d"], A["slope"]
     if A["body"] == "armour":
-        torso(gb, lm, shoulder_w=sw, chest_d=cd, slope=sl, mat="Lamellar", top_mat="SilkInner")
-        cross_collar(gb, lm, shoulder_w=sw, chest_d=cd, slope=sl, width=0.022, inner_width=0.008)
-        pauldrons(gb, lm, shoulder_w=sw, tiers=3)
-        mirror_plate(gb, lm, radius=0.034, z_offset=-0.25, y=-0.112)
+        torso(gb, lm, shoulder_w=sw, chest_d=cd, slope=sl, mat="Lamellar", top_mat="SilkInner",
+              top_rings=1, collar=0.045, collar_mat="Lamellar", trim="Bronze",
+              collar_r=A["neck_r"] + 0.012)
+        cross_collar(gb, lm, shoulder_w=sw, chest_d=cd, slope=sl, stand=0.0, width=0.016,
+                     neck_r=A["neck_r"], neck_x=A["neck_r"] + 0.004)
+        pauldrons(gb, lm, shoulder_w=sw, tiers=3, slope=sl)
+        mirror_plate(gb, lm, radius=0.028, z_offset=-0.205, y=-0.118)
     else:
-        torso(gb, lm, shoulder_w=sw, chest_d=cd, slope=sl, mat="Robe", top_mat="SilkInner")
-        cross_collar(gb, lm, shoulder_w=sw, chest_d=cd, slope=sl, width=0.030, inner_width=0.012,
-                     cross_z=-0.12, end_z=-0.19)
+        torso(gb, lm, shoulder_w=sw, chest_d=cd, slope=sl, mat="Robe", top_mat="SilkInner",
+              top_rings=1, folds=0.025, segments=96)
+        cross_collar(gb, lm, shoulder_w=sw, chest_d=cd, slope=sl, width=0.018, inner_width=0.008,
+                     cross_z=-0.10, end_z=-0.135, neck_x=A["neck_r"] + 0.004, stand=0.016,
+                     neck_r=A["neck_r"])
     gear = gb.build("Gear", mats)
     hair, face = [], [head_obj]
     hb = A["brows"]
@@ -1153,7 +1205,7 @@ def bust(kind="warrior", rng=None, mats=None, **over):
     face.append(br)
     if A["beard"] == "full":
         hair.append(geo.hair_curves("Beard", beard_strands(
-            lm, 9000, length=0.10, converge=0.75, bulge=1.1, rng=rng), mats["HairBlack"],
+            lm, 7500, length=0.095, converge=0.75, bulge=1.0, rng=rng), mats["HairBlack"],
             0.00042, 0.0001))
     elif A["beard"] == "goatee":
         hair.append(geo.hair_curves("Beard", beard_strands(
@@ -1169,8 +1221,8 @@ def bust(kind="warrior", rng=None, mats=None, **over):
         face.append(mu)
     if hw == "helmet":
         hair.append(geo.hair_curves("Plume", plume_strands(
-            lm, 2600, length=0.045, rng=rng, radius=0.04, top=helm["finial_z"]), mats["Plume"],
-            0.0005, 0.00015))
+            lm, 3200, length=0.055, rng=rng, radius=0.046, top=helm["finial_z"]), mats["Plume"],
+            0.00045, 0.00012))
         top_z = helm["finial_z"] + 0.02
     for o in face:
         o.pass_index = 1

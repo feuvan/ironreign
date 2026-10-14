@@ -49,7 +49,7 @@ def background(path, w, h, seed):
     stroke = T.fbm_at(x * 0.25, y, w * 0.12, 3, seed=seed + 1)
     glow = np.exp(-(((x / w - 0.38) / 0.42) ** 2 + ((y / h - 0.30) / 0.45) ** 2))
     base = np.array([0.20, 0.16, 0.12], np.float32)
-    lite = np.array([0.52, 0.44, 0.33], np.float32)
+    lite = np.array([0.46, 0.39, 0.30], np.float32)
     col = base + (lite - base) * (glow[..., None] * 0.85)
     col = col * (1 + 0.12 * n[..., None] + 0.05 * stroke[..., None])
     img = np.dstack([np.clip(col, 0, 1), np.ones((h, w), np.float32)])

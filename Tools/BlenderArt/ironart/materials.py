@@ -429,7 +429,12 @@ def white_cloth(name="ClothWhite", roughness=0.8):
         p = nb.principled(Base_Color=(1, 1, 1, 1), Roughness=roughness, Specular_IOR_Level=0.2)
         nb.output(p.outputs[0])
         aov = nb.node("ShaderNodeOutputAOV")
-        aov.aov_name = TINT_AOV
+        # Blender 4.0 exposes the AOV name as a second RNA property called ``name`` that shadows
+        # Node.name (4.1+ renamed it ``aov_name``): setting ``name`` sets the AOV it writes to
+        if hasattr(aov, "aov_name"):
+            aov.aov_name = TINT_AOV
+        else:
+            aov.name = TINT_AOV
         aov.inputs["Value"].default_value = 1.0
     return mat
 
@@ -677,10 +682,13 @@ def hair_mesh(name="HairMesh", color="hair_black", strand_scale=180.0, roughness
               "Z": (strand_scale, strand_scale, 2.0)}[direction]
     n = nb.noise(nb.mapping(obj, scale=sc), scale=1.0, detail=3, distortion=0.3)
     lin = palette.lin(color)
-    col = nb.ramp(n.outputs["Fac"], [(0.3, tuple(c * 0.5 for c in lin) + (1,)),
-                                     (0.7, tuple(min(1, c * 1.8 + 0.02) for c in lin) + (1,))])
-    p = nb.principled(Base_Color=col, Roughness=roughness, Specular_IOR_Level=0.5,
-                      Sheen_Weight=0.3, Normal=nb.bump(n.outputs["Fac"], 0.6, 0.004))
+    col = nb.ramp(n.outputs["Fac"], [(0.3, tuple(c * 0.6 for c in lin) + (1,)),
+                                     (0.7, tuple(min(1, c * 1.6 + 0.01) for c in lin) + (1,))])
+    # no sheen (it greys black hair out at grazing angles); a tight coat gives the lacquer-black
+    # highlight band of painted hair
+    p = nb.principled(Base_Color=col, Roughness=roughness, Specular_IOR_Level=0.35,
+                      Coat_Weight=0.25, Coat_Roughness=0.25,
+                      Normal=nb.bump(n.outputs["Fac"], 0.6, 0.004))
     nb.output(p.outputs[0])
     return mat
 
