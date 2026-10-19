@@ -3,11 +3,11 @@
     Tools/BlenderArt/render.sh Tools/BlenderArt/world_models/trees.py [Pine|Broad|Bamboo ...] [--preview]
                                [--reuse | --reuse-leaves] [--no-render]
 
-Per tree: gongbi leaf atlas rendered from modelled leaves (world_gongbi.leaf_atlas: malachite /
-azurite washes darkening to the leaf base, 双勾 ink outlines; pine needles as ink-green strokes
-over a malachite wash pad), seamless painted bark (world_gongbi.bark_texture: ink scale rings,
-furrows, bamboo node rings), the card-and-limb model of world_trees (< 3k triangles, canopy
-normals), two materials (Bark opaque, Leaves alpha-MASK double sided, matte ORM without AO), GLB
+Per tree: gongbi leaf atlas (world_gongbi.leaf_atlas: broadleaf / bamboo rendered from modelled
+leaves as malachite / azurite washes darkening to the leaf base with 双勾 ink outlines; pine pads
+painted as ink-green needle wheels over a malachite wash cloud by world_gongbi_foliage), seamless
+painted bark (world_gongbi.bark_texture: ink scale rings, dry-brush furrows, bamboo node rings),
+the card-and-limb model of world_trees (< 3k triangles, canopy normals), two materials (Bark opaque, Leaves alpha-MASK double sided, matte ORM without AO), GLB
 export, re-import verification and a gongbi review render of the re-imported file.
 """
 
@@ -22,9 +22,12 @@ import common  # noqa: E402,F401
 from ironart import scene, world_bake as WB, world_gongbi as WG, world_gongbi_render as GR  # noqa: E402
 from ironart import world_trees as WT  # noqa: E402
 
+#: the stand-alone map pine is fuller than the city prototypes (cities.py keeps WT.pine's defaults
+#: so City_3 stays inside its triangle budget): 1.9x cards per pad, tighter pads, more tilted cards
+PINE_FULL = dict(pad_density=1.9, pad_spread=0.34, tilt_every=3)
 SPECS = {
     # name: (leaf kind, bark kind, height m, builder, seed, leaf atlas px, bark px)
-    "Pine": ("pine", "pine", 26.0, WT.pine, 31, 1024, (512, 1024)),
+    "Pine": ("pine", "pine", 26.0, lambda tb, rng, H: WT.pine(tb, rng, H=H, **PINE_FULL), 31, 1024, (512, 1024)),
     "Broad": ("broad", "broad", 22.0, WT.broadleaf, 17, 1024, (512, 1024)),
     "Bamboo": ("bamboo", "bamboo", 18.0, WT.bamboo, 23, 1024, (256, 1024)),
 }

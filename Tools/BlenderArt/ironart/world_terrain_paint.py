@@ -48,8 +48,8 @@ def hexc(h):
 #: the silk tone, the ranges carry the saturated malachite / azurite over an ochre underpainting.
 PAL = {
     # plains (silk-toned washes)
-    "plain_silk": "#D6CBA4", "plain_green": "#BCC39C", "plain_green_deep": "#A6B58F",
-    "plain_ochre": "#D2C098", "plain_warm": "#CDB68C", "wash_tide": "#9C9A78",
+    "plain_silk": "#D3CBA6", "plain_green": "#B9C29E", "plain_green_deep": "#A3B392",
+    "plain_ochre": "#D0C09A", "plain_warm": "#C9B68E", "wash_tide": "#9C9A78",
     # fields
     "field_a": "#B3C094", "field_b": "#D3C48E", "field_c": "#C9B387", "field_d": "#A6BA8C",
     "field_balk": "#8E9670",
@@ -68,7 +68,7 @@ PAL = {
     "ripple": "#B8CCD6",
     "sea_shallow": "#9AB6C0", "sea_mid": "#6F95AE", "sea_deep": "#4E7598",
     # roads
-    "road": "#CEB78E", "road_edge": "#B49B76",
+    "road": "#CDBB96", "road_edge": "#AE9C7C",
 }
 C = {k: hexc(v) for k, v in PAL.items()}
 
@@ -154,6 +154,7 @@ class Painter:
         top_m[tu.shape[0]:, :] = top_m[tu.shape[0] - 1:tu.shape[0], :]
         top_m[:, tu.shape[1]:] = top_m[:, tu.shape[1] - 1:tu.shape[1]]
         self.lift = up(lift)
+        self.lift_s = up(F.fast_blur(lift, 5.0))
         self.top = up(np.maximum(top_m, 1.0))
 
     # -- noise -----------------------------------------------------------------------------------
@@ -232,8 +233,8 @@ class Painter:
         moist += 0.14 * T.smoothstep(700.0, 1300.0, y)
         moist = np.clip(moist, 0, 1)
         self.moist = moist
-        col = lerp(C["plain_ochre"], C["plain_silk"], T.smoothstep(0.15, 0.45, moist))
-        col = over(col, C["plain_green"], 0.85 * T.smoothstep(0.42, 0.75, moist))
+        col = lerp(C["plain_ochre"], C["plain_silk"], T.smoothstep(0.1, 0.38, moist))
+        col = over(col, C["plain_green"], 0.85 * T.smoothstep(0.34, 0.7, moist))
         col = over(col, C["plain_green_deep"], 0.55 * T.smoothstep(0.72, 1.0, moist))
         # broad and medium washes laid in patches, their rims dried a little darker
         b1, t1 = self.wash(140.0, 2)
@@ -270,12 +271,12 @@ class Painter:
             wu = 5.0 * n_low[sl]
             U = (X - cx) * ca + (Y - cy) * sa + wu
             V = -(X - cx) * sa + (Y - cy) * ca + 0.6 * wu
-            cw = rng.uniform(20.0, 40.0, 64)
+            cw = rng.uniform(11.0, 22.0, 64)
             cols = np.cumsum(cw)
             cols -= cols[32]
             ci = np.clip(np.searchsorted(cols, U), 1, 63)
             roff = rng.uniform(0, 60.0, 64)
-            rh = rng.uniform(26.0, 58.0, 64)
+            rh = rng.uniform(18.0, 40.0, 64)
             Vr = V + roff[ci]
             ri = np.floor(Vr / rh[ci]).astype(np.int64)
             hsh = (ci * 73856093 + (ri + 1000) * 19349663 + size * 83492791 + len(key) * 2654435761) % 1000003
@@ -298,10 +299,10 @@ class Painter:
                   * T.smoothstep(-6.0, -16.0, self.lake_sd[sl])
                   * T.smoothstep(25.0, 60.0, self.sd[sl])
                   * (1 - T.smoothstep(0.2, 0.4, self.desert[sl])))
-            m = np.clip(keep * ok * np.where(r2 > 0.3, 0.42, 0.0), 0, 1)
+            m = np.clip(keep * ok * np.where(r2 > 0.3, 0.22 + 0.1 * r2, 0.0), 0, 1)
             # balks: a slightly deeper, ragged line along every parcel edge
-            balk = T.smoothstep(1.6, 0.4, edge + 0.6 * jag[sl])
-            pc = lerp(pc, C["field_balk"], 0.45 * balk)
+            balk = T.smoothstep(1.3, 0.3, edge + 0.5 * jag[sl])
+            pc = lerp(pc, C["field_balk"], 0.55 * balk)
             prev = fieldm[sl]
             sub = col[sl]
             sub += (pc - sub) * (m * (1 - prev))[..., None]
@@ -325,8 +326,9 @@ class Painter:
         col *= (1.0 - 0.012 * streak * core)[..., None]
         # 点: fine ochre-ink dots, denser in the sand, sparse in the steppe
         dens = 0.10 * T.smoothstep(0.1, 0.5, des) + 0.17 * core
-        d1 = self.dots(0.5, dens, 13)
-        d2 = self.dots(1.0, 0.5 * dens, 14)
+        dm = T.smoothstep(0.01, 0.06, dens)
+        d1 = self.dots(0.5, dens, 13) * dm
+        d2 = self.dots(1.0, 0.5 * dens, 14) * dm
         col = over(col, C["desert_dot"], 0.5 * d1 + 0.32 * d2)
         self.sand_core = core
         return col
@@ -359,26 +361,29 @@ class Painter:
         # strokes down the fall lines: long soft ones brush the colour boundaries, fine ones are
         # the hemp-fibre texture
         brush = self.flow_strokes(ang, 16.0, 2.2, 31)
-        fib = self.flow_strokes(ang, 9.0, 0.55, 47)
-        fib2 = self.flow_strokes(ang, 5.0, 0.45, 59)
+        fib = self.flow_strokes(ang, 14.0, 0.6, 47)
+        fib2 = self.flow_strokes(ang, 8.0, 0.5, 59)
         n1 = self.vn(30.0, 21, 2)
         n2 = self.vn(8.0, 22, 2)
         hf = lift / np.maximum(top, 40.0)
-        hp = hf + 0.10 * form + 0.025 * brush + 0.045 * n1          # brushed pigment height
-        relief = T.smoothstep(3.0, 14.0, lift) * (1 - 0.7 * self.sand_core)
+        hp = np.clip(hf, 0, 2) ** 1.15 + 0.08 * form + 0.02 * brush + 0.04 * n1          # brushed pigment height
+        # where the relief begins: a smooth, softly brushed edge (no hairy fringe at the foot)
+        relief = T.smoothstep(2.0, 16.0, self.lift_s * (1.0 + 0.12 * brush)) * (1 - 0.7 * self.sand_core)
+        hph = np.clip(lift / 42.0, 0, 1.5) + 0.08 * form + 0.02 * brush + 0.04 * n1
         # ---- 1. ochre underpainting: foothills, lower slopes, every hill flank
-        och = lerp(C["foot_ochre"], C["ochre"], T.smoothstep(0.08, 0.38, hp))
+        och = lerp(C["foot_ochre"], C["ochre"], T.smoothstep(0.06, 0.40, hp * mt + hph * (1 - mt)))
         och = lerp(och, C["umber"], 0.45 * valley * T.smoothstep(0.1, 0.4, hp))
-        a_och = relief * (0.55 * hl + 0.85 * mt * T.smoothstep(0.02, 0.14, hp))
+        a_och = relief * (0.55 * hl + 0.88 * mt * T.smoothstep(-0.02, 0.10, hp))
         col = over(col, och, a_och)
         # ---- 2. hills: pale malachite over the ochre on their tops and shoulders
-        hill_top = hl * T.smoothstep(0.30, 0.70, hp) * relief
-        hg = lerp(C["hill_green"], C["mal_light"], 0.3 * T.smoothstep(0.55, 0.95, hp))
+        # hills are coloured by their own height (a hill beside a range is not a low slope of it)
+        hill_top = hl * T.smoothstep(0.22, 0.6, hph) * relief
+        hg = lerp(C["hill_green"], C["mal_light"], 0.3 * T.smoothstep(0.55, 0.95, hph))
         hg = lerp(hg, C["malachite"], 0.10 + 0.18 * valley)
-        col = over(col, hg, 0.70 * hill_top)
+        col = over(col, hg, 0.8 * hill_top)
         # ---- 3. ranges: malachite middle slopes, azurite upper slopes and crests
-        mid = mt * T.smoothstep(0.20, 0.42, hp) * relief
-        mal = lerp(C["mal_light"], C["malachite"], T.smoothstep(0.20, 0.45, hp))
+        mid = mt * T.smoothstep(0.26, 0.50, hp) * relief
+        mal = lerp(C["mal_light"], C["malachite"], T.smoothstep(0.26, 0.55, hp))
         mal = lerp(mal, C["mal_deep"], 0.55 * valley + 0.1 * T.smoothstep(-0.5, 1.0, n2))
         col = over(col, mal, 0.94 * mid)
         up_ = mt * T.smoothstep(0.55, 0.86, hp) * relief
@@ -399,7 +404,7 @@ class Painter:
         lines = T.smoothstep(1.05, 1.75, fib) * 0.9 + 0.55 * T.smoothstep(1.25, 1.9, fib2)
         ink = lerp(C["ink_umber"], C["ink_green"], T.smoothstep(0.18, 0.4, hp))
         ink = lerp(ink, C["ink_blue"], T.smoothstep(0.55, 0.85, hp))
-        dens = (0.25 + 0.75 * valley) * steep * relief * (mt + 0.35 * hl)
+        dens = (0.2 + 0.8 * valley) * steep * relief * (mt + 0.3 * hl) * (0.35 + 0.65 * T.smoothstep(0.2, 0.4, hp))
         col = over(col, ink, np.clip(0.42 * lines * dens, 0, 0.8))
         # ---- 6. 苔点: moss dots clustered along the crests and spur backs
         crest = T.smoothstep(0.35, 0.8, form) * T.smoothstep(0.3, 0.55, hp) * (mt + 0.4 * hl)

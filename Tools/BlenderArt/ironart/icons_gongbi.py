@@ -12,17 +12,21 @@ way the coloured object plates of a Ming encyclopedia (三才图会 / 天工开�
              very gently on the planes turned away from the painter's light (top-left, the studio
              sun); texture strokes (wood grain, weave, tile rows) are painted into the ``ic_ink``
              AOV by the materials
-* ink        Freestyle as a separate pass: a bold tapered outer contour and finer inner lines
-             (creases, borders, material boundaries) with a tapered, calligraphic brush;
+* ink        Freestyle as a separate pass: a tapered outer contour and finer inner lines
+             (creases, borders, material boundaries) with a tapered, calligraphic brush, strokes
+             broken at sharp corners (each side one stroke, 铁线描);
              one line set per ink collection (``ink`` warm black, ``soft`` ink grey, ``red`` deep
              cinnabar for flames, ``none``); thicknesses are in 64 px icon pixels
-* passes     EXR: colour (premultiplied), Freestyle, object / material index, ``ic_ink``
+* passes     EXR: colour (premultiplied), Freestyle, object / material index, ``ic_ink``,
+             ``ic_nofen``
 * finishing  (numpy; runs in Blender or system python3 from the saved ``.npz`` passes)
              region 分染 (each colour area deepens towards its own outline, more on the side away
-             from the light), pigment granulation, ink with dry-brush breaks and a hint of bleed,
-             premultiplied Lanczos to 128 / 64, a mild unsharp, then the faint silk-tone wash halo
-             (#E6D6B0, soft, slightly mottled) that lets the ink read on parchment, black lacquer
-             and the cinnabar buttons alike; clear 1 px border
+             from the light; a pigment can soften it through the ``ic_nofen`` AOV), the washes
+             laid on silk (a little of the silk tone multiplied in, its warp / weft showing),
+             pigment granulation, ink tinted by the colour it bounds, with dry-brush breaks and a
+             hint of bleed, premultiplied Lanczos to 128 / 64, a mild unsharp, then the faint
+             silk-tone wash halo (#EADDBE, soft, slightly mottled) that lets the ink read on
+             parchment, black lacquer and the cinnabar buttons alike; clear 1 px border
 
 All look numbers live in :data:`RECIPE`.  ``bpy`` is imported lazily: the 2D half runs anywhere.
 """
@@ -59,7 +63,7 @@ ICONS = ("Farm", "Commerce", "Walls", "Patrol", "Draft", "Train", "Search", "Rec
 #: (the @2x master doubles them, the render multiplies them by render / 64).
 RECIPE = dict(
     sizes=(64, 128),                 # game icon, ArtSource @2x master
-    render=512, preview_render=256,  # square render: 8 x 64 / 4 x 128 (preview 4 x 64)
+    render=1024, preview_render=512,  # square render: 16 x 64 / 8 x 128 (preview 8 x 64)
     spp=16, preview_spp=6, filter_width=1.2,
     camera=dict(elevation=28.0, azimuth=-24.0, distance=30.0),
     # keyline box at 64 px (left, top, right, bottom) the subject's geometry fills; the ink and
@@ -71,21 +75,28 @@ RECIPE = dict(
     facing=dict(blend=0.30, lo=0.08, hi=0.92, amount=0.55),
     # Freestyle ink (64 px units): outer contour, inner lines; brush feel
     ink=dict(
-        ink=dict(color="#1E1A16", alpha=1.0, outer=1.6, inner=0.85, taper=0.30, calli=0.35,
+        ink=dict(color="#1E1A16", alpha=1.0, outer=1.25, inner=0.62, taper=0.45, calli=0.35,
                  smooth=3.5, crease=134.0),
-        soft=dict(color="#5E564C", alpha=0.95, outer=1.15, inner=0.6, taper=0.4, calli=0.3,
+        soft=dict(color="#5E564C", alpha=0.95, outer=0.95, inner=0.5, taper=0.45, calli=0.3,
                   smooth=3.5, crease=150.0),
-        red=dict(color="#7A2418", alpha=1.0, outer=1.35, inner=0.75, taper=0.45, calli=0.35,
+        red=dict(color="#7A2418", alpha=1.0, outer=1.1, inner=0.6, taper=0.45, calli=0.35,
                  smooth=3.5, crease=150.0),
     ),
     # 2D 分染: each colour region deepens towards its outline over `px` (64 px units); `dir` adds
     # more on the side away from the light; `amount` = max darkening (linear multiply)
-    fenran=dict(px=4.5, amount=0.5, dir=0.6, power=1.2),
+    fenran=dict(px=9.0, amount=0.58, dir=0.8, power=1.6),
     granulation=0.06,
     shader_ink=0.9,                  # strength of the material texture strokes (ic_ink AOV)
     ink_dry=0.06, ink_bleed=0.25,
+    ink_split=125.0,                  # break strokes at 2D corners sharper than this (deg, 0 off)
+    # pigment laid on silk: washes multiply a little of the silk tone (`tint`) and show its
+    # warp / weft fibre (`fibre`, +- value); `period` in 64 px units
+    silk=dict(tint=0.3, fibre=0.06, period=0.75),
+    # line colour: ink takes a little of the pigment it bounds (gongbi lines are ground into the
+    # colour, never a printer's black): k = mix towards the local deep pigment, `deep` = its value
+    line_tint=dict(k=0.35, deep=0.38, sigma=1.4),
     # silk-tone wash halo (64 px units): blur sigma, gain (how far it carries), max alpha
-    halo=dict(color="#EADDBE", edge="#DCC9A2", sigma=1.1, gain=4.5, alpha=0.8, mottle=0.13),
+    halo=dict(color="#EADDBE", edge="#DCC9A2", sigma=0.9, gain=4.5, alpha=0.62, mottle=0.13),
     unsharp={64: (0.6, 0.30), 128: (0.8, 0.22)},
     # review backgrounds: DESIGN.md tokens and the measured UI chrome fields
     backgrounds=dict(parchment="#E9DCC0", panel="#EBDEC2", lacquer="#1B1712",
@@ -96,7 +107,7 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(_HERE)))
 ART_SOURCE = os.path.join(REPO, "ArtSource")
 MASTER_DIR = "UI/Icons"                         # ArtSource/UI/Icons/Icon_<Name>@2x.png
-AOVS = (("ic_ink", "VALUE"),)
+AOVS = (("ic_ink", "VALUE"), ("ic_nofen", "VALUE"))
 
 
 # =============================================================================================
@@ -329,7 +340,8 @@ def form(b):
 
 
 def pigment(name, light, deep=None, fen=None, formk=None, grad=None, ink=None, hi=None,
-            image=None, image_color=None, image_ink=0.0, image_box=None, image_plane="XZ"):
+            image=None, image_color=None, image_ink=0.0, image_box=None, image_plane="XZ",
+            fen2d=1.0):
     """A mineral wash: ``light`` deepening to ``deep`` (default light x 0.62).
 
     fen     amount of the facing 分染 (default RECIPE facing amount)
@@ -337,6 +349,9 @@ def pigment(name, light, deep=None, fen=None, formk=None, grad=None, ink=None, h
     grad    callable(b) -> 0..1 socket: extra deepening (e.g. along a blade, up a flame)
     ink     callable(b) -> 0..1 socket: texture strokes painted into the ``ic_ink`` AOV
     hi      (colour, width): a lighter tone (提白 / 罩染) where the surface faces the viewer
+    fen2d   strength of the 2D region 分染 on this pigment (1 = RECIPE, 0 = none: luminous
+            motifs such as flames and sword-wind keep their own gradient); written to the
+            ``ic_nofen`` AOV as 1 - fen2d
     image   a bpy image (UV mapped) whose alpha lays ``image_color`` (or its own colour) over the
             wash - glyphs, seal impressions, painted motifs; ``image_ink`` also writes it into
             the ic_ink AOV (so it gets the ink treatment); ``image_box`` = (x0, z0, x1, z1)
@@ -399,6 +414,8 @@ def pigment(name, light, deep=None, fen=None, formk=None, grad=None, ink=None, h
     if inks:
         v = inks[0] if len(inks) == 1 else b.math("MAXIMUM", inks[0], inks[1])
         _aov(b, "ic_ink", v)
+    if fen2d < 1.0:
+        _aov(b, "ic_nofen", 1.0 - fen2d)
     return mat
 
 
@@ -477,6 +494,12 @@ def _style(name, spec, px, which, seed):
     st.caps = "ROUND"
     st.use_length_min = True
     st.length_min = (2.0 if which == "outer" else 1.6) * px
+    split = RECIPE.get("ink_split", 0.0)
+    if split:
+        # one brush stroke per side: chains break at sharp 2D corners so each stroke starts,
+        # swells and lifts (the corners of 铁线描 / 兰叶描 are separate strokes)
+        st.use_angle_min = True
+        st.angle_min = math.radians(split)
     g = st.geometry_modifiers.new("Smooth", "BEZIER_CURVE")
     g.error = spec["smooth"] * px * 0.5
     # the outer contour is mostly one closed chain whose start point Freestyle picks per run
@@ -547,7 +570,7 @@ def setup_ink(render_px):
 # Blender: passes
 # =============================================================================================
 PASSES = (("color", "Image"), ("line", "Freestyle"), ("obj", "IndexOB"), ("mat", "IndexMA"),
-          ("ic_ink", "ic_ink"))
+          ("ic_ink", "ic_ink"), ("ic_nofen", "ic_nofen"))
 
 
 def render_passes(out_dir):
@@ -616,7 +639,7 @@ def save_npz(ps, path):
     for k, v in ps.items():
         if k in ("obj", "mat"):
             keep[k] = np.round(v[..., 0]).astype(np.int16)
-        elif k == "ic_ink":
+        elif k.startswith("ic_"):
             keep[k] = v[..., 0].astype(np.float16)
         else:
             keep[k] = v.astype(np.float16)
@@ -631,7 +654,7 @@ def load_npz(path):
         a = d[k]
         if k in ("obj", "mat"):
             out[k] = a.astype(np.float32)[..., None].repeat(4, -1)
-        elif k == "ic_ink":
+        elif k.startswith("ic_"):
             out[k] = a.astype(np.float32)[..., None].repeat(4, -1)
         else:
             out[k] = a.astype(np.float32)
@@ -695,6 +718,26 @@ def value_noise(h, w, cell, seed, octaves=1, gain=0.5):
     return np.clip(acc / tot, 0.0, 1.0)
 
 
+def silk_fibre(h, w, period, seed):
+    """Plain-weave silk: fine warp (vertical) and weft (horizontal) threads with slubs, roughly
+    zero-mean in [-1, 1]; ``period`` = thread spacing in px."""
+    from PIL import Image
+    rng = np.random.default_rng(seed)
+    out = np.zeros((h, w), np.float32)
+    for ax in (0, 1):
+        n = int(max(h, w) / max(period, 1.0)) + 4
+        # thread brightness varies along its length slowly (slubs) and between threads
+        g = rng.random((n, 24), np.float32)
+        a = np.asarray(Image.fromarray(g, "F").resize((max(h, w), max(h, w)), Image.BICUBIC),
+                       np.float32)
+        x = np.arange(max(h, w), dtype=np.float32)
+        ridge = 0.5 + 0.5 * np.cos(x / period * 2 * np.pi)
+        t = (a - 0.5) * 1.2 + (ridge[:, None] - 0.5) * 0.8
+        t = t[:h, :w] if ax == 0 else t.T[:h, :w]
+        out += t
+    return np.clip(out * 0.5, -1, 1)
+
+
 def lanczos(img, size):
     from PIL import Image
     if img.ndim == 2:
@@ -708,7 +751,26 @@ def smoothstep(e0, e1, x):
     return t * t * (3 - 2 * t)
 
 
-def fenran(col_lin, A, ids, px, seed=0):
+def _blur_coarse(a, sigma):
+    """Zero-padded blur of a large ``sigma``: computed at 1/q resolution (area mean down,
+    bilinear up) - the 分染 field is smooth, so this is exact enough and ~q^2 faster."""
+    from PIL import Image
+    q = max(1, int(sigma / 10.0))
+    if q <= 1:
+        return blur(a, sigma, pad_zero=True)
+    h, w = a.shape
+    H, W = -(-h // q) * q, -(-w // q) * q
+    p = np.zeros((H, W), np.float32)
+    p[:h, :w] = a
+    small = p.reshape(H // q, q, W // q, q).mean(axis=(1, 3))
+    small = blur(small, sigma / q, pad_zero=True)
+    up = np.asarray(Image.fromarray(np.ascontiguousarray(small, np.float32), "F")
+                    .resize((W, H), Image.BILINEAR), np.float32)
+    # bilinear resize samples pixel centres: shift is < q / 2 px, negligible at this sigma
+    return up[:h, :w]
+
+
+def fenran(col_lin, A, ids, px, seed=0, nofen=None):
     """Region 分染: every colour region (object x material) deepens towards its own outline,
     more on the side turned away from the painter's light.  ``col_lin`` straight linear RGB."""
     f = RECIPE["fenran"]
@@ -726,7 +788,7 @@ def fenran(col_lin, A, ids, px, seed=0):
         y0, y1 = max(0, ys.min() - int(4 * s)), min(m.shape[0], ys.max() + int(4 * s) + 1)
         x0, x1 = max(0, xs.min() - int(4 * s)), min(m.shape[1], xs.max() + int(4 * s) + 1)
         sub = m[y0:y1, x0:x1]
-        bm = blur(sub, s * 0.6, pad_zero=True)
+        bm = _blur_coarse(sub, s * 0.6)
         edge = np.clip(2.0 - 2.0 * bm, 0.0, 1.0) ** f["power"]
         gy, gx = np.gradient(bm)
         gn = np.sqrt(gx * gx + gy * gy) + 1e-6
@@ -735,6 +797,8 @@ def fenran(col_lin, A, ids, px, seed=0):
         k = (1.0 - f["dir"]) + f["dir"] * (0.5 + 0.5 * d)
         e = edge * k
         deep[y0:y1, x0:x1] = np.where(sub > 0, np.maximum(deep[y0:y1, x0:x1], e), deep[y0:y1, x0:x1])
+    if nofen is not None:
+        deep = deep * (1.0 - nofen)
     return col_lin * (1.0 - f["amount"] * deep)[..., None], deep
 
 
@@ -749,11 +813,18 @@ def paint(ps, seed=0):
     ids = (np.round(ps["obj"][..., 0]).astype(np.int64) * 256
            + np.round(ps["mat"][..., 0]).astype(np.int64)) if "obj" in ps else np.zeros((H, W), np.int64)
     # 分染 (linear), granulation, material texture strokes
-    col, deep = fenran(col, A, ids, px, seed)
+    nofen = np.clip(ps["ic_nofen"][..., 0] * inv[..., 0], 0, 1) if "ic_nofen" in ps else None
+    col, deep = fenran(col, A, ids, px, seed, nofen)
+    sk_ = RECIPE["silk"]
+    if sk_["tint"] > 0:
+        silk_l = to_lin(srgb(PAL["silk"])).astype(np.float32)
+        col = col * (1.0 - sk_["tint"] + sk_["tint"] * silk_l)
     col = to_srgb(col)
     g = (value_noise(H, W, 0.7 * px, seed + 51, 2, 0.6) - 0.5) * 0.7 \
         + (value_noise(H, W, 3.0 * px, seed + 53, 2, 0.5) - 0.5) * 0.5
     col = col * (1.0 - RECIPE["granulation"] * 2.0 * g)[..., None]
+    if sk_["fibre"] > 0:
+        col = col * (1.0 + sk_["fibre"] * silk_fibre(H, W, sk_["period"] * px, seed + 7))[..., None]
     ink = np.array(srgb(PAL["ink"]), np.float32)
     if "ic_ink" in ps:
         sk = np.clip(ps["ic_ink"][..., 0] * inv[..., 0], 0, 1) * RECIPE["shader_ink"]
@@ -766,6 +837,17 @@ def paint(ps, seed=0):
         la = np.clip(Lp[..., 3], 0, 1)
         lcol = to_srgb(np.clip(Lp[..., :3] / np.maximum(la, 1e-4)[..., None], 0, None))
         lc = np.where(la[..., None] > 1e-4, lcol, lc)
+        lt = RECIPE["line_tint"]
+        if lt["k"] > 0:
+            # the pigment the line bounds: colour of the solid area around it (line excluded)
+            wgt = A * (1.0 - la)
+            sg = lt["sigma"] * px
+            num = blur(col * wgt[..., None], sg, pad_zero=True)
+            den = blur(wgt, sg, pad_zero=True)
+            local = num / np.maximum(den, 1e-4)[..., None]
+            cover = np.clip(den * 3.0, 0, 1)[..., None]
+            tinted = lc * (1 - lt["k"]) + local * lt["deep"] * lt["k"]
+            lc = lc * (1 - cover) + tinted * cover
         bl = blur(la, 0.35 * px) * RECIPE["ink_bleed"]
         la = np.clip(np.maximum(la, bl * 0.6 * (A > 0.5)), 0, 1)
         dry = value_noise(H, W, 0.6 * px, seed + 41, 2, 0.6)
@@ -943,9 +1025,10 @@ def load_png(path):
     return np.asarray(Image.open(path).convert("RGBA"), np.float32) / 255.0
 
 
-def manifest_add(rel_paths):
+def manifest_add(rel_paths, bump=False):
     """Add ``rel_paths`` (relative to ArtSource) to ``ArtSource/manifest.json`` and bump the
-    version when anything changed (flock shared with the other families)."""
+    version when anything was added - or always with ``bump`` (the files were re-exported with
+    new content) - under a flock shared with the other families."""
     import fcntl
     import tempfile
     os.makedirs(ART_SOURCE, exist_ok=True)
@@ -962,7 +1045,7 @@ def manifest_add(rel_paths):
         files = data.setdefault("files", [])
         have = set(x if isinstance(x, str) else x.get("path", "") for x in files)
         added = [p for p in rel_paths if p not in have]
-        if added:
+        if added or bump:
             files.extend(added)
             data["version"] = int(data.get("version", 0)) + 1
             tmp = path + ".tmp%d" % os.getpid()

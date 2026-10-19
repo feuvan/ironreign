@@ -84,13 +84,14 @@ def curves(cv, pr, meta, npz, spec):
     for cvd in meta["curves"]:
         P = pr.world(np.array(cvd["pts"]))
         P = B.resample(P, max(12, len(P)))
-        vis = pr.visible(P, tol=cvd.get("tol", 0.02), soft=0.02)
         st = cvd["style"]
+        tol = cvd.get("tol", 0.06 if st == "fold" else 0.02)
+        vis = pr.visible(P, tol=tol, soft=0.03)
         if st == "fold":
             if vis.mean() < 0.05:
                 continue
             wt = cvd.get("w", 1.0)
-            prof = B.profile(len(P), 0.12, 0.5, "nail", pressure=0.2, seed=len(P))
+            prof = B.profile(len(P), 0.12, 0.6, "nail", pressure=0.2, seed=len(P))
             d = np.gradient(P[:, :2], axis=0)
             d /= np.maximum(np.linalg.norm(d, axis=1, keepdims=True), 1e-9)
             nrm = np.stack([-d[:, 1], d[:, 0]], -1) * cvd.get("side", 1)
@@ -110,6 +111,23 @@ def curves(cv, pr, meta, npz, spec):
                       cvd.get("color", "ink"), vis * cvd.get("a", 0.9))
 
 
+def contact_shade(cv, npz, masks, strength=0.30, radius=7.0):
+    """分染 along overlaps: where a nearer layer lies over a farther one (collar over robe, hat
+    over forehead, armour over cloak), the farther surface is deepened next to the edge."""
+    from scipy.ndimage import minimum_filter
+    D = npz["depth"].astype(np.float32)
+    A = masks["alpha"]
+    D = np.where(A > 0.5, D, 1e3)
+    k = max(3, int(radius * cv.ss))
+    Dmin = minimum_filter(D, size=k, mode="nearest")
+    gap = np.clip((D - Dmin - 0.004) / 0.03, 0, 1) * (A > 0.5)
+    sh = B.blur(gap, radius * cv.ss * 0.35)
+    skin = np.clip(masks["face"] + masks["skin"], 0, 1)
+    sh = sh * (1 - 0.55 * skin)
+    # deepen: multiply by a warm dark, proportionally to the local colour
+    cv.img *= (1 - strength * sh[..., None] * np.array([0.55, 0.62, 0.70], np.float32))
+
+
 def finish(img, ink_a, seed, size=(384, 480)):
     mw, mh = size[0] * 2, size[1] * 2
     master = np.clip(GB.lanczos(img, (mw, mh)), 0, 1)
@@ -118,6 +136,26 @@ def finish(img, ink_a, seed, size=(384, 480)):
     one = GB.downsample_1x(out, size)
     half = GB.downsample_1x(out, (size[0] // 2, size[1] // 2))
     return out, one, half
+
+
+def silhouette(cv, npz, A, scene_dir, out_png, seed, t0):
+    """unknown.png: the bust as a soft ink-wash shadow on silk, outlined, no features."""
+    h, w = A.shape
+    cv.img = np.broadcast_to(SILK_REF[None, None], cv.img.shape).copy()
+    yy = np.linspace(0, 1, h, dtype=np.float32)[:, None]
+    grad = 0.55 + 0.35 * yy
+    sil = B.blur(np.clip(A, 0, 1), 0.8 * cv.ss)
+    cv.apply(B.blur(sil, 10 * cv.ss), "#8A8478", "glaze", 0.35)
+    cv.apply(sil * grad, "#4A453E", "paint", 0.85)
+    cv.apply(sil * (1 - B.blur(sil, 6 * cv.ss)) * 2.0, "#2A2622", "paint", 0.5)
+    lay_freestyle(cv, npz, 0.35)
+    master, one, half = finish(cv.img, cv.ink_a * 0.4, seed)
+    GB.save_png(one, out_png, seed=1)
+    GB.save_png(half, out_png.replace(".png", "_192.png"), seed=2)
+    tim = {"paint2d": time.time() - t0}
+    with open(out_png.replace(".png", "_timing.json"), "w") as f:
+        json.dump(tim, f)
+    return tim
 
 
 def run(scene_dir, out_png, debug=False):
@@ -131,7 +169,10 @@ def run(scene_dir, out_png, debug=False):
     masks = dict(face=np.clip(mask[..., 0], 0, 1), hair=np.clip(mask[..., 1], 0, 1),
                  skin=np.clip(mask[..., 2], 0, 1), alpha=A)
     seed = spec.get("seed", 0)
+    if spec.get("silhouette"):
+        return silhouette(cv, npz, A, scene_dir, out_png, seed, t0)
     # 1. washes and folds under the ink
+    contact_shade(cv, npz, masks)
     curves(cv, pr, meta, npz, spec)
     # 2. the 3D ink
     lay_freestyle(cv, npz)

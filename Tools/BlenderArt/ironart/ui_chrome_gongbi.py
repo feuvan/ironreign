@@ -136,7 +136,7 @@ def silk_weave(G, seed, pitch=0.55, slub=1.0, crossing=0.55, region=None):
 
 def silk_ground(G, seed, light="#E6D6B0", dark="#D8C39A", weave=0.020, mottle=0.35,
                 mottle_cell=70.0, stain=0.25, foxing=0.0, edge=None, edge_k=0.0,
-                weave_field=None):
+                weave_field=None, slub=0.5):
     """Aged silk colour field (rows, cols, 3).
 
     ``mottle``  0..1 how much of the light->dark range the large ageing mottle spans
@@ -149,13 +149,13 @@ def silk_ground(G, seed, light="#E6D6B0", dark="#D8C39A", weave=0.020, mottle=0.
     t = np.clip(0.5 + 0.28 * m * mottle * 2.0, 0.0, 1.0)
     col = P.mix(light, dark, t)
     if stain > 0:
-        s = P.fbm2(G, mottle_cell * 0.6, seed + 12, octaves=3, gain=0.5)
-        bloom = P.smoothstep(1.0, 2.2, s) * stain
+        s = P.fbm2(G, mottle_cell * 0.9, seed + 12, octaves=2, gain=0.45)
+        bloom = P.smoothstep(0.9, 2.6, s) * stain
         col = col * (1.0 - bloom[..., None] * (1.0 - P.rgb("#C9A878") / P.rgb(light)))
     if edge is not None and edge_k > 0:
         e = (1.0 - P.smoothstep(0.0, 40.0, edge)) ** 1.6 * edge_k
         col = P.mix(col, col * P.rgb("#C4AE84") / P.rgb(light), e)
-    w = silk_weave(G, seed + 13) if weave_field is None else weave_field
+    w = silk_weave(G, seed + 13, slub=slub) if weave_field is None else weave_field
     col = col * (1.0 + weave * w)[..., None]
     if foxing > 0:
         f = speckle(G, seed + 14, foxing, 0.9, 0.8)
@@ -384,7 +384,7 @@ def glyph_mask(G, text, font_path, size_px, x, y, anchor="ls", stroke_px=0.0, tr
         ayp = oy
     if scale_xy != (1.0, 1.0) or rotate:
         im = im.transform(im.size, Image.AFFINE, _affine_about(axp, ayp, scale_xy, rotate),
-                          resample=Image.BICUBIC)
+                          resample=Image.BILINEAR)
         a = np.asarray(im, np.float32) / 255.0
     if oversample > 1:
         h2, w2 = a.shape[0] // oversample * oversample, a.shape[1] // oversample * oversample
@@ -400,7 +400,7 @@ def glyph_mask(G, text, font_path, size_px, x, y, anchor="ls", stroke_px=0.0, tr
     y1, x1 = min(G.ny, gy + h), min(G.nx, gx + w)
     if y1 > y0 and x1 > x0:
         out[y0:y1, x0:x1] = a[y0 - gy:y1 - gy, x0 - gx:x1 - gx]
-    return out
+    return np.clip(out, 0.0, 1.0)
 
 
 def _affine_about(cx, cy, scale_xy, rot_deg):

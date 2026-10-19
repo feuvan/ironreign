@@ -28,6 +28,10 @@ def build(st, spec):
         cloak(st, spec, cos["cloak"])
     if cos.get("shawl"):
         shawl(st, spec, cos["shawl"])
+    if cos.get("beads"):
+        beads(st, spec, cos["beads"])
+    if cos.get("kasaya"):
+        kasaya(st, spec, cos["kasaya"])
 
 
 # =============================================================================================
@@ -35,9 +39,9 @@ def build(st, spec):
 # =============================================================================================
 def hair_mat(st, color="hair"):
     c = PL.srgb(color)
-    light = PL.mix(c, "ink_grey", 0.18) if sum(c) < 0.6 else c
+    light = PL.mix(c, "ink_grey", 0.30) if sum(c) < 0.6 else c
     deep = PL.deepen(c, 0.55) if sum(c) >= 0.6 else PL.srgb("ink_d")
-    return st.mat("Hair_" + PL.to_hex(c), light, deep, power=1.2, blend=0.55, lo=0.0, hi=1.0,
+    return st.mat("Hair_" + PL.to_hex(c), light, deep, power=0.9, blend=0.5, lo=0.0, hi=1.0,
                   mask=(0, 1, 0))
 
 
@@ -74,23 +78,35 @@ def hair(st, spec):
     z0 = hairline(hp, t)
     crown = spec.get("head", {}).get("crown", 0.5)
     z1 = np.full(C, crown - 0.004)
-    vol = hp.get("volume", 0.03)
-    top_vol = hp.get("top_volume", vol * 1.4)
+    hg = spec.get("headgear", {})
+    covered = hg.get("kind") in ("helmet", "dongpo", "futou")
+    if covered:
+        # under a helmet / hat only the hair at the temples and the nape shows: stop the cap
+        # just above the headgear's rim so it can never poke through
+        rim = hg.get("brim_z", hg.get("base_z", 0.2))
+        z1 = np.maximum(z0 + 0.02, np.full(C, rim + 0.06))
+    vol = hp.get("volume", 0.02)
+    top_vol = hp.get("top_volume", vol * 1.5)
     side_puff = hp.get("side_puff", 0.0)           # ladies: hair puffed over the temples (鬓)
 
     def off(a, z, tt):
-        edge = geo.smoothstep(0.0, 0.18, a)          # thin at the hairline
-        side = side_puff * np.exp(-((np.abs(tt) - 1.35) / 0.35) ** 2) * \
-            np.exp(-((z - 0.08) / 0.14) ** 2)
-        return 0.002 + edge * (vol + (top_vol - vol) * a) + side * edge
+        edge = geo.smoothstep(0.0, hp.get("edge_ramp", 0.32), a)   # thin at the hairline
+        pe = geo.smoothstep(0.0, 0.55, a)            # the temple puff swells in gradually
+        side = side_puff * np.exp(-((np.abs(tt) - hp.get("puff_t", 1.4)) / 0.42) ** 2) * \
+            np.exp(-((z - hp.get("puff_z", 0.06)) / 0.16) ** 2)
+        return 0.002 + edge * (vol + (top_vol - vol) * a) + side * pe
+    if covered:
+        vol = min(vol, 0.012)
+        top_vol = min(top_vol, 0.012)
+        side_puff = 0.0
     G = shell(L, (t, z0, z1), off, 22)
-    cap = st.grid_mesh("HairCap", G, "hair", hm, closed=True, cap_top=True, M=st.M_head)
+    cap = st.grid_mesh("HairCap", G, "hair", hm, closed=True, cap_top=not covered, M=st.M_head)
     st.fit.append(cap)
     st.hair_shell = (t, z0, z1, off)
     # hair-flow curves (combed strands) for the 2D stage: from the hairline up to the knot
     knot = np.array(hp.get("knot_at", (0.0, 0.10, crown - 0.02)))
     nfl = hp.get("flow_n", 46)
-    for k in range(nfl):
+    for k in range(0 if covered else nfl):
         tk = -math.pi + 2 * math.pi * (k + 0.5) / nfl
         zz0 = float(hairline(hp, np.array([tk]))[0]) + 0.01
         zz = np.linspace(zz0, crown - 0.05, 14)
@@ -102,7 +118,7 @@ def hair(st, spec):
         st.add_curve("hairflow%d" % k, "hairflow", st.xf(st.M_head, P),
                      color=hp.get("strand", None))
     # ---- buns / knots ---------------------------------------------------------------------
-    for i, b in enumerate(hp.get("buns", default_buns(kind, crown))):
+    for i, b in enumerate([] if covered else hp.get("buns", default_buns(kind, crown))):
         bun(st, b, hm, "Bun%d" % i)
     # hairpin / band ornaments
     for i, o in enumerate(hp.get("ornaments", [])):
@@ -236,7 +252,8 @@ def helmet(st, spec, hg):
     L = st.head_loft
     M = st.M_head
     col = hg.get("color", "steel")
-    hm = flat_mat(st, "Helmet", col, PL.deepen(col, 0.55), power=1.1, blend=0.5)
+    hm = st.mat("Helmet", PL.mix(col, "steel_l", 0.2), PL.deepen(col, 0.72), power=2.2,
+                blend=0.35, lo=0.25, hi=1.0)
     gold = flat_mat(st, "Gold", "gold", "gold_d", power=1.0, blend=0.4)
     brim_z = hg.get("brim_z", 0.20)
     C = 112
@@ -336,53 +353,55 @@ def dongpo(st, spec, hg):
     L = st.head_loft
     M = st.M_head
     col = hg.get("color", "ink")
-    gm = flat_mat(st, "Hat", col, PL.deepen(col, 0.6), power=1.0, blend=0.5,
+    gm = flat_mat(st, "Hat", PL.mix(col, "ink_grey", 0.12), PL.deepen(col, 0.7), power=1.6,
+                  blend=0.45,
                   pattern=pattern_for(hg.get("pattern", dict(kind="gauze", color="ink_grey",
-                                                                     alpha=0.28, period=0.016))),
-                  mask=(0, 0, 0))
-    base_z = hg.get("base_z", 0.23)
-    # inner wall: rounded square tube following the skull at the base, rising straight up
+                                                                     alpha=0.22, period=0.014))))
+    base_z = hg.get("base_z", 0.19)
+    back_drop = hg.get("back_drop", 0.07)
     C = 96
     t = np.linspace(-math.pi, math.pi, C, endpoint=False)
-    base = L.point(np.full(C, base_z), t) + L.normal(np.full(C, base_z), t) * 0.03
+    zb = base_z - back_drop * (1 - np.cos(t)) * 0.5
+    base = L.point(zb, t) + L.normal(zb, t) * 0.022
     cxy = np.array([0.0, 0.03])
-    h_in = hg.get("h", 0.42)
-    sq = hg.get("square", 4.0)
+    sq = hg.get("square", 3.6)
+    d = base[:, :2] - cxy
+    ang = np.arctan2(d[:, 1], d[:, 0])
+    r0 = np.linalg.norm(d, axis=1)
+    c_, s_ = np.cos(ang), np.sin(ang)
+    rs = 1.0 / (np.abs(c_) ** sq + np.abs(s_) ** sq) ** (1 / sq)
+    # half extents of the square section, from the head ring
+    ex = np.abs(d[:, 0]).max() * hg.get("width_k", 0.97)
+    ey = np.abs(d[:, 1]).max() * hg.get("depth_k", 0.92)
+    rr = np.hypot(c_ * rs * ex, s_ * rs * ey)
+    rr = np.maximum(rr, r0 + 0.012)            # the square section always encloses the head
+    sqr = np.stack([c_ * rr, s_ * rr], -1)
 
-    def squarish(P, k):
-        d = P[:, :2] - cxy
-        ang = np.arctan2(d[:, 1], d[:, 0])
-        r = np.linalg.norm(d, axis=1)
-        c, s = np.cos(ang), np.sin(ang)
-        rs = 1.0 / (np.abs(c) ** sq + np.abs(s) ** sq) ** (1 / sq)
-        out = P.copy()
-        out[:, :2] = cxy + np.stack([c, s], -1) * (r * (1 - k) + r.mean() * rs * 0.92 * k)[:, None]
-        return out
-    rows = []
-    for k, (dz, kk, sc) in enumerate([(0.0, 0.0, 1.0), (0.06, 0.6, 1.0), (h_in * 0.5, 1.0, 1.0),
-                                      (h_in, 1.0, 1.02)]):
-        P = squarish(base, kk)
-        P[:, :2] = cxy + (P[:, :2] - cxy) * sc
-        P[:, 2] = base_z + dz + (0.0 if k == 0 else 0.0)
-        rows.append(P)
+    def ring(k, z, flare=1.0):
+        P = np.zeros((C, 3))
+        P[:, :2] = cxy + (d * (1 - k) + sqr * k) * flare
+        P[:, 2] = z
+        return P
+    h_in = hg.get("h", 0.40)
+    rows = [np.concatenate([base[:, :2], base[:, 2:]], 1),
+            ring(0.7, base_z + 0.05, 1.0), ring(1.0, base_z + h_in * 0.5, 1.03),
+            ring(1.0, base_z + h_in, 1.06)]
+    rows[0] = base.copy()
     G = np.array(rows)
-    s = np.cumsum(np.r_[0, np.linalg.norm(np.diff(G[-1], axis=0), axis=1)])
-    uv = np.stack(np.broadcast_arrays(s[None, :], G[:, :1, 2] * np.ones((1, C))), -1)
+    sl = np.cumsum(np.r_[0, np.linalg.norm(np.diff(G[-1], axis=0), axis=1)])
+    uv = np.stack(np.broadcast_arrays(sl[None, :], G[:, :1, 2] * np.ones((1, C))), -1)
     ob = st.grid_mesh("HatInner", G, "hard", gm, closed=True, cap_top=True, uv=uv, M=M)
     st.fit.append(ob)
-    # outer wall: a little larger, lower, its front corners cut (the 东坡 silhouette)
-    h_out = hg.get("h_out", 0.28)
-    rows = []
-    for dz, kk, sc in [(-0.005, 0.0, 1.06), (0.06, 0.65, 1.07), (h_out, 1.0, 1.08)]:
-        P = squarish(base, kk)
-        P[:, :2] = cxy + (P[:, :2] - cxy) * sc
-        P[:, 2] = base_z + dz
-        rows.append(P)
+    # outer wall: a little larger and lower, with a shallow notch at the front
+    h_out = hg.get("h_out", 0.26)
+    b2 = base.copy()
+    b2[:, :2] = cxy + (b2[:, :2] - cxy) * 1.05
+    b2[:, 2] -= 0.004
+    rows = [b2, ring(0.75, base_z + 0.05, 1.06), ring(1.0, base_z + h_out, 1.10)]
     G2 = np.array(rows)
-    # cut a shallow V at the front of the outer wall
-    front = np.abs(t) < 0.5
-    G2[-1, front, 2] -= 0.07 * (1 - np.abs(t[front]) / 0.5)
-    uv2 = np.stack(np.broadcast_arrays(s[None, :], G2[:, :1, 2] * np.ones((1, C))), -1)
+    front = np.abs(t) < 0.45
+    G2[-1, front, 2] -= hg.get("notch", 0.035) * (1 - np.abs(t[front]) / 0.45)
+    uv2 = np.stack(np.broadcast_arrays(sl[None, :], G2[:, :1, 2] * np.ones((1, C))), -1)
     ob2 = st.grid_mesh("HatOuter", G2, "hard", gm, closed=True, uv=uv2, M=M)
     st.fit.append(ob2)
 
@@ -426,7 +445,75 @@ def guan(st, spec, hg):
                       h=hg.get("h", 0.085), color=hg.get("color", "gold")), "Guan")
 
 
-HEADGEAR = dict(helmet=helmet, dongpo=dongpo, futou=futou, guan=guan)
+def headband(st, spec, hg):
+    """抹额: a cloth band round the forehead (warriors, rogues, women warriors)."""
+    L = st.head_loft
+    M = st.M_head
+    col = hg.get("color", "cinnabar")
+    bm = flat_mat(st, "Headband", col, PL.deepen(col, 0.6), power=1.2, blend=0.5,
+                  pattern=pattern_for(hg.get("pattern")))
+    C = 96
+    t = np.linspace(-math.pi, math.pi, C, endpoint=False)
+    z0 = hg.get("z", 0.20) - 0.03 * (1 - np.cos(t)) * 0.5
+    h = hg.get("h", 0.055)
+    lift = hg.get("lift", 0.03)
+    P0 = L.point(z0, t) + L.normal(z0, t) * lift
+    P1 = L.point(z0 + h, t) + L.normal(z0 + h, t) * lift
+    st.grid_mesh("Headband", np.stack([P0, P1], 0), "band", bm, closed=True, M=M)
+    if hg.get("knot", True):
+        # two tails behind the head
+        for k, side in enumerate((-1, 1)):
+            a = np.linspace(0, 1, 10)
+            tt = math.pi * 0.92 * side
+            base = L.point(np.array([z0[0] + h * 0.5]), np.array([tt]))[0] + np.array([0, 0.03, 0])
+            P = base + np.stack([side * 0.05 * a, 0.06 * a, -0.30 * a ** 1.3], -1)
+            A = P + np.array([0.0, 0.0, 0.0])
+            Bp = P + np.array([side * 0.0, 0.0, 0.0]) + np.stack([np.full(10, 0.035), np.zeros(10), np.zeros(10)], -1)
+            st.strip("BandTail%d" % k, A, Bp, "band", bm, M=M)
+    if hg.get("jewel"):
+        jc = hg["jewel"]
+        jm = flat_mat(st, "Jewel_" + PL.to_hex(jc), jc, PL.deepen(jc, 0.6), power=1.0, blend=0.4)
+        c = L.point(np.array([hg.get("z", 0.20) + h * 0.5]), np.array([0.0]))[0]
+        c = c + L.normal(np.array([hg.get("z", 0.20) + h * 0.5]), np.array([0.0]))[0] * (lift + 0.012)
+        st.ellipsoid("Jewel", c, (0.03, 0.012, 0.035), "hard", jm, M=M, n=(10, 14))
+
+
+def fur_hat(st, spec, hg):
+    """Steppe hat: a rounded felt crown with a thick fur brim and a tassel."""
+    L = st.head_loft
+    M = st.M_head
+    col = hg.get("color", "ochre_d")
+    fur = hg.get("fur", "#8A6A48")
+    cm = flat_mat(st, "FeltCrown", col, PL.deepen(col, 0.6), power=1.4, blend=0.5)
+    fm = flat_mat(st, "Fur", fur, PL.deepen(fur, 0.55), power=0.9, blend=0.55)
+    base_z = hg.get("base_z", 0.17)
+    C = 96
+    t = np.linspace(-math.pi, math.pi, C, endpoint=False)
+    crown = spec.get("head", {}).get("crown", 0.5)
+    rows = []
+    for i, z in enumerate(np.linspace(base_z, crown - 0.004, 14)):
+        a = i / 13
+        P = L.point(np.full(C, z), t) + L.normal(np.full(C, z), t) * (0.05 + 0.03 * math.sin(a * math.pi))
+        P[:, 2] += hg.get("peak", 0.10) * a ** 1.8
+        rows.append(P)
+    G = np.array(rows)
+    ob = st.grid_mesh("FeltCrown", G, "hard", cm, closed=True, cap_top=True, M=M)
+    st.fit.append(ob)
+    # fur brim: a fat rolled ring
+    zr = base_z + 0.02
+    ring = L.point(np.full(C, zr), t) + L.normal(np.full(C, zr), t) * 0.07
+    ring = np.concatenate([ring, ring[:1]])
+    st.tube("FurBrim", ring, hg.get("brim_r", 0.06), "hair", fm, n=12, M=M)
+    st.add_curve("fur", "fur", st.xf(M, ring), r=hg.get("brim_r", 0.06), color=fur)
+    top = G[-1].mean(0)
+    if hg.get("tassel", True):
+        st.add_curve("tassel", "tassel", st.xf(M, (top + np.array([0, 0, 0.02]))[None]),
+                     color=hg.get("tassel_color", "cinnabar"), length=hg.get("tassel_len", 0.14))
+        st.fit.append(st.xf(M, (top + np.array([0, 0, 0.12]))[None]))
+
+
+HEADGEAR = dict(helmet=helmet, dongpo=dongpo, futou=futou, guan=guan, headband=headband,
+                fur_hat=fur_hat)
 
 
 # =============================================================================================
@@ -443,7 +530,7 @@ def armour(st, spec, ap):
     am = flat_mat(st, "Armour", col, PL.deepen(col, 0.5), power=1.2, blend=0.55,
                   pattern=pattern_for(pat))
     gold = flat_mat(st, "Gold", "gold", "gold_d", power=1.0, blend=0.4)
-    top_z = ap.get("top_z", -0.86)
+    top_z = ap.get("top_z", -0.80)
     C = 120
     t = np.linspace(-math.pi, math.pi, C, endpoint=False)
     zs = np.linspace(-2.1, top_z, 22)
@@ -460,7 +547,7 @@ def armour(st, spec, ap):
     cm = flat_mat(st, "ArmCollar", cc, PL.deepen(cc, 0.6), power=1.2, blend=0.5,
                   pattern=pattern_for(ap.get("collar_pattern")))
     ring = Lt.point(np.full(C, top_z), t) + Lt.normal(np.full(C, top_z), t) * (ap.get("lift", 0.03) + 0.01)
-    ring2 = Lt.point(np.full(C, top_z + 0.09), t) + Lt.normal(np.full(C, top_z + 0.09), t) * 0.025
+    ring2 = Lt.point(np.full(C, top_z + 0.13), t) + Lt.normal(np.full(C, top_z + 0.13), t) * 0.022
     Gc = np.stack([ring, (ring + ring2) * 0.5 + np.array([0, 0, 0.0]), ring2], 0)
     Gc[1, :, :2] = Gc[1, :, :2] * 1.0
     st.grid_mesh("ArmCollar", Gc, "band", cm, closed=True, M=M)
@@ -544,27 +631,63 @@ def cloak(st, spec, cp):
 
 
 def shawl(st, spec, sp):
-    """披帛: a long silk shawl over the shoulders, falling down the front at both sides."""
+    """披帛: a long silk shawl over the shoulders, falling down the front of the arms."""
     Lt = st.torso_loft
     M = st.M_body
     col = sp.get("color", "malachite_l")
     sm = flat_mat(st, "Shawl", col, PL.deepen(col, 0.62), power=1.3, blend=0.55,
                   pattern=pattern_for(sp.get("pattern")))
-    w = sp.get("w", 0.22)
+    w = sp.get("w", 0.28)
+    tp = dict(geo.TORSO_DEFAULT, **spec.get("torso", {}))
+    sz = tp["shoulder_z"]
     for side in (-1, 1):
-        # centre line in (z, t): from behind the neck over the shoulder, down the front
-        k = 30
+        k = 34
         a = np.linspace(0, 1, k)
-        t = side * (2.2 - 1.45 * a ** 0.9)
-        z = -0.86 - 0.22 * np.sin(a * math.pi * 0.5) ** 1.5 - 0.75 * a ** 2.2
+        t = side * geo.pchip([0, 0.35, 0.6, 1.0], [2.5, 1.62, 1.32, 1.08], a)
+        z = geo.pchip([0, 0.35, 0.6, 1.0], [sz + 0.12, sz + 0.06, sz - 0.18, -1.95], a)
         P = Lt.point(z, t)
         N = Lt.normal(z, t)
         T = np.gradient(P, axis=0)
         T /= np.linalg.norm(T, axis=1, keepdims=True)
         S = np.cross(N, T)
         S /= np.linalg.norm(S, axis=1, keepdims=True)
-        lift = 0.07 + 0.05 * a
-        twist = np.cos(a * math.pi * 0.6)
-        A = P + N * lift[:, None] + S * (w * 0.5 * twist)[:, None]
-        Bp = P + N * lift[:, None] - S * (w * 0.5 * twist)[:, None]
+        lift = sp.get("lift", 0.035) + 0.03 * a
+        ww = w * (0.75 + 0.25 * np.sin(a * math.pi))
+        A = P + N * lift[:, None] + S * (ww * 0.5)[:, None]
+        Bp = P + N * lift[:, None] - S * (ww * 0.5)[:, None]
         st.strip("Shawl%+d" % side, A, Bp, "cloth", sm, M=M)
+
+
+def beads(st, spec, bp):
+    """Prayer beads (念珠) round the neck: a 3D loop the 2D stage draws as beads."""
+    Lt = st.torso_loft
+    M = st.M_body
+    n = 90
+    a = np.linspace(0, 2 * math.pi, n, endpoint=False)
+    # a loop round the neck base hanging lower at the front
+    t = a - math.pi
+    z = -0.78 - bp.get("drop", 0.42) * (0.5 + 0.5 * np.cos(t)) ** 1.5
+    P = Lt.point(z, t) + Lt.normal(z, t) * 0.05
+    st.add_curve("beads", "beads", st.xf(M, P), r=bp.get("r", 0.028),
+                 color=bp.get("color", "#5A3A26"))
+
+
+def kasaya(st, spec, kp):
+    """袈裟: a patched mantle over the left shoulder, crossing the chest diagonally."""
+    Lt = st.torso_loft
+    M = st.M_body
+    col = kp.get("color", "cinnabar")
+    km = flat_mat(st, "Kasaya", col, PL.deepen(col, 0.6), power=1.3, blend=0.55,
+                  pattern=pattern_for(dict(kind="lamellar", w=0.22, h=0.18, light=col,
+                                           lace=col, lace_a=0.0, seam="gold_d", seam_a=0.6,
+                                           plate_shade=0.08)))
+    k = 30
+    a = np.linspace(0, 1, k)
+    s = kp.get("side", 1)
+    # upper edge: from the back over the +X shoulder, down across the chest to the -X side
+    t_up = s * geo.pchip([0, 0.3, 1.0], [2.4, 1.2, -1.2], a)
+    z_up = geo.pchip([0, 0.3, 1.0], [-0.95, -0.92, -1.75], a)
+    P = Lt.point(z_up, t_up) + Lt.normal(z_up, t_up) * 0.03
+    Q = P.copy()
+    Q[:, 2] -= 0.9
+    st.strip("Kasaya", P, Q, "cloth", km, M=M)

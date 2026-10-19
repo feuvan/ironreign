@@ -100,6 +100,12 @@ def build_ear(st, L, side, mat, ep):
     ch = np.stack([0.10 * w + 0.20 * w * np.sin(t * math.pi * 0.9), 0.06 * h - 0.26 * h * t], -1)
     st.add_curve("ear_concha%+d" % side, "ear",
                  st.xf(st.M_head, ear_pt(ch[:, 0], ch[:, 1], 0.018)), w=0.5)
+    er = st.spec.get("earrings") if hasattr(st, "spec") else None
+    if er:
+        lobe = ear_pt(np.array([0.12 * w]), np.array([-0.47 * h]), 0.012)
+        st.add_curve("earring%+d" % side, "earring", st.xf(st.M_head, lobe),
+                     color=er.get("color", "pearl"), metal=er.get("metal", "gold"),
+                     length=er.get("len", 0.07))
 
 
 # =============================================================================================
@@ -111,8 +117,8 @@ def lapel_path(cp, side, offset=0.0, Lt=None, n=60):
     left panel: leaves the neck on the +X side and crosses to -X), -1 = the under lapel.
     ``offset`` moves the line away from the opening (outer collar layers)."""
     Lt = Lt or geo.torso_loft()
-    nz = cp.get("neck_z", -0.70) - offset * 0.2
-    cz = cp.get("cross_z", -1.02) - offset * 1.45
+    nz = cp.get("neck_z", -0.65) - offset * 0.2
+    cz = cp.get("cross_z", -0.96) - offset * 1.45
     end_z = cp.get("end_z", -1.75)
     xn = cp.get("x_neck", 0.17) + offset * 0.9            # where the lapel leaves the neck
     k1 = 22
@@ -196,7 +202,7 @@ def build_torso(st, spec):
     TT, ZZ = np.meshgrid(tt, zs)
     zt = np.nan_to_num(lapel_z_at(TT, zA, tA), nan=-9.0)
     zb = np.nan_to_num(lapel_z_at(TT, zB, tB), nan=-9.0)
-    t_neck = float(Lt.t_of_x(col.get("x_neck", 0.17), col.get("neck_z", -0.70)))
+    t_neck = float(Lt.t_of_x(col.get("x_neck", 0.17), col.get("neck_z", -0.65)))
     inside = (np.abs(TT) < t_neck + 0.05) & (ZZ > np.maximum(zt, zb) - w0 * 0.4)
     # build faces with per-face material index
     import bpy  # noqa: F401  (material slots)
@@ -227,24 +233,33 @@ def build_torso(st, spec):
             up = geo.smoothstep(0.9, 1.6, np.abs(t))[:, None]
             A = A + np.array([0, 0, 1.0]) * stand * up
             st.strip("Collar%d_%+d" % (k, side), A, B, "band", cm, M=st.M_body)
-    # folds: designed curves in (z, t) on the torso -> 2D brush strokes
+    # folds: designed curves (x fraction of the shoulder half width, z) on the torso front ->
+    # 2D 兰叶描 strokes with a 分染 wash beside them
+    tp = dict(geo.TORSO_DEFAULT, **spec.get("torso", {}))
+    sw = tp["shoulder_w"] * tp.get("bulk", 1.0)
     for i, f in enumerate(robe.get("folds", default_folds(spec))):
-        z = np.linspace(f[0], f[2], 24)
-        t = np.linspace(f[1], f[3], 24)
-        bend = f[4] if len(f) > 4 else 0.0
-        t = t + bend * np.sin(np.linspace(0, math.pi, 24))
-        P = Lt.point(z, t) + Lt.normal(z, t) * 0.004
-        st.add_curve("fold%d" % i, "fold", st.xf(st.M_body, P), w=f[5] if len(f) > 5 else 1.0)
+        pts = np.array(f["pts"], float)
+        C = np.stack([np.interp(np.linspace(0, 1, 30), np.linspace(0, 1, len(pts)), pts[:, k])
+                      for k in range(2)], -1)
+        x = C[:, 0] * sw
+        z = C[:, 1]
+        t = Lt.t_of_x(x, z, front=f.get("front", True))
+        P = Lt.point(z, t) + Lt.normal(z, t) * 0.006
+        st.add_curve("fold%d" % i, "fold", st.xf(st.M_body, P), w=f.get("w", 1.0),
+                     side=f.get("side", 1))
     return ob
 
 
 def default_folds(spec):
-    """(z0, t0, z1, t1, bend, weight): fold lines on the shoulders / chest / sleeves."""
+    """Fold lines of a robe on a bust: the arm / body separation on both sides, the sleeve
+    folds over the upper arm and two soft folds under the collar crossing."""
     return [
-        (-1.05, 1.15, -1.55, 1.05, 0.05, 1.0),      # armpit / sleeve line, +X side
-        (-1.05, -1.15, -1.55, -1.08, -0.05, 1.0),   # -X side
-        (-1.28, 0.85, -1.62, 0.70, 0.04, 0.8),
-        (-1.30, -0.95, -1.65, -0.80, -0.04, 0.8),
+        dict(pts=[(0.80, -1.02), (0.75, -1.25), (0.73, -1.62)], w=1.1, side=-1),
+        dict(pts=[(-0.80, -1.02), (-0.75, -1.25), (-0.73, -1.62)], w=1.1, side=1),
+        dict(pts=[(0.93, -1.12), (0.89, -1.32), (0.90, -1.62)], w=0.8, side=-1),
+        dict(pts=[(-0.93, -1.12), (-0.89, -1.32), (-0.90, -1.62)], w=0.8, side=1),
+        dict(pts=[(0.30, -1.22), (0.35, -1.40), (0.33, -1.62)], w=0.7, side=-1),
+        dict(pts=[(-0.42, -1.26), (-0.47, -1.44), (-0.45, -1.64)], w=0.7, side=1),
     ]
 
 

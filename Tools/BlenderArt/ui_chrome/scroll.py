@@ -15,7 +15,7 @@ Plate (numpy, flat emission pass), target px of the @1x art:
     field       x 64-960, y 58-582: aged silk (Paper) with a fine weave, slubs and a soft
                 ageing mottle (the field stretches <= 1.4x in use), deeper towards the mount
 Rollers (Blender 3D, toon + Freestyle): x 7-31 / 993-1017, red-sandalwood rods with
-lathe-turned jade caps (y 2-18 / 622-638); unlit toon emission graded by the facing ratio (a
+lathe-turned ends (y 1.6-16 / 624-638.4): jade finial and bulb, mud-gold ring and gilt collar; unlit toon emission graded by the facing ratio (a
 晕染 wash deepening into the outline) with a lengthwise grain, inked by Freestyle (even line,
 so the strip stays uniform along y).
 Content box (field): x 64-960, y 58-582 at 1024x640; the Slate dialog pads 100/60/100/56.
@@ -62,9 +62,8 @@ def window_dw(G):
 # =============================================================================================
 # brocade border (top / bottom)
 # =============================================================================================
-def cloud_band(seed, y0, y1, flip=False):
+def cloud_band(seed, y0, y1, flip=False, ss=4):
     """Painted brocade strip y0..y1 (full width) on its own sub-grid: returns (rgba, grid)."""
-    ss = SPEC["ss"]
     h = y1 - y0
     Gb = S.Grid(W, h, ss, x0=0.0, y0=y0)
     t = (Gb.Y - y0) if not flip else (y1 - Gb.Y)        # 0 at the outer (mount) edge
@@ -136,8 +135,8 @@ def paint(G, variant=None, seed=None, rollers_2d=False):
     dw = window_dw(G)
 
     # ---- silk field: woven aged silk, deeper under the mount --------------------------------
-    field = GB.silk_ground(G, seed, light="#EBDFC4", dark="#DCCBA3", weave=0.022, mottle=0.30,
-                           mottle_cell=110.0, stain=0.18, foxing=0.0)
+    field = GB.silk_ground(G, seed, light="#EBDFC4", dark="#DCCBA3", weave=0.020, mottle=0.24,
+                           mottle_cell=120.0, stain=0.08, foxing=0.0, slub=0.45)
     # keep the field on the Paper token on average (text contrast, QA)
     field = field * (P.rgb("paper") / field[G.ny // 4: 3 * G.ny // 4, G.nx // 4: 3 * G.nx // 4]
                      .reshape(-1, 3).mean(0))
@@ -174,7 +173,7 @@ def paint(G, variant=None, seed=None, rollers_2d=False):
 
     # ---- brocade borders (top / bottom) -----------------------------------------------------
     for flip, (y0, y1) in ((False, TB), (True, (H - TB[1], H - TB[0]))):
-        rgba, Gb = cloud_band(seed + (20 if not flip else 30), y0, y1, flip)
+        rgba, Gb = cloud_band(seed + (20 if not flip else 30), y0, y1, flip, ss=G.ss)
         paste(C, G, rgba, Gb)
     # ink binding along the mount's top and bottom edges
     yb = np.broadcast_to(Y, G.shape)
@@ -258,24 +257,32 @@ def _lathe(name, profile, mat_for, mats, segments=SEGMENTS):
     return bpy.data.objects.new(name, me)
 
 
-#: turned jade cap profile from its tip (y, r) in image px; the wood collar follows
-CAP = [(2.0, 0.5), (2.3, 3.6), (2.9, 6.4), (3.9, 8.6), (5.3, 10.0), (7.0, 10.6), (8.8, 10.6),
-       (9.2, 10.15), (9.6, 10.6), (12.6, 10.6), (13.3, 9.8), (13.7, 9.8)]
-COLLAR = [(13.75, 13.0), (15.4, 13.0), (15.9, 12.4), (16.0, 12.0)]
+#: turned roller end (轴头) from its tip, (y, r) in image px: a jade finial and bulb, a thin
+#: mud-gold ring, then a gilt collar where the cap meets the rosewood rod
+CAP = [(1.0, 0.4), (1.2, 2.2), (1.9, 3.0), (2.7, 2.4), (3.1, 2.3), (3.5, 5.4), (4.5, 8.5),
+       (5.9, 10.5), (7.6, 11.3), (9.6, 11.3), (11.0, 10.4), (11.6, 9.4)]
+RING = []
+COLLAR = [(11.65, 13.2), (15.8, 13.2), (15.9, 12.0)]
+JADE_END, RING_END = 11.62, 11.62
 
 
 def roller_profile():
-    """(y, r) rows from the top tip of the jade cap to the bottom tip (image px)."""
+    """(y, r) rows from the top tip of the cap to the bottom tip (image px)."""
     y0, y1, r = ROLL["y0"], ROLL["y1"], ROLL["r"]
-    top = CAP + COLLAR
+    top = CAP + RING + COLLAR
     prof = list(top) + [(y0 + 4.0, r), (H / 2.0, r), (y1 - 4.0, r)]
     prof += [(H - y, rr) for (y, rr) in reversed(top)]
     return prof
 
 
 def roller_mat(y):
-    """0 = wood (rod and collars), 1 = jade (the caps)."""
-    return 1 if (y < 13.72 or y > H - 13.72) else 0
+    """0 = rosewood (rod), 1 = jade (finial and bulb), 2 = mud-gold (ring and collar)."""
+    e = min(y, H - y)
+    if e < JADE_END:
+        return 1
+    if e < 16.0:
+        return 2
+    return 0
 
 
 def extras(variant, G):
@@ -283,7 +290,8 @@ def extras(variant, G):
     import bpy
     from ironart import ui_chrome_flat as F
     wood = F.toon_material("ToonWood", None, None, None, stops=[
-        (0.0, "#8E5A3C"), (0.12, "#76452F"), (0.45, "#5A2E21"), (1.0, "#26130D")])
+        (0.0, "#9A6444"), (0.10, "#7E4A31"), (0.42, "#5C2F22"), (0.80, "#3C1D14"),
+        (1.0, "#22110B")])
     # fine lengthwise grain on the wood (painted dark streaks along the rod)
     nt = wood.node_tree
     ramp = [n for n in nt.nodes if n.type == "VALTORGB"][0]
@@ -299,7 +307,7 @@ def extras(variant, G):
     mr = nt.nodes.new("ShaderNodeMapRange")
     mr.inputs["From Min"].default_value = 0.35
     mr.inputs["From Max"].default_value = 0.65
-    mr.inputs["To Min"].default_value = 0.80
+    mr.inputs["To Min"].default_value = 0.72
     mr.inputs["To Max"].default_value = 1.0
     L = nt.links
     L.new(tc.outputs["Object"], mp.inputs["Vector"])
@@ -311,11 +319,13 @@ def extras(variant, G):
     L.new(mul.outputs["Color"], em.inputs["Color"])
     jade = F.toon_material("ToonJade", None, None, None, stops=[
         (0.0, "#DCE8D4"), (0.20, "#B6CFB5"), (0.58, "#8DB096"), (1.0, "#4C7260")])
+    gilt = F.toon_material("ToonGold", None, None, None, stops=[
+        (0.0, "#E6CB86"), (0.25, "#CFAE5E"), (0.62, "#A8843C"), (1.0, "#5E4518")])
     col = bpy.data.collections.new("Rollers")
     bpy.context.scene.collection.children.link(col)
     prof = roller_profile()
     for side in (0, 1):
-        ob = _lathe("Roller%d" % side, prof, roller_mat, [wood, jade])
+        ob = _lathe("Roller%d" % side, prof, roller_mat, [wood, jade, gilt])
         cx = ROLL["cx"] if side == 0 else W - ROLL["cx"]
         # mesh y = -image y; lift it a radius above the plate so its silhouette is clear of it
         ob.location = ((cx - W / 2.0) * 0.001, (H / 2.0) * 0.001, (ROLL["r"] + 1.0) * 0.001)

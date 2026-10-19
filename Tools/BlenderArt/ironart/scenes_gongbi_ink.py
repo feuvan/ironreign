@@ -160,7 +160,7 @@ def dilate(E, R, rmax):
     return out
 
 
-def ink(ps, tab, k, seed=0, focal_px=None):
+def ink(ps, tab, k, seed=0):
     """Ink lines from the passes -> (alpha H x W, colour H x W x 3 sRGB, raw edges, code)."""
     C = ps["color"]
     A = np.clip(C[..., 3], 0.0, 1.0)
@@ -203,16 +203,6 @@ def ink(ps, tab, k, seed=0, focal_px=None):
     lc = np.dstack([carry(cols[..., c]) for c in range(3)])
     lc = np.where(la[..., None] > 0, lc, np.array(GB.srgb("ink"), np.float32))
     return np.clip(la, 0, 1), lc.astype(np.float32), E, code
-
-
-def _spread(v, E, r):
-    """Max-spread an edge attribute ``v`` (defined on E) to the neighbourhood of radius r."""
-    out = v.copy()
-    for dy in range(-r, r + 1):
-        for dx in range(-r, r + 1):
-            if (dx or dy) and dx * dx + dy * dy <= (r + 0.5) ** 2:
-                np.maximum(out, _nb(v, dy, dx, 0.0), out=out)
-    return out
 
 
 def rim(E, code, tab, A, k, px=2.6):

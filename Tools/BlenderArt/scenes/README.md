@@ -9,6 +9,7 @@ Tools/BlenderArt/render.sh Tools/BlenderArt/scenes/build.py                     
 Tools/BlenderArt/render.sh Tools/BlenderArt/scenes/build.py --only Court        # one scene
 Tools/BlenderArt/render.sh Tools/BlenderArt/scenes/build.py --only Title --preview 0.5 --no-save
 Tools/BlenderArt/render.sh Tools/BlenderArt/scenes/build.py --only Title --region 0.4,0.1,0.9,0.6 --no-save
+Tools/BlenderArt/render.sh Tools/BlenderArt/scenes/build.py --only Court --no-save --reuse   # re-composite only
 python3 Tools/BlenderArt/scenes/make_sheet.py $IRONART_OUT/scenes/preview       # contact sheet
 ```
 
@@ -33,8 +34,15 @@ python3 Tools/BlenderArt/scenes/make_sheet.py $IRONART_OUT/scenes/preview       
    graded towards the outlines (分染 / 晕染), a very gentle painter's light, no lights, no
    shadows, no speculars.  Texture strokes are written into the `gb_ink` AOV (皴, moss dots,
    pine needles, wave lines, lattice, armour lamellae, coffers...), bare silk into `gb_bare`.
-3. **Ink** (Freestyle, as a render pass): `arch` ruled even lines (界画), `fig` fine tapered lines,
-   `land` pressure-varied strokes, `tree`, `fine` (thin props), `cloud`.  Thickness in game px.
+3. **Ink** (image space, `ironart/scenes_gongbi_ink.py`): outlines are found in the sample-0
+   passes Cycles writes anyway (depth, object / material index, normal) - silhouettes where the
+   inverse depth steps, creases where normals turn, boundaries where object or material changes -
+   and drawn with a per-kind brush: `arch` ruled even lines (界画), `fig` fine pressure-varied lines,
+   `skin` a fine reddish-brown line (赭线), `land` heavier tapered strokes, `tree`, `fine` (thin
+   props), `cloud`, `water`.  Widths are in game px, thin out and fade with distance, and carry
+   dry-brush breaks.  The same edges drive the 分染 band: colour deepens towards every outline inside
+   each form.  (Freestyle took ~85 % of the render time and is no longer used; a scene can still ask
+   for it with `ink_mode="freestyle"`.)
 4. **Render**: Cycles CPU, Standard view, film transparent, 6-12 spp at 4x the game size for
    events (2x for Title / Duel); passes to EXR.
 5. **Composite** (numpy): sky wash, painted 2D motifs (`ironart/scenes_gongbi_2d.py`: moon left

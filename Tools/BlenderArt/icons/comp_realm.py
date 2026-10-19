@@ -16,10 +16,60 @@ from ironart import icons_kit as K
 from ironart import icons_props as P
 
 FACE = P.FACE
+TILT = P.TILT
 TAU = math.tau
 
 
 # ---------------------------------------------------------------------------------------------
+def _panicles(M, n=11, r0=0.22, z0=1.1, seed=5):
+    """Ripe rice heads drooping from the top of a sheaf: per panicle a thin arching stalk and
+    ~30 grains (small ellipsoids along the stalk, alternate sides, pointing outwards) joined into
+    one mesh, so the ink draws every grain as a small granular stroke."""
+    import random
+    import bmesh
+    import bpy
+    from mathutils import Matrix, Vector
+    rng = random.Random(seed)
+    out = []
+    for i in range(n):
+        a = TAU * i / n + 0.35 + rng.uniform(-0.12, 0.12)
+        ca, sa = math.cos(a), math.sin(a)
+        L = 0.66 + rng.uniform(-0.08, 0.1)
+        pts = []
+        for k in range(12):
+            t = k / 11.0
+            rr = r0 + 0.52 * L * t
+            z = z0 + 0.34 * math.sin(t * math.pi * 0.62) - 0.7 * L * t * t
+            pts.append(Vector((ca * rr, sa * rr, z)))
+        stalk = K.curve_tube("stalk%d" % i, [tuple(p) for p in pts], 0.012, M["straw"], 3, 8)
+        bm = bmesh.new()
+        ng = 30
+        for g in range(ng):
+            t = 0.32 + 0.66 * g / (ng - 1.0)
+            f = t * 11.0
+            k0 = min(10, int(f))
+            p = pts[k0].lerp(pts[k0 + 1], f - k0)
+            d = (pts[k0 + 1] - pts[k0]).normalized()
+            side = Vector((-sa, ca, 0.0)) * (1 if g % 2 else -1)
+            up = d.cross(side).normalized()
+            gd = (d * 0.8 + side * 0.45 + up * rng.uniform(-0.2, 0.3)).normalized()
+            gl = 0.07 * (1.0 - 0.35 * (g / ng)) * rng.uniform(0.9, 1.1)
+            centre = p + side * 0.03 + gd * gl * 0.5
+            ret = bmesh.ops.create_uvsphere(bm, u_segments=8, v_segments=5, radius=1.0)
+            q = gd.to_track_quat("Z", "Y")
+            mtx = Matrix.Translation(centre) @ q.to_matrix().to_4x4() @ \
+                Matrix.Diagonal(Vector((gl * 0.42, gl * 0.36, gl * 0.62, 1.0)))
+            bmesh.ops.transform(bm, matrix=mtx, verts=ret["verts"])
+        me = bpy.data.meshes.new("grains%d" % i)
+        bm.to_mesh(me)
+        bm.free()
+        me.polygons.foreach_set("use_smooth", [True] * len(me.polygons))
+        o = K.link(bpy.data.objects.new("grains%d" % i, me))
+        o.data.materials.append(M["grain"])
+        out += [stalk, o]
+    return out
+
+
 def Farm(M, cam):
     """A rice sheaf tied at the waist, ripe heads drooping, a sickle leaning against it."""
     objs = []
@@ -32,23 +82,8 @@ def Farm(M, cam):
         tie = K.torus("tie%d" % k, 0.18, 0.028, M["rope_straw"], 48, 10)
         tie.location = (0, 0, 0.53 + dz)
         objs.append(tie)
-    # drooping heads (panicles) from the top, all round but heavier towards the viewer
-    heads = []
-    n = 9
-    for i in range(n):
-        a = TAU * i / n + 0.35
-        ca, sa = math.cos(a), math.sin(a)
-        r0 = 0.22
-        L = 0.62 + 0.08 * math.sin(i * 2.1)
-        pts = []
-        for k in range(8):
-            t = k / 7.0
-            rr = r0 + 0.5 * L * t
-            z = 1.1 + 0.32 * math.sin(t * math.pi * 0.62) - 0.65 * L * t * t
-            pts.append((ca * rr, sa * rr, z))
-        h = K.curve_tube("head%d" % i, pts, 0.05, M["grain"], 6, 10,
-                         radius_fn=lambda t: 0.35 + 0.9 * math.sin(math.pi * min(1, 0.15 + t)) ** 0.7)
-        heads.append(h)
+    # drooping heads (panicles): a fine stalk arching over, hung with rice grains in pairs
+    heads = _panicles(M, n=11, r0=0.22, z0=1.1, seed=5)
     objs += heads
     gb.put(heads, "soft")
     # sickle: crescent iron blade on a wooden handle, leaning on the front right
@@ -120,14 +155,15 @@ def Commerce(M, cam):
 
 # ---------------------------------------------------------------------------------------------
 def Gold(M, cam):
-    """Three gold yuanbao: two behind, one larger in front."""
+    """Gold yuanbao (元宝): two boat-shaped ingots with high flaring ends in front, a third set
+    on top behind them."""
     objs = []
-    kw = dict(L=1.0, W=0.68, rim=0.24, wing=0.3, trough=0.16, dome=(0.24, 0.19, 0.22),
-              flare=0.26, lip=(0.12, 0.06), sq=2.2, boss_lift=0.55)
-    objs += P.group("ingotA", P.yuanbao("ingA", M["gold"], **kw), (-0.5, 0.05, 0.0), (0, 0, -10))
-    objs += P.group("ingotB", P.yuanbao("ingB", M["gold"], **kw), (0.52, 0.12, 0.0), (0, 0, 10))
-    objs += P.group("ingotC", P.yuanbao("ingC", M["gold"], **kw), (0.02, 0.32, 0.36), (0, 0, -2),
-                    1.05)
+    kw = dict(L=1.0, W=0.78, rim=0.3, wing=0.3, trough=0.2, dome=(0.26, 0.22, 0.24),
+              flare=0.18, lip=(0.12, 0.06), sq=2.6, boss_lift=0.55)
+    objs += P.group("ingotA", P.yuanbao("ingA", M["gold"], **kw), (-0.52, 0.0, 0.0), (0, 0, -14))
+    objs += P.group("ingotB", P.yuanbao("ingB", M["gold"], **kw), (0.54, 0.08, 0.0), (0, 0, 12))
+    objs += P.group("ingotC", P.yuanbao("ingC", M["gold"], **kw), (0.02, 0.36, 0.42), (0, 0, -3),
+                    1.08)
     return dict(objs=objs, fill=1.0)
 
 
@@ -216,7 +252,7 @@ def _ox(name, M):
     """A placid ox in profile facing -X (metaballs): barrel body, shoulder hump, deep chest and
     dewlap, lowered head with a broad muzzle, crescent horns, dark hooves, tail."""
     els = [
-        dict(type="ELLIPSOID", co=(-1.25, 0, 0.8), radius=0.62, size=(1.25, 0.72, 0.72)),
+        dict(type="ELLIPSOID", co=(-1.25, 0, 0.86), radius=0.6, size=(1.25, 0.72, 0.66)),
         dict(type="BALL", co=(-1.68, 0, 0.95), radius=0.42),
         dict(type="ELLIPSOID", co=(-1.78, 0, 0.7), radius=0.45, size=(0.8, 0.8, 1.0)),
         dict(type="BALL", co=(-0.78, 0, 0.84), radius=0.46),
@@ -227,13 +263,16 @@ def _ox(name, M):
         dict(type="BALL", co=(-2.38, 0, 0.42), radius=0.18),
         dict(type="ELLIPSOID", co=(-2.0, 0, 0.5), radius=0.2, size=(0.8, 0.5, 1.3)),
     ]
-    legs = ((-1.78, -0.17), (-1.7, 0.17), (-0.84, -0.17), (-0.76, 0.17))
-    for (x, y) in legs:
-        els.append(dict(type="CAPSULE", co=(x, y, 0.34), radius=0.14, size=(0.2, 1, 1),
-                        rot=(0, 90, 0)))
+    legs = ((-1.78, -0.2), (-1.66, 0.2), (-0.86, -0.2), (-0.74, 0.2))
     out = [K.metaball(name, els, M["ox"], resolution=0.022, threshold=0.6)]
+    # legs: separate jointed forms (forearm / cannon) so the ink draws knees and hocks
     for k, (x, y) in enumerate(legs):
-        h = K.cylinder(name + "_hoof%d" % k, 0.08, 0.08, M["iron_dark"], 12)
+        front = x < -1.2
+        knee = (x + (0.03 if front else -0.06), y, 0.36)
+        pts = [(x + (0.0 if front else 0.08), y, 0.72), knee, (x, y, 0.06)]
+        out.append(K.curve_tube(name + "_leg%d" % k, pts, 0.1, M["ox"], 6, 10,
+                                radius_fn=lambda t: 1.0 - 0.45 * t))
+        h = K.cylinder(name + "_hoof%d" % k, 0.065, 0.08, M["iron_dark"], 12)
         h.location = (x, y, 0.0)
         out.append(h)
     for sy in (-1, 1):
@@ -247,31 +286,41 @@ def _ox(name, M):
 
 
 def Transport(M, cam):
-    """An ox cart coming towards the viewer: a sturdy ox (metaballs) drawing a two-wheeled cart
-    loaded with hemp sacks."""
+    """Army supply: a sturdy ox (metaballs) drawing a big two-wheeled cart piled with hemp
+    grain sacks lashed down with red rope, turned towards the viewer."""
     objs = []
+    cart = []
     bed = K.box("bed", (1.2, 0.85, 0.08), M["wood"])
     bed.location = (0.6, 0, 0.55)
-    objs.append(bed)
+    cart.append(bed)
     for sy in (-1, 1):
         rail = K.box("rail%d" % sy, (1.2, 0.05, 0.18), M["wood_dark"])
         rail.location = (0.6, sy * 0.42, 0.68)
-        objs.append(rail)
-        shaft = K.tube("shaft%d" % sy, [(0.0, sy * 0.36, 0.56), (-0.9, sy * 0.4, 0.86),
-                                        (-1.75, sy * 0.42, 1.2)], 0.035, M["wood_dark"], 8)
-        objs.append(shaft)
-    for k, (x, y, s) in enumerate(((0.4, 0.12, 1.1), (0.85, -0.12, 1.05), (0.7, 0.2, 0.9))):
-        prof = [(0.0, 0.0), (0.2, 0.0), (0.26, 0.08), (0.27, 0.22), (0.2, 0.34), (0.08, 0.38),
-                (0.1, 0.44), (0.0, 0.44)]
+        cart.append(rail)
+    prof = [(0.0, 0.0), (0.2, 0.0), (0.26, 0.08), (0.27, 0.22), (0.2, 0.34), (0.08, 0.38),
+            (0.1, 0.44), (0.0, 0.44)]
+    for k, (x, y, z, s) in enumerate(((0.3, 0.16, 0.59, 1.15), (0.9, -0.14, 0.59, 1.1),
+                                      (0.36, -0.2, 0.59, 1.05), (0.9, 0.2, 0.59, 1.05),
+                                      (0.6, 0.0, 0.98, 1.1))):
         sk = K.lathe("load%d" % k, prof, M["hemp"], 32, scale_xy=(1.0, 0.85))
-        sk.location = (x, y, 0.59)
+        sk.location = (x, y, z)
         sk.scale = (s, s, s)
-        objs.append(sk)
-    objs += P.group("wheel", _wheel("wh", M, 0.48, 12, 0.1), (0.6, -0.5, 0.48), (90, 0, 0))
+        cart.append(sk)
+    for k, x in enumerate((0.36, 0.86)):
+        cart.append(P.cord("lash%d" % k, M["rope_red"], [(x, -0.44, 0.7), (x, -0.36, 1.12),
+                                                       (x - 0.04, 0.0, 1.42), (x, 0.36, 1.12),
+                                                       (x, 0.44, 0.7)], 0.022))
+    cart += P.group("wheel", _wheel("wh", M, 0.48, 12, 0.1), (0.6, -0.5, 0.48), (90, 0, 0))
+    S_ = 1.3
+    objs += P.group("cartG", cart, (0.0, 0.0, 0.0), (0, 0, 0), S_)
+    for sy in (-1, 1):
+        objs.append(K.tube("shaft%d" % sy, [(0.05, sy * 0.36 * S_, 0.56 * S_),
+                                            (-0.9, sy * 0.4, 0.95), (-1.75, sy * 0.42, 1.2)],
+                           0.04, M["wood_dark"], 8))
     objs += _ox("ox", M)
     yoke = K.tube("yoke", [(-1.72, -0.44, 1.22), (-1.72, 0.44, 1.22)], 0.055, M["wood_dark"], 8)
     objs.append(yoke)
-    out = P.group("cart", objs, (0.0, 0, 0), (0, 0, -36))
+    out = P.group("cart", objs, (0.0, 0, 0), (0, 0, -50))
     return dict(objs=out, fill=1.0)
 
 
@@ -309,27 +358,26 @@ def _sandal(name, M, side=1):
 
 
 def Move(M, cam):
-    """A pair of straw sandals (草鞋) setting out, an azurite arrow sweeping onwards."""
+    """Setting out on the road: a pair of straw sandals (草鞋) one ahead of the other, and a
+    vermilion brush-stroke arrow sweeping onwards above them."""
+    from ironart import icons_shapes as S
     objs = []
-    objs += P.group("sandL", _sandal("sl", M, -1), (-0.36, 0.12, 0.0), (0, 0, 72), 1.45)
-    objs += P.group("sandR", _sandal("sr", M, 1), (0.2, -0.35, 0.0), (0, 0, 62), 1.45)
-    pts, inner = [], []
-    n = 24
-    for k in range(n + 1):
-        t = k / n
-        a = math.radians(200 - 150 * t)
-        R = 0.9
-        w = 0.08 + 0.05 * t
-        pts.append(((R + w) * math.cos(a), (R + w) * math.sin(a) * 0.8))
-        inner.append(((R - w) * math.cos(a), (R - w) * math.sin(a) * 0.8))
-    a = math.radians(50)
-    tip = (1.18 * math.cos(a) - 0.02, 0.8 * 1.0 * math.sin(a) + 0.24)
-    hl = ((0.9 + 0.28) * math.cos(a), (0.9 + 0.28) * math.sin(a) * 0.8)
-    hr = ((0.9 - 0.28) * math.cos(a), (0.9 - 0.28) * math.sin(a) * 0.8)
-    outline = inner + [hr, tip, hl] + pts[::-1]
-    arr = K.outline_mesh("arrow", outline, 0.07, M["silk_azure"], plane="XZ")
-    arr.location = (0.1, 0.0, 0.25)
-    objs += P.group("arrowG", [arr], (0.0, 0.25, 0.3), (0, 0, FACE))
+    # each sandal turned on the ground, then the pair tipped towards the painter (the sole
+    # plates of an encyclopedia show the top of a flat object, not its edge)
+    pair = []
+    pair += P.group("sandL", _sandal("sl", M, -1), (-0.46, 0.2, 0.0), (0, 0, 70), 1.75)
+    pair += P.group("sandR", _sandal("sr", M, 1), (0.3, -0.26, 0.0), (0, 0, 60), 1.75)
+    objs += P.group("pair", pair, (0, 0, 0), (34, 0, 0))
+    cv = S.Canvas((-1.3, -0.6, 1.3, 1.3), 900)
+
+    def path(t):
+        a = math.radians(205 - 160 * t)
+        return (1.0 * math.cos(a), 0.15 + 0.62 * math.sin(a) + 0.08 * t)
+    S.brush_arrow(cv, path, 0.04, 0.2, 0.42, 0.24)
+    mat = gb.pigment("I_MoveArrow", "#E0784A", "#A8321F", fen=0.55, formk=0.0,
+                     grad=lambda b: b.maprange(b.sep(gb.obj_coord(b))[0], -1.0, 1.0, 0.5, 0.0))
+    arr = S.shape_mesh("arrow", cv, 0.06, mat)
+    objs += P.group("arrowG", arr, (0.0, 0.5, 0.55), (-TILT, 0, FACE))
     return dict(objs=objs, fill=1.0)
 
 

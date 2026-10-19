@@ -29,15 +29,16 @@ NAME = "Title_Logo"
 SPEC = dict(size=(1200, 400), ss=4, seed=81)
 W, H = 1200, 400
 TEXT = "IRON REIGN"
-TEXT_SIZE = 168.0          # Marcellus size (px)
-TEXT_CY = 226.0            # vertical centre of the word
-TRACK = 12.0               # extra letter spacing (px)
-OUTLINE = 2.6              # ink outline of the letters (px)
-KEYLINE = 4.6              # calligraphy knocked out this far outside the letters (px)
+TEXT_SIZE = 132.0          # Marcellus size (px)
+TEXT_CX = 590.0
+TEXT_CY = 318.0            # vertical centre of the word
+TRACK = 16.0               # extra letter spacing (px)
+OUTLINE = 2.4              # ink outline of the letters (px)
+KEYLINE = 4.2              # calligraphy knocked out this far outside the letters (px)
 #: calligraphy: (char, cx, cy, height px, rotation deg ccw)
-CALLI = [("铁", 205.0, 186.0, 318.0, 4.0), ("血", 458.0, 212.0, 292.0, -2.0),
-         ("王", 712.0, 176.0, 250.0, 3.0), ("座", 958.0, 206.0, 312.0, -3.0)]
-SEAL = (1112.0, 318.0, 66.0, -4.0)
+CALLI = [("铁", 222.0, 148.0, 304.0, 5.0), ("血", 462.0, 182.0, 236.0, -3.0),
+         ("王", 672.0, 126.0, 206.0, 4.0), ("座", 902.0, 158.0, 304.0, -4.0)]
+SEAL = (1096.0, 262.0, 72.0, -4.0)
 
 
 def _font(name):
@@ -49,7 +50,7 @@ def brush_ink(G, mask, seed, length=40.0, dry_amount=1.0):
     """Ink density (0..1) and colour of brush calligraphy covering ``mask``: solid wet cores,
     bristle streaks and 飞白 breaks in dry patches and along the stroke edges."""
     ss = G.ss
-    ux, uy, _ = GB.direction_field(mask, 10.0 * ss)
+    ux, uy, coh = GB.direction_field(mask, 10.0 * ss)
     rng = np.random.default_rng(seed)
     n = rng.standard_normal(G.shape).astype(np.float32)
     n = S.blur(n, 0.30 * ss)
@@ -63,6 +64,9 @@ def brush_ink(G, mask, seed, length=40.0, dry_amount=1.0):
     dryzone = P.smoothstep(0.35, 1.2, patch) * dry_amount
     edgezone = 1.0 - P.smoothstep(0.15, 0.55, rel)
     dry = np.clip(0.85 * dryzone + 0.55 * edgezone * (0.3 + 0.7 * dryzone), 0, 1)
+    # no bristle breaks where the stroke direction is ambiguous (junctions, blunt ends):
+    # the streaks would swirl there
+    dry = dry * P.smoothstep(0.25, 0.6, coh)
     gap = P.smoothstep(1.4 - 2.2 * dry, 1.9 - 2.2 * dry, streak)
     dens = mask * (1.0 - gap * P.smoothstep(0.05, 0.25, dry))
     dens = dens * (0.92 + 0.08 * rel)
@@ -99,9 +103,9 @@ def letters(G):
     """Coverage of the gold word, its ink outline and the knock-out zone."""
     f = _font("Heading.ttf")
     kw = dict(anchor="mm", tracking=TRACK)
-    fill = GB.glyph_mask(G, TEXT, f, TEXT_SIZE, W / 2.0, TEXT_CY, **kw)
-    ink = GB.glyph_mask(G, TEXT, f, TEXT_SIZE, W / 2.0, TEXT_CY, stroke_px=OUTLINE, **kw)
-    knock = GB.glyph_mask(G, TEXT, f, TEXT_SIZE, W / 2.0, TEXT_CY, stroke_px=OUTLINE + KEYLINE,
+    fill = GB.glyph_mask(G, TEXT, f, TEXT_SIZE, TEXT_CX, TEXT_CY, **kw)
+    ink = GB.glyph_mask(G, TEXT, f, TEXT_SIZE, TEXT_CX, TEXT_CY, stroke_px=OUTLINE, **kw)
+    knock = GB.glyph_mask(G, TEXT, f, TEXT_SIZE, TEXT_CX, TEXT_CY, stroke_px=OUTLINE + KEYLINE,
                           **kw)
     return fill, ink, knock
 

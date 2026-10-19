@@ -41,7 +41,8 @@ class Head:
         self.yaw = math.radians(yaw_deg)
         self.roll = math.radians(roll_deg)
         self.sh = dict(width=1.0, jaw=1.0, chin=1.0, cheek=1.0, forehead=1.0, depth=1.0,
-                       chin_len=1.0, chin_fwd=1.0, k_face=2.6)
+                       chin_len=1.0, chin_fwd=1.0, k_face=2.6, chin_round=0.0, oval=0.0,
+                       oval_p=2.3, oval_end=1.015)
         if shape:
             self.sh.update(shape)
         self._build()
@@ -64,6 +65,31 @@ class Head:
             (0.91, 0.195 * w * (0.6 * jw + 0.4 * cw)), (0.945, 0.155 * w * (0.3 * jw + 0.7 * cw)),
             (0.975, 0.110 * w * cw), (1.00, 0.065 * w * cw),
         ]
+        # 鹅蛋 egg oval: below the cheekbones the half-width follows one smooth super-elliptic
+        # arc down to a rounded chin (no jaw corner, no pointed V); jaw/chin still scale it
+        ov = sh["oval"]
+        if ov:
+            p_ = sh["oval_p"]
+            y0 = 0.45
+            A0 = 0.326 * w
+            den = sh["oval_end"] - y0
+            keys = []
+            for y, v in self.a_keys:
+                if y >= 0.50:
+                    u = min(0.999, (y - y0) / den)
+                    vo = A0 * (1 - u ** p_) ** (1 / p_)
+                    kk = g.smoothstep(0.6, 0.9, y)
+                    vo *= 1 + (jw - 1) * (1 - kk) * 0.8 + (cw - 1) * kk * 0.8
+                    v = v * (1 - ov) + vo * ov
+                keys.append((y, v))
+            self.a_keys = keys
+        # rounder chin: the outline reaches the chin point on an elliptic arc
+        cr = sh["chin_round"]
+        if cr:
+            self.a_keys[-4] = (0.91, self.a_keys[-4][1] * (1 + 0.04 * cr))
+            self.a_keys[-3] = (0.945, self.a_keys[-3][1] * (1 + 0.02 * cr))
+            self.a_keys[-2] = (0.975, self.a_keys[-2][1] * (1 - 0.06 * cr))
+            self.a_keys[-1] = (1.00, self.a_keys[-1][1] * (1 - 0.50 * cr))
         cf = sh["chin_fwd"]
         self.zc_keys = [
             (0.00, 0.00), (0.62, 0.00), (0.70, 0.002), (0.78, 0.012), (0.84, 0.035 * cf),
@@ -75,6 +101,17 @@ class Head:
             (1.00, 0.10),
         ]
         self.d_keys = [(y, v * dep) for y, v in self.d_keys]
+        # shorter lower face: compress everything below the cheekbones so the chin sits at
+        # y = chin_len (< 1 gives a fuller, rounder face without changing the frame)
+        cl = sh["chin_len"]
+        self.chin_y = cl
+        if cl != 1.0:
+            def rm(keys):
+                return [(y if y <= 0.55 else 0.55 + (y - 0.55) * (cl - 0.55) / 0.45, v)
+                        for y, v in keys]
+            self.a_keys = rm(self.a_keys)
+            self.zc_keys = rm(self.zc_keys)
+            self.d_keys = rm(self.d_keys)
         self._ta = _table(self.a_keys)
         self._tz = _table(self.zc_keys)
         self._td = _table(self.d_keys)

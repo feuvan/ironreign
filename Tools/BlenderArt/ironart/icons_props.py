@@ -22,6 +22,8 @@ from . import icons_kit as K
 
 TAU = math.tau
 FACE = -24.0          # yaw that turns a prop's -Y face square to the family camera
+TILT = 20.0           # pitch (about X, negative) that turns a flat motif in local XZ nearly square
+                      # to it (not fully: a slab seen exactly edge-on breaks the ink contour)
 
 
 def group(name, objs, loc=(0, 0, 0), rot=(0, 0, 0), scale=1.0):
@@ -684,4 +686,118 @@ def wall_segment(name, M, L=2.0, D=0.5, H=1.0, merlons=5, mat="masonry"):
         m = K.box(name + "_merlon%d" % i, (w, 0.18, 0.26), M[mat])
         m.location = (x, -D / 2 + 0.05, H + 0.07 + 0.13)
         objs.append(m)
+    return objs
+
+
+# ---------------------------------------------------------------------------------------------
+# second-generation props (icon set v2): seal with a tortoise knob, a Ming general's helmet,
+# a hand
+# ---------------------------------------------------------------------------------------------
+def tortoise_seal(name, M, size=0.6, height=0.36, mat="gold", cord="rope_red"):
+    """A square seal of office (官印) cast with a tortoise knob (龟钮): a block with a chamfered
+    top step, the tortoise's domed shell (hexagon plates drawn in ink), head craned forward,
+    four stubby legs; a cord loop through the knob.  Front towards -Y, base at z = 0."""
+    objs = []
+    s = size
+    base = K.box(name + "_base", (s, s, height * 0.78), M[mat])
+    base.location = (0, 0, height * 0.39)
+    objs.append(base)
+    step = K.box(name + "_step", (s * 0.84, s * 0.84, height * 0.12), M[mat])
+    step.location = (0, 0, height * 0.78 + height * 0.06)
+    objs.append(step)
+    z0 = height * 0.9
+
+    def plates(b):
+        v = b.node("ShaderNodeTexVoronoi")
+        v.feature = "DISTANCE_TO_EDGE"
+        v.inputs["Scale"].default_value = 5.5
+        b.link(gb.obj_coord(b), v.inputs["Vector"])
+        return b.math("MULTIPLY", b.smooth(v.outputs["Distance"], 0.05, 0.0), 0.75)
+    shell_m = gb.pigment("I_Shell_" + name, "#E8CC84", "#9A7430", fen=0.7, formk=0.25,
+                         ink=plates)
+    sh = K.sphere(name + "_shell", 1.0, shell_m, 48, 24, (s * 0.4, s * 0.32, s * 0.22))
+    sh.location = (0.0, 0.03 * s, z0 + s * 0.03)
+    objs.append(sh)
+    rim = K.torus(name + "_shrim", 1.0, 0.045, M[mat], 48, 8)
+    rim.scale = (s * 0.395, s * 0.315, s * 0.6)
+    rim.location = (0.0, 0.03 * s, z0 + s * 0.035)
+    objs.append(rim)
+    hd = K.sphere(name + "_head", 1.0, M[mat], 24, 12, (s * 0.085, s * 0.12, s * 0.08))
+    hd.location = (0.0, -s * 0.37, z0 + s * 0.1)
+    objs.append(hd)
+    nk = K.tube(name + "_neck", [(0.0, -s * 0.2, z0 + s * 0.06), (0.0, -s * 0.3, z0 + s * 0.1)],
+                s * 0.055, M[mat], 12)
+    objs.append(nk)
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            lg = K.sphere("%s_leg%d%d" % (name, sx, sy), 1.0, M[mat], 16, 8,
+                          (s * 0.075, s * 0.06, s * 0.04))
+            lg.location = (sx * s * 0.33, s * (0.03 + sy * 0.2), z0 + s * 0.01)
+            objs.append(lg)
+    if cord:
+        ring = K.torus(name + "_cord", s * 0.09, s * 0.022, M[cord], 32, 8)
+        K.place(ring, (s * 0.41, s * 0.03, z0 + s * 0.05), (0, 90, 0))
+        objs.append(ring)
+    return objs
+
+
+def helmet_ming(name, M, r=0.4, bowl="iron", trim="gold"):
+    """A Ming general's helmet (明盔), front towards -Y: a tall ogival iron bowl with gold
+    ribs and brow band, a small brim at the front, a gold spike finial ringed by a red
+    horsehair tassel (红缨) falling round it, a lamellar neck curtain open at the face."""
+    objs = []
+    prof = [(r, 0.0)]
+    for k in range(1, 17):
+        t = k / 16.0
+        a = (math.pi / 2) * t
+        rr = r * math.cos(a) ** 0.85 * (1.0 - 0.1 * t)
+        z = r * 1.08 * math.sin(a) ** 0.8
+        prof.append((max(rr, 0.0), z))
+    prof[-1] = (0.0, prof[-1][1])
+    objs.append(K.lathe(name + "_bowl", prof, M[bowl], 56))
+    top = prof[-1][1]
+    for k in range(6):
+        rib = K.torus(name + "_rib%d" % k, r * 1.0, r * 0.03, M[trim], 48, 6, arc=math.pi)
+        K.place(rib, (0, 0, 0.0), (90, 0, 30 * k))
+        rib.scale = (1.0, 1.0, 1.06)
+        objs.append(rib)
+    band = K.lathe(name + "_band", [(r * 1.0, -0.02), (r * 1.06, -0.01), (r * 1.06, r * 0.17),
+                                    (r * 1.0, r * 0.2)], M[trim], 56)
+    objs.append(band)
+
+    def brim(u, v):
+        a = math.radians(-70 + u * 140) - math.pi / 2
+        rr = r * (1.04 + 0.2 * v)
+        return (math.cos(a) * rr, math.sin(a) * rr, r * 0.02 - v * r * 0.05)
+    objs.append(K.grid(name + "_brim", brim, 24, 2, M[trim], thickness=r * 0.03))
+    # finial: a gold spike with a bead, the red tassel flaring out and falling round it
+    fin = K.lathe(name + "_fin", [(0.0, 0.0), (r * 0.12, 0.0), (r * 0.07, r * 0.2),
+                                  (r * 0.12, r * 0.28), (r * 0.06, r * 0.4), (r * 0.035, r * 0.75),
+                                  (0.0, r * 0.82)], M[trim], 20)
+    fin.location = (0, 0, top - r * 0.02)
+    objs.append(fin)
+
+    def hair(b):
+        co = b.sep(gb.obj_coord(b))
+        ang = b.math("ARCTAN2", co[1], co[0])
+        return b.math("MULTIPLY", gb.stripes(b, ang, 11.0 / math.tau, 0.08, wobble=0.2,
+                                             wscale=4.0, vec=gb.obj_coord(b)), 0.45)
+    hm = gb.pigment("I_Plume_" + name, "#D0503A", "#8A2418", fen=0.55, formk=0.15, ink=hair)
+    tz = top + r * 0.46
+    prof = [(0.0, r * 0.03), (r * 0.09, 0.0), (r * 0.28, -r * 0.1), (r * 0.46, -r * 0.28),
+            (r * 0.56, -r * 0.46), (r * 0.52, -r * 0.54), (r * 0.34, -r * 0.4),
+            (r * 0.14, -r * 0.18), (0.0, -r * 0.12)]
+    pl = K.lathe(name + "_plume", [(a, b + tz) for a, b in prof[::-1]], hm, 40)
+    objs.append(pl)
+
+    def lam(b):
+        co = b.sep(gb.obj_coord(b))
+        return b.math("MULTIPLY", gb.stripes(b, co[2], 1.0 / (r * 0.15), 0.08), 0.5)
+    lm = gb.pigment("I_Lamellar_" + name, "#8E928E", "#4A4E50", fen=0.6, ink=lam)
+
+    def guard(u, v):
+        a = math.radians(-118 + u * 236) + math.pi / 2
+        rr = r * (1.02 + 0.3 * v)
+        return (math.cos(a) * rr, math.sin(a) * rr, r * 0.02 - v * r * 0.62)
+    objs.append(K.grid(name + "_guard", guard, 40, 4, lm, thickness=0.0))
     return objs

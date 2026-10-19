@@ -241,3 +241,26 @@ def cottage(mb, at=(0, 0, 0), rz=0.0, w=7.0, d=4.6, h=2.8, thatch=True, wall="W_
     s0 = mb.n
     WK.house(mb, (0, 0, 0), hs)
     mb.transform(s0, Matrix.Translation(Vector(at)) @ Matrix.Rotation(rz, 4, "Z"))
+
+
+def pavilion(mb, at=(0, 0, 0), n=6, R=3.0, col_h=3.2, roof_h=2.6, rz=0.0, roof="W_TileDark",
+             ridge="W_Ridge", plat_h=0.5, rail=True, cols="W_Lacquer"):
+    """Garden / roadside pavilion (亭): a stone platform, ``n`` lacquer columns with a painted
+    beam ring and brackets, a concave ``n``-sided roof with lifted corners and a gilt finial."""
+    from . import world_kit as WK
+    s0 = mb.n
+    pr = R * 1.18
+    mb.lathe([(pr, -1.0), (pr, plat_h), (0.0, plat_h)], "W_Stone", n, smooth=False, cap_top=False)
+    mb.lathe([(pr + 0.08, plat_h - 0.12), (pr + 0.08, plat_h), (0.0, plat_h)], "W_Paving", n, smooth=False)
+    pts = [(R * math.cos(math.tau * (k + 0.5) / n), R * math.sin(math.tau * (k + 0.5) / n)) for k in range(n)]
+    for (x, y) in pts:
+        WK.column(mb, x, y, plat_h, col_h, 0.16, cols, seg=10)
+    # beam ring + bracket band
+    for k in range(n):
+        a, b = pts[k], pts[(k + 1) % n]
+        WK.beam(mb, a, b, plat_h + col_h - 0.45, 0.45, 0.24, "W_BeamPaint")
+        if rail:
+            WK.railing(mb, a, b, plat_h, h=0.7, spacing=0.9, mat="W_Lacquer")
+    WK.ngon_roof(mb, (0.0, 0.0, plat_h + col_h), R * 1.45, roof_h, n=n, lift=0.6, flare=0.35, thick=0.22,
+                 mat=roof, ridge_mat=ridge, finial="pearl", rot=0.0, tiles=0.45)
+    mb.transform(s0, Matrix.Translation(Vector(at)) @ Matrix.Rotation(rz, 4, "Z"))

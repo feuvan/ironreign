@@ -13,6 +13,7 @@ from ironart import icons_kit as K
 from ironart import icons_props as P
 
 FACE = P.FACE
+TILT = P.TILT
 TAU = math.tau
 
 
@@ -63,13 +64,13 @@ def bpy_remove(o):
 def Patrol(M, cam):
     """Night watch: a red paper lantern hung from a spear carried on the shoulder."""
     objs = []
-    sp = P.spear("sp", M, 2.5, r=0.04)
-    objs += P.group("spG", sp, (0.25, 0.15, -0.15), (0, -22, FACE))
-    hook = P.cord("hook", M["rope_red"], [(-0.17, 0.12, 1.6), (-0.2, 0.1, 1.45),
-                                          (-0.2, 0.1, 1.32)], 0.016)
+    sp = P.spear("sp", M, 2.2, r=0.045)
+    objs += P.group("spG", sp, (0.42, 0.15, -0.2), (0, -32, FACE))
+    hook = P.cord("hook", M["rope_red"], [(-0.2, 0.12, 1.5), (-0.24, 0.1, 1.38),
+                                          (-0.24, 0.1, 1.26)], 0.018)
     objs.append(hook)
-    lt = P.lantern("lt", M, 0.46, 0.72, "silk_red")
-    objs += P.group("ltG", lt, (-0.2, 0.1, 0.92), (0, 0, 0))
+    lt = P.lantern("lt", M, 0.56, 0.86, "silk_red")
+    objs += P.group("ltG", lt, (-0.24, 0.1, 0.8), (0, 0, 0))
     return dict(objs=objs, fill=1.0)
 
 
@@ -216,8 +217,8 @@ def Troops(M, cam):
     band = K.torus("band", 0.13, 0.035, M["rope_red"], 32, 8)
     band.location = (0, 0.38, 1.0)
     objs.append(band)
-    hm = P.helmet("hm", M, 0.42)
-    objs += P.group("hmG", hm, (0.0, -0.4, 0.3), (0, 0, FACE + 10))
+    hm = P.helmet_ming("hm", M, 0.44)
+    objs += P.group("hmG", hm, (0.0, -0.42, 0.28), (0, 0, FACE + 10))
     return dict(objs=objs, fill=1.0)
 
 
@@ -270,38 +271,66 @@ def Defense(M, cam):
 
 
 # ---------------------------------------------------------------------------------------------
+def arrow(name, M, length=1.15, r=0.016, fletch="feather", band="silk_red", head=True):
+    """An arrow along +Z (nock at z = 0, point at z = length): bamboo shaft, three barred
+    feathers, a red binding at the nock and, if ``head``, an iron point."""
+    out = [K.lathe(name + "_shaft", [(0.0, 0.0), (r, 0.0), (r, length - 0.1), (0.0, length - 0.1)],
+                   M["bamboo"], 10)]
+
+    def bars(b):
+        co = b.sep(gb.obj_coord(b))
+        return b.math("MULTIPLY", gb.stripes(b, co[2], 9.0, 0.16), 0.5)
+    fm = gb.pigment("I_Fletch", "#F4EEE0", "#B8AC94", fen=0.4, formk=0.1, ink=bars)
+    for j in range(3):
+        f = K.outline_mesh("%s_fl%d" % (name, j), [(0.0, 0.05), (0.075, 0.09), (0.085, 0.30),
+                                                   (0.03, 0.34), (0.0, 0.33)],
+                           0.004, fm, plane="XZ")
+        f.rotation_euler = (0, 0, TAU * j / 3 + 0.4)
+        out.append(f)
+    bd = K.lathe(name + "_band", [(0.0, 0.0), (r * 1.5, 0.0), (r * 1.5, 0.05), (0.0, 0.05)],
+                 M[band], 10)
+    bd.location = (0, 0, 0.34)
+    out.append(bd)
+    if head:
+        hd = K.lathe(name + "_head", [(0.0, length - 0.12), (r * 1.6, length - 0.12),
+                                      (r * 2.6, length - 0.06), (0.0, length)], M["iron"], 8)
+        out.append(hd)
+    return out
+
+
 def Training(M, cam):
-    """An archery target (straw boss with painted rings) on a stand, two arrows in the gold."""
+    """Archery practice: a coiled-straw target boss with a paper face (an ink ring round a
+    cinnabar bull) on a wooden easel, two arrows standing in the centre."""
     objs = []
-    R = 0.72
-    rings = [("target_white", 1.0), ("target_red", 0.8), ("target_white", 0.6),
-             ("target_blue", 0.42), ("gold", 0.22)]
-    tg = []
-    straw = K.lathe("boss", [(0.0, -0.1), (R * 1.04, -0.1), (R * 1.08, -0.02), (R * 1.04, 0.05),
-                             (0.0, 0.05)], M["straw"], 64)
-    tg.append(straw)
-    for k, (m, f) in enumerate(rings):
-        d = K.lathe("ring%d" % k, [(0.0, 0.05 + 0.004 * k), (R * f, 0.05 + 0.004 * k),
-                                   (R * f, 0.054 + 0.004 * k), (0.0, 0.054 + 0.004 * k)], M[m], 64)
+    R = 0.74
+
+    def coils(b):
+        co = b.sep(gb.obj_coord(b))
+        rr = b.math("SQRT", b.math("ADD", b.math("MULTIPLY", co[0], co[0]),
+                                   b.math("MULTIPLY", co[1], co[1])))
+        return b.math("MULTIPLY", gb.stripes(b, rr, 15.0, 0.09, wobble=0.04, wscale=3.0,
+                                             vec=gb.obj_coord(b)), 0.55)
+    straw = gb.pigment("I_TargetStraw", "#E2C887", "#A07E40", fen=0.55, formk=0.18, ink=coils)
+    tg = [K.lathe("boss", [(0.0, -0.12), (R * 0.98, -0.12), (R * 1.04, -0.07), (R * 1.05, 0.0),
+                           (R * 1.02, 0.06), (R * 0.95, 0.09), (0.0, 0.09)], straw, 96)]
+    face = [("target_white", 0.62, 0.0), ("ink", 0.47, 0.002), ("target_white", 0.40, 0.004),
+            ("target_red", 0.22, 0.006)]
+    for k, (m, f, dz) in enumerate(face):
+        d = K.lathe("face%d" % k, [(0.0, 0.09 + dz), (R * f, 0.09 + dz), (R * f, 0.093 + dz),
+                                   (0.0, 0.093 + dz)], M[m], 96)
         tg.append(d)
     # arrows in target space: shafts leave the face (+Z) slightly askew
-    for k, (dx, dy, rx, ry) in enumerate(((0.04, 0.06, 18, -24), (-0.1, -0.05, 26, -8))):
-        ar = [K.lathe("ash%d" % k, [(0.0, 0.0), (0.022, 0.0), (0.022, 0.95), (0.0, 0.95)],
-                      M["bamboo"], 8)]
-        for j in range(3):
-            f = K.outline_mesh("fl%d%d" % (k, j), [(0.0, 0.62), (0.1, 0.7), (0.11, 0.93),
-                                                   (0.0, 0.9)], 0.004, M["feather"], plane="XZ")
-            f.rotation_euler = (0, 0, TAU * j / 3)
-            ar.append(f)
-        nock = K.sphere("nock%d" % k, 0.03, M["silk_red"], 12, 6)
-        nock.location = (0, 0, 0.95)
-        ar.append(nock)
-        tg += P.group("arG%d" % k, ar, (dx, dy, 0.05), (rx, ry, 0))
-    objs += P.group("tgG", tg, (0, 0, 1.05), (80, 0, FACE + 6))
+    for k, (dx, dy, rx, ry) in enumerate(((0.04, 0.05, -38, 50), (-0.06, -0.05, -20, 64))):
+        ar = arrow("ar%d" % k, M, 1.0, head=False)
+        # nock end out, the shaft entering the face at (dx, dy)
+        tg += P.group("arG%d" % k, ar, (dx, dy, 0.09), (rx, ry, 0))
+    objs += P.group("tgG", tg, (0.0, 0.0, 1.12), (78, 0, FACE + 8))
+    # easel: two splayed front legs and a back leg showing under the boss, a cross rail
     for sx in (-1, 1):
-        leg = K.tube("leg%d" % sx, [(sx * 0.5, 0.25, 0.0), (sx * 0.12, 0.08, 1.2)], 0.04,
-                     M["wood_dark"], 8)
-        objs.append(leg)
+        objs.append(K.tube("leg%d" % sx, [(sx * 0.66, -0.22, 0.0), (sx * 0.22, 0.12, 1.6)],
+                           0.035, M["wood_dark"], 8))
+    objs.append(K.tube("legb", [(0.05, 0.78, 0.0), (0.0, 0.25, 1.5)], 0.032, M["wood_dark"], 8))
+    objs.append(K.tube("rail", [(-0.52, -0.02, 0.3), (0.52, -0.02, 0.3)], 0.03, M["wood_dark"], 8))
     return dict(objs=objs, fill=1.0)
 
 
@@ -339,101 +368,176 @@ def Duel(M, cam):
 
 # ---------------------------------------------------------------------------------------------
 def Attack(M, cam):
-    """A sabre (刀) cutting down from the upper right, the stroke drawn as one broad crescent of
-    pale azurite wind."""
+    """A sabre (刀) cutting through the air: the blade drawn large on the rising diagonal, ring
+    pommel and red tassel at the hilt, and behind it the sweep of the cut - one broad pale
+    crescent of sword-wind (剑气) shaded from vermilion at its head to bare silk at its tail,
+    with two fine trailing strokes."""
+    from ironart import icons_shapes as S
     objs = []
-    sw = P.dao("dao", M, 2.0, 0.2)
-    objs += P.group("daoG", sw, (0.3, -0.15, 0.1), (0, -42, FACE))
-    outer, inner = [], []
-    n = 32
-    for k in range(n + 1):
-        t = k / n
-        a = math.radians(165 - 150 * t)
-        R = 1.05
-        w = 0.22 * math.sin(math.pi * t ** 0.8) ** 1.2 + 0.004
-        outer.append((R * math.cos(a), R * math.sin(a)))
-        inner.append(((R - w) * math.cos(a) + 0.12 * math.sin(math.pi * t),
-                      (R - w) * math.sin(a) - 0.1 * math.sin(math.pi * t)))
-    slash = gb.pigment("I_Slash", "#F2F4F0", "#7FA6C8", fen=0.0, formk=0.0,
-                       grad=lambda b: b.maprange(b.sep(gb.obj_coord(b))[2], 0.2, 1.05, 1.0, 0.0))
-    sl = K.outline_mesh("slash", outer + inner[::-1], 0.01, slash, plane="XZ")
-    gb.put([sl], "soft")
-    objs += P.group("slG", [sl], (-0.05, 0.35, 0.3), (0, 0, FACE), 1.05)
+    hx, hz = -0.62, -0.62                  # hilt (centre of the swing) in the motif plane
+    ang = 48.0                             # blade direction (deg, motif plane)
+    sw = P.dao("dao", M, 2.15, 0.18)
+    rg = K.torus("dao_ring", 0.08, 0.022, M["gold"], 32, 8)
+    K.place(rg, (0.0, 0.0, -0.44), (90, 0, 0))
+    sw.append(rg)
+    sw += P.tassel("dao_ts", M["tassel_red"], (0.0, 0.0, -0.52), 0.38, 0.06)
+    blade = P.group("daoB", sw, (0, 0, 0), (0, 90 - ang, 0))
+    cv = S.Canvas((-2.4, -2.4, 2.4, 2.4), 1200)
+    for (R, a0, a1, w) in ((1.45, 150, 57, 0.32), (1.78, 128, 60, 0.07), (1.12, 140, 62, 0.06)):
+        pts, ws = [], []
+        for j in range(61):
+            t = j / 60.0
+            a = math.radians(a0 + (a1 - a0) * t)
+            pts.append((hx + R * math.cos(a), hz + R * math.sin(a)))
+            # the brush lands thin at the tail of the cut and swells towards the blade
+            ws.append(w * t ** 1.2 * min(1.0, (1.0 - t) * 10.0) ** 0.4 + 0.005)
+        cv.brush(pts, ws)
+    wind = gb.pigment("I_Wind", "#F4D2B8", "#C44A2E", fen=0.4, formk=0.0, fen2d=0.5,
+                      grad=lambda b: b.maprange(b.sep(gb.obj_coord(b))[0], -1.9, 0.4, 0.0, 0.85))
+    parts = S.shape_mesh("wind", cv, 0.06, wind)
+    # boneless (没骨) strokes: the sword-wind is painted with the brush alone, no outline
+    gb.put(parts, "none")
+    # blade and wind share the motif plane, the wind a little behind
+    objs += P.group("atk", P.group("bladeG", blade, (hx, -0.05, hz), (0, 0, 0)) +
+                    P.group("windG", parts, (0, 0.12, 0), (0, 0, 0)),
+                    (0, 0, 0), (-TILT, 0, FACE))
     return dict(objs=objs, fill=1.0)
 
 
 # ---------------------------------------------------------------------------------------------
-def _flame_outline(h=1.0, w=0.5, curl=0.25, n=40, lean=0.0):
-    left, right = [], []
-    for i in range(n + 1):
-        t = i / n
-        z = t * h
-        width = w * (math.sin(math.pi * min(t, 0.999) ** 0.75) ** 1.2) * (1.0 - t) ** 0.35
-        cx = lean * t * t + curl * math.sin(t * math.pi * 1.5) * t
-        left.append((cx - width, z))
-        right.append((cx + width, z))
-    return left + right[::-1][1:-1]
+def _tongue(cv, x, z, h, w, lean=0.0, bend=0.0, hook=0.0, n=48):
+    """One flame tongue (火焰纹) on canvas ``cv``: a brush stroke rising from (x, z) whose
+    heading leans, bends through an S and hooks over at the tip, swelling low and drawn to a
+    point."""
+    pts, ws = [], []
+    px, pz = x, z
+    ds = h / n
+    for k in range(n + 1):
+        t = k / n
+        th = lean + bend * math.sin(math.pi * t) + hook * max(0.0, (t - 0.55) / 0.45) ** 2
+        pts.append((px, pz))
+        ws.append(2.0 * w * max(0.0, 1.0 - t) ** 0.85 * min(1.0, 0.55 + t * 2.2) + 0.004)
+        px += -math.sin(th) * ds
+        pz += math.cos(th) * ds
+    cv.brush(pts, ws)
+
+
+def _flame_layer(cv, s=1.0, dx=0.0, dz=0.0, licks=True):
+    """The flame mass: a tall S-curving centre tongue and leaning side tongues whose tips all
+    curl the same way (the turning flame of a 火焰宝珠), low licks and a round root - scaled by
+    ``s`` for the inner layers."""
+    T = [(0.0, 1.0, 0.30, 0.0, -0.28, 1.6),         # x, h, w, lean, bend, hook
+         (0.30, 0.78, 0.22, -0.55, 0.15, 2.3),
+         (-0.28, 0.66, 0.21, 0.55, -0.35, 1.1)]
+    if licks:
+        T += [(0.50, 0.40, 0.15, -0.95, 0.1, 2.2), (-0.50, 0.36, 0.14, 0.95, -0.2, 0.9)]
+    for (x, h, w, lean, bend, hook) in T:
+        _tongue(cv, dx + x * s, dz + 0.12 * s, h * 2.1 * s, w * s, lean * 0.8, bend, hook)
+    cv.poly([(dx + math.cos(a) * 0.46 * s, dz + (0.2 + math.sin(a) * 0.26) * s)
+             for a in [TAU * k / 48 for k in range(48)]])
 
 
 def Fire(M, cam):
-    """Fire attack: layered painted flames (gold heart, vermilion tongues, cinnabar tips) rising
-    from crossed logs."""
+    """Fire attack: painted flames (火焰纹) as in Buddhist and battle scrolls - a cinnabar flame
+    mass of hooked, S-curving tongues, a vermilion layer inside it and a gold heart, each layer
+    outlined in deep cinnabar and shaded from its root to its tips."""
+    from common import _zgrad_up
+    from ironart import icons_shapes as S
     objs = []
-    fm = flame_material("I_Flame", 0.0, 1.6)
-    specs = [(0.0, 1.6, 0.42, 0.16, -0.1, 0.0),
-             (-0.42, 1.0, 0.3, -0.12, -0.25, 0.08),
-             (0.44, 1.15, 0.3, 0.12, 0.28, 0.08),
-             (-0.12, 0.72, 0.22, 0.1, 0.1, -0.1)]
-    fl = []
-    for i, (x, h, w, curl, lean, dy) in enumerate(specs):
-        o = K.outline_mesh("flame%d" % i, _flame_outline(h, w, curl, 40, lean), 0.16, fm,
-                           plane="XZ")
-        K.place(o, (x, dy, 0), (0, 0, FACE))
-        fl.append(o)
-    gb.put(fl, "red")
-    objs += fl
-    for i, (x, rz) in enumerate(((-0.25, 30), (0.25, -30))):
-        lg = K.cylinder("log%d" % i, 0.09, 1.1, M["wood_dark"], 16)
-        K.place(lg, (x, 0.1, 0.0), (90, 0, rz + FACE))
-        objs.append(lg)
+    layers = [  # scale, dz, depth offset, light, deep, licks
+        (1.0, 0.0, 0.16, "#D86A40", "#A8321F", True),
+        (0.70, 0.0, 0.0, "#F0A452", "#CC5432", False),
+        (0.44, 0.02, -0.16, "#FAE6A8", "#ECAE58", False)]
+    for k, (s, dz, y, light, deep, licks) in enumerate(layers):
+        cv = S.Canvas((-1.2, -0.6, 1.2, 2.4), 900)
+        _flame_layer(cv, s, 0.0, dz, licks)
+        mat = gb.pigment("I_Flame%d" % k, light, deep, fen=0.35, formk=0.0,
+                         grad=_zgrad_up(-0.3, 2.2 * s + 0.1, 0.8), fen2d=0.35)
+        parts = S.shape_mesh("flame%d_" % k, cv, 0.06, mat)
+        for o in parts:
+            K.place(o, (0.0, y, 0.0), (0, 0, 0))
+        objs += parts
+    gb.put(objs, "red")
+    objs = P.group("fire", objs, (0, 0, 0), (-TILT, 0, FACE))
     return dict(objs=objs, fill=1.0)
 
 
 # ---------------------------------------------------------------------------------------------
-def _spiral(n=60, turns=1.6, r0=0.05, r1=0.45, w0=0.03, w1=0.13, start=0.0):
-    """A ruyi-cloud curl: a spiral band (outline) widening outwards."""
-    outer, inner = [], []
-    for k in range(n + 1):
-        t = k / n
-        a = start + TAU * turns * t
-        r = r0 + (r1 - r0) * t
-        w = w0 + (w1 - w0) * t
-        outer.append(((r + w / 2) * math.cos(a), (r + w / 2) * math.sin(a)))
-        inner.append(((r - w / 2) * math.cos(a), (r - w / 2) * math.sin(a)))
-    return outer[::-1] + inner
+def _cloud_ink(name, box, spirals, res=768):
+    """Ink texture for a cloud: tapered spiral curls (alpha = ink) mapped onto the motif box."""
+    from PIL import Image
+    from ironart import icons_shapes as S
+    cv = S.Canvas(box, res)
+    for (cx, cz, r1, turns, start, cw) in spirals:
+        pts, ws = S.spiral_band(cx, cz, r1 * 0.08, r1, turns, 0.004, 0.032, start, 90, cw)
+        # thin at the eye, full in the middle, lifting off at the end
+        n = len(ws)
+        ws = [w * min(1.0, (n - 1 - i) / (n * 0.18) + 0.25) for i, w in enumerate(ws)]
+        cv.brush(pts, ws)
+    a = cv.im
+    rgba = Image.merge("RGBA", (a.point(lambda v: 30), a.point(lambda v: 26),
+                                a.point(lambda v: 22), a))
+    return K.pil_image(name, rgba)
+
+
+def _ruyi_cloud(cv, cx, cz, ang, size=1.0, tail=True, cw=True):
+    """A ruyi cloud head (three lobes) at (cx, cz) facing ``ang`` with a tail sweeping round
+    the centre; returns the spiral specs of its lobes for :func:`_cloud_ink`."""
+    sg = -1.0 if cw else 1.0
+    lobes = [(0.0, 0.0, 0.27, 1.35), (0.24, 0.66, 0.17, 0.7), (0.22, -0.74, 0.16, 0.7)]
+    spirals = []
+    for (dr, da, r, turns) in lobes:
+        a = ang + sg * da
+        x = cx + math.cos(a) * dr * size
+        z = cz + math.sin(a) * dr * size
+        cv.disc(x, z, r * size)
+        spirals.append((x, z, r * size * 0.74, turns, a + math.pi, not cw))
+    if tail:
+        pts, ws = [], []
+        r0 = math.hypot(cx, cz)
+        a0 = math.atan2(cz, cx)
+        for k in range(31):
+            t = k / 30.0
+            a = a0 + sg * math.radians(15 + 105 * t)
+            r = r0 * (1.0 - 0.55 * t)
+            pts.append((math.cos(a) * r, math.sin(a) * r))
+            ws.append((0.30 * (1 - t) ** 1.3 + 0.02) * size)
+        cv.brush(pts, ws)
+    return spirals
 
 
 def Confuse(M, cam):
-    """Confusion: swirling auspicious clouds (祥云) - curling lead-white scrolls shaded with
-    azurite, coiling round each other."""
+    """Confusion: three auspicious clouds (祥云) chasing one another round a centre - lead-white
+    cloud heads with ink spiral curls, shaded at their edges with azurite and with a pale rouge
+    (紫) wash, their tails sweeping into the vortex."""
+    from ironart import icons_shapes as S
     objs = []
-    cm = cloud_material("I_Cloud", "#F6F0E4", "#7FA6C8")
-    cm2 = cloud_material("I_Cloud2", "#EEF0F0", "#9E8EB8")
-    for k, (x, z, s, rot, mat, turns) in enumerate((
-            (-0.3, 0.2, 1.0, 0, cm, 1.55), (0.42, 0.45, 0.8, 140, cm2, 1.45),
-            (0.15, -0.3, 0.7, 250, cm, 1.4))):
-        ol = _spiral(70, turns, 0.04, 0.5, 0.06, 0.2, math.radians(rot))
-        o = K.outline_mesh("cloud%d" % k, ol, 0.1, mat, plane="XZ")
-        K.place(o, (x, -0.1 * k, z), (0, 0, FACE), s)
-        objs.append(o)
-    # a soft cloud body under the curls
-    body = K.metaball("cbody", [dict(type="BALL", co=(x, 0.1, z), radius=r) for x, z, r in
-                                ((-0.55, -0.45, 0.28), (-0.2, -0.5, 0.32), (0.18, -0.55, 0.26),
-                                 (0.5, -0.45, 0.22))], cm, 0.03, 0.6)
-    body.scale = (1.0, 0.4, 0.7)
-    objs.append(body)
-    objs = P.group("cl", objs, (0, 0, 0), (0, 0, 0))
+    box = (-1.15, -1.15, 1.15, 1.15)
+    specs = [(90.0, "#DCE6EE", "#5E86B0", 0.0), (210.0, "#EADAE2", "#9A6488", 0.08),
+             (330.0, "#DCEAE0", "#4E8E74", 0.16)]
+    for k, (deg, light, deep, y) in enumerate(specs):
+        a = math.radians(deg)
+        cv = S.Canvas(box, 900)
+        sp = _ruyi_cloud(cv, 0.52 * math.cos(a), 0.52 * math.sin(a), a, 1.0)
+        img = _cloud_ink("CloudInk%d" % k, box, sp)
+        mat = gb.pigment("I_Cloud%d" % k, light, deep, fen=0.5, formk=0.0, fen2d=0.75, image=img,
+                         image_color="#2A241E", image_ink=0.0, image_box=box)
+        parts = S.shape_mesh("cloud%d_" % k, cv, 0.06, mat)
+        for o in parts:
+            K.place(o, (0.0, y, 0.0), (0, 0, 0))
+        objs += parts
+    # the eye of the vortex: one more curl
+    cv = S.Canvas(box, 900)
+    cv.disc(0.0, 0.0, 0.17)
+    img = _cloud_ink("CloudInkEye", box, [(0.0, 0.0, 0.14, 1.4, 0.0, True)])
+    mat = gb.pigment("I_CloudEye", "#F4EEE2", "#7FA6C8", fen=0.9, formk=0.0, image=img,
+                     image_color="#2A241E", image_box=box)
+    eye = S.shape_mesh("cloud_eye", cv, 0.06, mat)
+    for o in eye:
+        K.place(o, (0.0, -0.08, 0.0), (0, 0, 0))
+    objs += eye
     gb.put(objs, "soft")
+    objs = P.group("cl", objs, (0, 0, 0), (-TILT, 0, FACE))
     return dict(objs=objs, fill=1.0)
 
 

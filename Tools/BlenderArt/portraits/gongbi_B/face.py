@@ -50,6 +50,7 @@ class FaceSpec:
     crease: float = 0.7
     lower_lid: float = 0.6
     iris: float = 0.47            # iris diameter / eye width
+    iris_tuck: float = 0.30       # fraction of the iris radius hidden under the upper lid
     gaze: tuple = (0.6, 0.0)      # (0 = with the head .. 1 = at the viewer, vertical px)
     eye_rouge: float = 0.0
     tail: float = 0.10            # phoenix tail length (fraction of eye width)
@@ -131,7 +132,8 @@ class FaceDrawer:
     def outline(self):
         H = self.H
         far = self.far
-        ys = np.linspace(0.18, 1.0, 70)
+        cyl = H.chin_y
+        ys = np.linspace(0.18, cyl, 70)
         cy, sy = math.cos(H.yaw), math.sin(H.yaw)
         farpts, nearpts = [], []
         for y in ys:
@@ -148,7 +150,7 @@ class FaceDrawer:
         # painter's modelling of the far silhouette: brow ridge, temple dip under it, cheekbone
         # (颧骨) swell, hollow under the cheekbone, masseter
         sh = self.H.sh
-        cb = sh.get("cheekbone", 1.0)
+        cb = sh.get("cheekbone", 1.0) * (1 - 0.7 * sh.get("oval", 0.0))
         def bump(y, c, w):
             return np.exp(-((y - c) / w) ** 2)
         dx = (0.003 * bump(ys, 0.40, 0.04) - 0.002 * bump(ys, 0.47, 0.04)
@@ -162,7 +164,8 @@ class FaceDrawer:
             farpts[:, 0] += far * rnd * (0.010 * b + 0.016 * bump(ys, 0.78, 0.09))
             nearpts[:, 0] -= far * rnd * 0.022 * b
         # chin: rounded bottom between the two y=1 points, through the chin's lowest point
-        chin_c = np.array([0.0, 1.012, float(H.zc(1.0) + H.d(1.0) * 0.85)])
+        chin_c = np.array([0.0, cyl + 0.012 - 0.006 * sh.get("chin_round", 0.0),
+                           float(H.zc(cyl) + H.d(cyl) * 0.85)])
         return farpts, nearpts, chin_c
 
     def face_poly(self):
@@ -307,7 +310,12 @@ class FaceDrawer:
         uy = float(np.interp(icx, U[ord_u, 0], U[ord_u, 1]))
         ord_l = np.argsort(L[:, 0])
         ly = float(np.interp(icx, L[ord_l, 0], L[ord_l, 1]))
-        icy = min(uy + ri * 0.70, (uy + ly) / 2 + ri * 0.25) + F.gaze[1]
+        # the iris is always tucked under the upper lid (never white above it: no stare); in a
+        # tall opening it grows a little (up to half the eye width) so that it also reaches
+        # down towards the lower lid instead of floating high (an upward, rolling look)
+        oh = ly - uy
+        ri = float(np.clip((oh * 0.97 + F.iris_tuck * ri) / 2.0, ri, 0.50 * ew0 / 2))
+        icy = uy + ri * (1.0 - F.iris_tuck) + F.gaze[1]
         ic = np.array([icx, icy])
         open_poly = np.vstack([U, L[::-1][1:-1]])
         ring = g.clip_convex(g.ellipse(ic, ri, ri, n=48), open_poly)
@@ -331,6 +339,9 @@ class FaceDrawer:
         if g.poly_contains(open_poly, hl[None])[0]:
             cv.dot(hl, max(0.55, ri * 0.14), "white", 0.85)
         self.lm["iris_%s" % ("far" if fs else "near")] = ic
+        self.lm["eye_metrics_%s" % ("far" if fs else "near")] = dict(
+            iris_r=ri, upper_y=uy, lower_y=ly, iris_top=icy - ri, iris_bottom=icy + ri,
+            eye_w=float(abs(U[-1][0] - U[0][0])), highlight=bool(g.poly_contains(open_poly, hl[None])[0]))
         # --- upper lid line
         n = 60
         Uu = g.resample(U, n)
@@ -347,9 +358,9 @@ class FaceDrawer:
             k_end = 1.0 / (1 + tail)
             wl = np.interp(t2 / k_end, t, wprof, right=wprof[-1])
             wl = wl * (1 - 0.95 * g.smoothstep(k_end * 0.97, 1.0, t2))
-            cv.stroke(Uu2, 1, "ink", 0.97, widths=wmax * wl, noise=0.04)
+            cv.stroke(Uu2, 1, "ink", 0.97, widths=wmax * wl, noise=0.04, bleed=0.25, pool=0.2)
         else:
-            cv.stroke(Uu, 1, "ink", 0.97, widths=wmax * wprof, noise=0.04)
+            cv.stroke(Uu, 1, "ink", 0.97, widths=wmax * wprof, noise=0.04, bleed=0.25, pool=0.2)
         # inner corner hook (内眦)
         ic0 = U[0]
         dn = (L[4] - ic0)
@@ -404,6 +415,9 @@ class FaceDrawer:
         elif kind == "willow":
             C = [(0.0, 0.0), (0.33, -0.022), (0.70, -0.026), (1.06, -0.004)]
             thick = lambda t: np.sin(np.pi * np.clip(0.08 + t * 0.92, 0, 1)) ** 0.7 * (1 - 0.3 * t)
+        elif kind == "crescent":       # 月眉: a clear arch, thinner, for bright young faces
+            C = [(0.0, 0.004), (0.30, -0.028), (0.66, -0.034), (1.02, -0.006)]
+            thick = lambda t: np.sin(np.pi * np.clip(0.06 + t * 0.94, 0, 1)) ** 0.8 * (1 - 0.35 * t)
         elif kind == "longevity":
             C = [(0.0, 0.0), (0.35, -0.018), (0.72, -0.010), (1.05, 0.030)]
             thick = lambda t: (0.85 + 0.2 * np.sin(np.pi * t)) * (1 - g.smoothstep(0.8, 1.0, t) * 0.6)
@@ -430,7 +444,7 @@ class FaceDrawer:
         grey = F.brow_grey
         base_col = pal.hexs(pal.mix("ink_m", "hair_grey", min(1, grey * 1.2)))
         # wash body
-        if kind == "willow":
+        if kind in ("willow", "crescent"):
             cv.band(top, bot, "ink_m", lambda S, T: 0.60 * np.sin(np.pi * np.clip(T, 0, 1)) ** 0.6
                     * (0.35 + 0.65 * np.sin(np.pi * np.clip(S * 0.9 + 0.1, 0, 1)) ** 0.6),
                     mode="glaze", rows=4)
@@ -501,13 +515,28 @@ class FaceDrawer:
         bridge_near = self.W(np.stack([-far * (0.022 + 0.012 * (ys - top) / (tipy - top)), ys], 1), dz * 0.85)
         cv.edge(bridge_near[2:], self.px(8), F.shade, 0.18 * F.shade_k,
                 side=self._side_towards(bridge_near[2:], -far), rows=4)
-        # far bridge line: from the brow head down (broken in the middle like a painter's line)
+        # the nose line of the canon: ONE flowing line that leaves the head of the far brow and
+        # runs down the far side of the bridge to the tip (firm at the brow, lighter over the
+        # bridge, firm again above the tip); ladies keep only a whisper of it
         lw = self.px(1.0) * F.line_w
-        if F.bridge >= 0.5:
-            cv.stroke(bridge_far[:5], lw * 0.9, F.line, 0.55 * F.bridge, prof="silk")
-            cv.stroke(g.catmull(bridge_far[6:], 4), lw, F.line, 0.75 * F.bridge, prof="silk")
-        elif F.bridge > 0:
-            cv.stroke(g.catmull(bridge_far[9:], 4), lw * 0.8, F.line, 0.9 * F.bridge, prof="silk")
+        if F.bridge > 0:
+            bx = F.eye_gap - 0.004 + F.brow_gap
+            by = F.brow_y + 0.012 * F.brow_knit + 0.006
+            fr = np.array([(far * bx * 0.93, by), (far * 0.040, F.brow_y + 0.040),
+                           (far * 0.026, F.brow_y + 0.095), (far * 0.021, 0.5 * (F.brow_y + tipy) + 0.02),
+                           (far * 0.026, tipy - 0.036)])
+            dzf = 0.010 + (tip_z - 0.010) * g.smoothstep(top - 0.03, tipy + 0.01, fr[:, 1]) ** 1.6
+            NL = g.catmull(self.W(fr, dzf), 10)
+            if F.bridge >= 0.5:
+                aal = lambda t: 0.85 - 0.50 * np.sin(np.pi * np.clip(t * 1.15, 0, 1)) ** 1.5 \
+                    + 0.10 * g.smoothstep(0.7, 1.0, t)
+                cv.stroke(NL, lw * 0.95, F.line, 0.85 * F.bridge, prof="silk", taper=(0.06, 0.25),
+                          alpha_along=aal, pool=0.3, bleed=0.3)
+            else:
+                aal = lambda t: 0.55 * g.smoothstep(0.0, 0.08, t) * (1 - g.smoothstep(0.12, 0.30, t)) \
+                    + 0.9 * g.smoothstep(0.55, 0.9, t)
+                cv.stroke(NL, lw * 0.8, F.line, 0.85 * min(1.0, F.bridge * 2.2), prof="silk",
+                          taper=(0.06, 0.2), alpha_along=aal)
         # tip and wings
         w = F.nose_w
         y_w = tipy - 0.004
@@ -655,7 +684,7 @@ class FaceDrawer:
         t = np.linspace(0, 1, 80)
         cv.stroke(g.resample(line, 160), 1, F.line, 0.92,
                   widths=lw * (0.55 + 0.45 * g.smoothstep(0.0, 0.5, t) * (1 - 0.35 * g.smoothstep(0.75, 1.0, t))),
-                  noise=0.06)
+                  noise=0.06, pool=0.3, bleed=0.35)
 
     def age_lines(self):
         cv, F = self.cv, self.F

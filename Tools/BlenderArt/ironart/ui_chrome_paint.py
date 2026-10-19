@@ -1,11 +1,12 @@
-"""UI chrome family: gongbi (工笔) painting toolkit - numpy only, no bpy.
+"""UI chrome family: the painting canvas and colour/noise/mount basics - numpy only, no bpy.
 
-The UI chrome is painted like a classical Chinese mounting (装裱): aged silk grounds, patterned
-brocade borders, ruled ink lines, mineral-colour washes with soft 晕染 gradients and mud-gold
-(泥金) rules.  Every piece is authored here as layers on a :class:`Canvas` sampled on the render
-grid (``ui_chrome_sdf.Grid``: ``ss`` samples per target px, image convention, +y down), then
-handed to :mod:`ironart.ui_chrome_flat`, which renders it through Cycles as a flat orthographic
-emission plate (plus toon-shaded 3D parts with Freestyle ink where a piece has them).
+The UI chrome is painted like a classical Chinese mounting (装裱).  Every piece is authored as
+layers on a :class:`Canvas` sampled on the render grid (``ui_chrome_sdf.Grid``: ``ss`` samples
+per target px, image convention, +y down); the materials (silk, brocade, mud-gold, mineral
+colours, glyphs, brush) live in :mod:`ironart.ui_chrome_gongbi`, the drawn ornaments in
+:mod:`ironart.ui_chrome_ornament`, and :mod:`ironart.ui_chrome_flat` renders the result through
+Cycles as a flat orthographic emission plate (plus toon-shaded 3D parts with Freestyle ink where
+a piece has them).
 
 Painting model (sRGB, straight colours; the canvas keeps premultiplied colour internally)
     over(mask, colour)        opaque mineral pigment / ink laid over what is there
@@ -182,44 +183,9 @@ def fbm2(G, cell, seed, octaves=4, gain=0.5, aniso=(1.0, 1.0)):
     return ((n - n.mean()) / (n.std() + 1e-6)).astype(np.float32)
 
 
-def fine_grain(G, seed, size=0.5):
-    """Pigment grain: blurred white noise with features of ``size`` target px, unit std."""
-    rng = np.random.default_rng(seed)
-    n = rng.standard_normal(G.shape).astype(np.float32)
-    n = S.blur(n, max(0.35, size * G.ss * 0.5))
-    return (n - n.mean()) / (n.std() + 1e-6)
-
-
 # =============================================================================================
-# grounds
+# 9-slice helpers
 # =============================================================================================
-def silk_texture(G, seed, weave=0.012, slub=0.02, mottle=0.02, mottle_cell=36.0):
-    """Multiplicative silk texture (~1.0): fine weft/warp striation, sparse slubs (thicker
-    threads) along the weft, and soft ageing mottle.  Amplitudes are fractions of the value."""
-    ys = G.ys[:, None]
-    xs = G.xs[None, :]
-    # weft threads (horizontal) and warp (vertical): 1D striation modulated by a slow field
-    weft = noise1d(G.ys, 0.9, seed + 1, octaves=1)[:, None]
-    warp = noise1d(G.xs, 0.9, seed + 2, octaves=1)[None, :]
-    mod = 0.6 + 0.4 * fbm2(G, 14.0, seed + 3, octaves=2)
-    t = weave * (0.75 * weft + 0.45 * warp) * mod
-    # slubs: elongated horizontal flecks (cells 1 px tall, 14 px long), thresholded
-    if slub > 0:
-        sl = S.value_noise(G.shape, 0.9 * G.ss, seed + 4, aniso=(16.0, 1.0))
-        sl = smoothstep(0.70, 0.86, sl) - smoothstep(0.70, 0.86, 1.0 - sl)
-        t = t + slub * sl
-    if mottle > 0:
-        t = t + mottle * fbm2(G, mottle_cell, seed + 5, octaves=4, gain=0.55)
-    del ys, xs
-    return (1.0 + t).astype(np.float32)
-
-
-def silk_field(G, seed, base="paper", texture=None, **kw):
-    """Silk ground colour field (rows, cols, 3)."""
-    tex = silk_texture(G, seed, **kw) if texture is None else texture
-    return rgb(base) * tex[..., None]
-
-
 def centre_weight(G, margins, fade=8.0):
     """0 inside the 9-slice margins, rising to 1 over ``fade`` px inside the centre region."""
     l, t, r, b = margins
@@ -229,123 +195,6 @@ def centre_weight(G, margins, fade=8.0):
     fx = smoothstep(0.0, fade, dx)[None, :]
     fy = smoothstep(0.0, fade, dy)[:, None]
     return (fx * fy).astype(np.float32)
-
-
-# =============================================================================================
-# lines
-# =============================================================================================
-def aa(sd, G, soft=1.0):
-    return S.aa_mask(sd, G, soft)
-
-
-def rule(d, at, width, G):
-    """Mask of a ruled line of ``width`` px centred on the iso-line d == at (mitred frame rule
-    when ``d`` is an inset distance)."""
-    return S.aa_mask(np.abs(d - at) - width * 0.5, G)
-
-
-def band(d, d0, d1, G):
-    return S.band(d, d0, d1, G)
-
-
-def stroke(G, pts, radii, out=None, pad=3.0):
-    """sd of a tapered brush stroke along ``pts`` (per-point radii)."""
-    return S.sd_polyline(G, pts, radii, out=out, pad=pad)
-
-
-def brush_radii(n, w, start=0.55, end=0.25, press=1.15, power=0.8, seed=None, wobble=0.0):
-    """Gongbi line profile: a pressed entry (起笔), even body, tapered exit (收笔)."""
-    t = np.linspace(0.0, 1.0, n, dtype=np.float32)
-    entry = start + (press - start) * smoothstep(0.0, 0.12, t)
-    body = np.where(t < 0.18, entry, 1.0 + (press - 1.0) * (1.0 - smoothstep(0.12, 0.35, t)))
-    tail = 1.0 - (1.0 - end) * smoothstep(0.62, 1.0, t) ** power
-    r = w * 0.5 * body * tail
-    if seed is not None and wobble > 0:
-        r = r * (1.0 + wobble * noise1d(t * n, max(4.0, n / 6.0), seed, octaves=1))
-    return r.astype(np.float32)
-
-
-# =============================================================================================
-# mud-gold / pigment colour fields
-# =============================================================================================
-def gold_field(G, seed, base="gold", grain=0.05, flecks=0.06, shade=None):
-    """Matte mud-gold (泥金) colour field: base colour with fine powder grain and sparse
-    paler flecks (gold powder catching the light); never metallic, never glossy."""
-    g = fine_grain(G, seed, 0.45)
-    c = rgb(base) * (1.0 + grain * g)[..., None]
-    if flecks > 0:
-        f = smoothstep(1.6, 2.6, fine_grain(G, seed + 1, 0.4))
-        c = c + (rgb("gold_light") - rgb(base)) * (flecks * 6.0 * f)[..., None]
-    if shade is not None:
-        c = c * shade[..., None]
-    return np.clip(c, 0, 1)
-
-
-def strip_color(d, base, seed, amp=0.04, period=0.6, octaves=1):
-    """A colour field that only depends on the across-coordinate ``d`` (9-slice strips):
-    lengthwise silk threads / pigment streaks."""
-    n = noise1d(d, period, seed, octaves=octaves)
-    return rgb(base) * (1.0 + amp * n)[..., None]
-
-
-# =============================================================================================
-# motifs (target px; lists of (points, radii) strokes or sd fields)
-# =============================================================================================
-def curl(cx, cy, r0, turns, a0, cw=True, w0=0.6, w1=0.25, inner=0.22, n=None):
-    """A cloud curl: tapered spiral stroke winding inwards (points, radii)."""
-    pts = S.spiral(cx, cy, r0, r0 * inner, turns, a0, cw, n)
-    rad = S.taper(len(pts), w0 * 0.5, w1 * 0.5, power=0.9)
-    return pts, rad
-
-
-def strokes_sd(G, strokes, pad=3.0):
-    out = G.empty()
-    for pts, rad in strokes:
-        S.sd_polyline(G, pts, rad, out=out, pad=pad)
-    return out
-
-
-def rotate(pts, deg, cx=0.0, cy=0.0):
-    a = math.radians(deg)
-    c, s = math.cos(a), math.sin(a)
-    p = np.asarray(pts, np.float32) - [cx, cy]
-    return np.stack([p[:, 0] * c - p[:, 1] * s, p[:, 0] * s + p[:, 1] * c], 1) + [cx, cy]
-
-
-def mirror_x(pts, cx):
-    p = np.asarray(pts, np.float32).copy()
-    p[:, 0] = 2 * cx - p[:, 0]
-    return p
-
-
-def mirror_y(pts, cy):
-    p = np.asarray(pts, np.float32).copy()
-    p[:, 1] = 2 * cy - p[:, 1]
-    return p
-
-
-def corner_copies(strokes, w, h):
-    """The four mirrored copies of top-left corner strokes [(pts, radii)] on a w x h piece."""
-    out = []
-    for pts, rad in strokes:
-        out.append((pts, rad))
-        out.append((mirror_x(pts, w / 2.0), rad))
-        out.append((mirror_y(pts, h / 2.0), rad))
-        out.append((mirror_y(mirror_x(pts, w / 2.0), h / 2.0), rad))
-    return out
-
-
-def stamp_corners(full, local):
-    """Paste a top-left local array (rows, cols[, c]) into the four corners of ``full`` with
-    mirroring (max-combine for masks)."""
-    h, w = local.shape[:2]
-    H, W = full.shape[:2]
-    views = [(slice(0, h), slice(0, w), local), (slice(0, h), slice(W - w, W), local[:, ::-1]),
-             (slice(H - h, H), slice(0, w), local[::-1, :]),
-             (slice(H - h, H), slice(W - w, W), local[::-1, ::-1])]
-    for sy, sx, arr in views:
-        full[sy, sx] = np.maximum(full[sy, sx], arr)
-    return full
 
 
 # =============================================================================================
@@ -376,21 +225,3 @@ def plaque_sd(G, w, h, inset=1.0, notch=4.5):
         c = np.hypot(G.X - x, G.Y - y) - notch
         q = c if q is None else np.minimum(q, c)
     return np.maximum(box, -q).astype(np.float32)
-
-
-def paint_ruyi(C, G, cx, cy, size, rot, seed, halo=None, halo_w=0.8, deep=0.72,
-               engrave="#3A2C1E", outline=None, outline_w=0.32):
-    """A painted mud-gold ruyi cloud head (trefoil + point) with engraved curls: gold wash that
-    deepens towards its edge (晕染), engraved lines in ``engrave``, optional ink ``outline`` and
-    a ``halo`` of ground colour that interrupts the rules behind it."""
-    from . import ui_chrome_motifs as MO
-    shape, eng = MO.ruyi(G, cx, cy, size, rot)
-    if halo is not None:
-        C.over(aa(shape - halo_w, G), halo)
-    g = gold_field(G, seed, flecks=0.0)
-    sh = smoothstep(0.0, 0.17 * size, -shape)
-    C.over(aa(shape, G), mix(g * deep, g, sh))
-    C.over(aa(eng - 0.026 * size, G) * aa(shape + 0.033 * size, G), engrave, 0.9)
-    if outline is not None:
-        C.over(aa(np.abs(shape) - outline_w, G), outline)
-    return shape

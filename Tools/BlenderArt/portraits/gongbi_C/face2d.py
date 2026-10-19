@@ -172,6 +172,14 @@ class Face:
         # forehead mark (花钿)
         if f.get("mark"):
             self.mark(f["mark"])
+        # ordination dots (戒疤) on a monk's crown
+        nd = int(f.get("dots", 0) or 0)
+        if nd:
+            cols = 3
+            for i in range(nd):
+                x = ((i % cols) - 1) * 0.055
+                z = 0.36 + (i // cols) * 0.035
+                self.wash_at(x, z, 0.011, "#8A5A48", 0.75, mode="paint", power=0.6, clip=1.0)
 
     def mark(self, mk):
         z0 = 0.15
@@ -359,7 +367,7 @@ class Face:
         C, w, d, nrm = self.brow_geometry(s)
         col = f.get("brow_color", "ink")
         cols = {"ink": (INK, INK, None), "grey": ("#5E5852", "#2A2622", "#B8B2A8"),
-                "white": ("#9C968C", "#F4F0E6", "#6E685E"),
+                "white": ("#7E786E", "#F7F4EE", "#5A544A"),
                 "grizzled": ("#3E3A36", "#1E1A16", "#C8C2B6")}[col]
         base_c, hair_c, alt_c = cols
         # base wash (lighter at the tail)
@@ -381,6 +389,7 @@ class Face:
                       ink=0.6)
         # hairs
         nh = int(90 * b.get("hairs", 1.0))
+        hair_len = b.get("hair_len", 1.0)
         rng = self.rng
         strokes, strokes2 = [], []
         for _ in range(nh):
@@ -390,10 +399,10 @@ class Face:
             root = C[i] + nrm[i] * a * w[i]
             # hair direction: steep at the head, along the brow later, converging to the centre
             ang_head = math.radians(65) * (1 - geo.smoothstep(0.0, 0.22, t))
-            conv = -a * math.radians(38)
+            conv = -a * math.radians(b.get("conv", 38))
             ang = ang_head + conv + rng.normal() * math.radians(6)
             dd = d[i] * math.cos(ang) + nrm[i] * math.sin(ang)
-            ln = (0.55 + 0.5 * rng.random()) * max(w[i], 0.012) * 1.6
+            ln = (0.55 + 0.5 * rng.random()) * max(w[i], 0.012) * 1.6 * hair_len
             if b["shape"] == "longevity" and t > 0.6:
                 ln *= 1.8
                 dd = dd + np.array([0.0, -0.6 * (t - 0.6)])
@@ -404,17 +413,18 @@ class Face:
             Qh = self.P(pts[:, 0] * s, pts[:, 1], lift=0.007)
             wid = np.array([0.55, 0.6, 0.55, 0.45, 0.3, 0.12]) * 0.75
             al = (0.55 + 0.4 * rng.random()) * fade[i]
-            if alt_c is not None and rng.random() < 0.3:
+            if alt_c is not None and rng.random() < (0.45 if col == "white" else 0.3):
                 strokes2.append((Qh, wid, al * 0.8))
             else:
                 strokes.append((Qh, wid, al))
         vm = float(v.mean())
-        if strokes:
-            mk = self.cv.strokes_mask(strokes, soft=0.25)
-            self.cv.apply(mk, hair_c, "paint", 0.9 * vm, ink=0.8)
-        if strokes2:
-            mk = self.cv.strokes_mask(strokes2, soft=0.25)
-            self.cv.apply(mk, alt_c, "paint", 0.85 * vm, ink=0.5)
+        light_first = col == "white"
+        seq = [(strokes2, alt_c, 0.85), (strokes, hair_c, 0.92)] if light_first else \
+            [(strokes, hair_c, 0.9), (strokes2, alt_c, 0.85)]
+        for sk, cc, aa in seq:
+            if sk:
+                mk = self.cv.strokes_mask(sk, soft=0.25)
+                self.cv.apply(mk, cc, "paint", aa * vm, ink=0.6)
 
     # ------------------------------------------------------------------------------- nose
     def nose(self):

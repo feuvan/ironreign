@@ -23,6 +23,53 @@ from ironart import scene as S
 import silk as silkmod
 
 
+# pigment granulation: two noise fields in canvas space.  The fine one follows only x, y (the
+# silk weave the pigment settles into, identical for every layer); the medium one also follows
+# depth, so every wash layer is laid a little unevenly in its own way.
+PAINT_K = 0.50        # mineral colour: +-5 % value variation at grain 1
+GLAZE_K = 1.40        # washes: opacity varies +-15 % at grain 1 (granulating water colour)
+
+
+def _grain_socket(nt):
+    """Node chain -> socket g (zero-mean noise, ~0.1 std) times the per-vertex grain amount."""
+    tc = nt.nodes.new("ShaderNodeTexCoord")
+    flat = nt.nodes.new("ShaderNodeVectorMath")
+    flat.operation = "MULTIPLY"
+    flat.inputs[1].default_value = (1.0, 1.0, 0.0)
+    nt.links.new(tc.outputs["Object"], flat.inputs[0])
+    n1 = nt.nodes.new("ShaderNodeTexNoise")
+    n1.inputs["Scale"].default_value = 1.25
+    n1.inputs["Detail"].default_value = 1.0
+    n1.inputs["Roughness"].default_value = 0.5
+    nt.links.new(flat.outputs[0], n1.inputs["Vector"])
+    n2 = nt.nodes.new("ShaderNodeTexNoise")
+    n2.inputs["Scale"].default_value = 0.075
+    n2.inputs["Detail"].default_value = 3.0
+    n2.inputs["Roughness"].default_value = 0.55
+    nt.links.new(tc.outputs["Object"], n2.inputs["Vector"])
+    a1 = nt.nodes.new("ShaderNodeMath")
+    a1.operation = "MULTIPLY_ADD"
+    a1.inputs[1].default_value = 0.9
+    a1.inputs[2].default_value = -0.45
+    nt.links.new(n1.outputs["Fac"], a1.inputs[0])
+    a2 = nt.nodes.new("ShaderNodeMath")
+    a2.operation = "MULTIPLY_ADD"
+    a2.inputs[1].default_value = 0.8
+    nt.links.new(n2.outputs["Fac"], a2.inputs[0])
+    nt.links.new(a1.outputs[0], a2.inputs[2])
+    sub = nt.nodes.new("ShaderNodeMath")
+    sub.operation = "SUBTRACT"
+    nt.links.new(a2.outputs[0], sub.inputs[0])
+    sub.inputs[1].default_value = 0.40
+    at = nt.nodes.new("ShaderNodeAttribute")
+    at.attribute_name = "grain"
+    mul = nt.nodes.new("ShaderNodeMath")
+    mul.operation = "MULTIPLY"
+    nt.links.new(sub.outputs[0], mul.inputs[0])
+    nt.links.new(at.outputs["Fac"], mul.inputs[1])
+    return mul.outputs[0]
+
+
 def _material_paint():
     m = bpy.data.materials.new("paint")
     m.use_nodes = True
@@ -32,12 +79,22 @@ def _material_paint():
     out = nt.nodes.new("ShaderNodeOutputMaterial")
     vc = nt.nodes.new("ShaderNodeVertexColor")
     vc.layer_name = "col"
+    gs = _grain_socket(nt)
+    k = nt.nodes.new("ShaderNodeMath")
+    k.operation = "MULTIPLY_ADD"
+    k.inputs[1].default_value = PAINT_K
+    k.inputs[2].default_value = 1.0
+    nt.links.new(gs, k.inputs[0])
+    sc = nt.nodes.new("ShaderNodeVectorMath")
+    sc.operation = "SCALE"
+    nt.links.new(vc.outputs["Color"], sc.inputs[0])
+    nt.links.new(k.outputs[0], sc.inputs["Scale"])
     tr = nt.nodes.new("ShaderNodeBsdfTransparent")
     tr.inputs["Color"].default_value = (1, 1, 1, 1)
     em = nt.nodes.new("ShaderNodeEmission")
     em.inputs["Strength"].default_value = 1.0
     mx = nt.nodes.new("ShaderNodeMixShader")
-    nt.links.new(vc.outputs["Color"], em.inputs["Color"])
+    nt.links.new(sc.outputs["Vector"], em.inputs["Color"])
     nt.links.new(vc.outputs["Alpha"], mx.inputs["Fac"])
     nt.links.new(tr.outputs[0], mx.inputs[1])
     nt.links.new(em.outputs[0], mx.inputs[2])
@@ -54,11 +111,22 @@ def _material_glaze():
     out = nt.nodes.new("ShaderNodeOutputMaterial")
     vc = nt.nodes.new("ShaderNodeVertexColor")
     vc.layer_name = "col"
+    gs = _grain_socket(nt)
+    k = nt.nodes.new("ShaderNodeMath")
+    k.operation = "MULTIPLY_ADD"
+    k.inputs[1].default_value = GLAZE_K
+    k.inputs[2].default_value = 1.0
+    nt.links.new(gs, k.inputs[0])
+    am = nt.nodes.new("ShaderNodeMath")
+    am.operation = "MULTIPLY"
+    am.use_clamp = True
+    nt.links.new(vc.outputs["Alpha"], am.inputs[0])
+    nt.links.new(k.outputs[0], am.inputs[1])
     mixc = nt.nodes.new("ShaderNodeMix")
     mixc.data_type = "RGBA"
     mixc.blend_type = "MIX"
     mixc.inputs[6].default_value = (1, 1, 1, 1)      # A
-    nt.links.new(vc.outputs["Alpha"], mixc.inputs[0])
+    nt.links.new(am.outputs[0], mixc.inputs[0])
     nt.links.new(vc.outputs["Color"], mixc.inputs[7])  # B
     tr = nt.nodes.new("ShaderNodeBsdfTransparent")
     nt.links.new(mixc.outputs[2], tr.inputs["Color"])
@@ -84,7 +152,7 @@ def _material_silk(img):
 
 def build_mesh(cv):
     """Concatenate all primitives into numpy buffers for one Blender mesh."""
-    verts, cols, loops, starts, totals, mats = [], [], [], [], [], []
+    verts, cols, loops, starts, totals, mats, grains = [], [], [], [], [], [], []
     nv = 0
     nl = 0
     for p in cv.prims:
@@ -101,6 +169,7 @@ def build_mesh(cv):
             C[:, :3] = p.col[None, :]
         C[:, 3] = np.clip(p.Al, 0, 1)
         cols.append(C)
+        grains.append(np.full(n, float(p.grain)))
         mi = 0 if p.mode == "paint" else 1
         if p.ngon:
             loops.append(np.arange(n, dtype=np.int64) + nv)
@@ -118,7 +187,7 @@ def build_mesh(cv):
             nl += 3 * k
         nv += n
     return (np.vstack(verts), np.vstack(cols), np.concatenate(loops), np.concatenate(starts),
-            np.concatenate(totals), np.concatenate(mats))
+            np.concatenate(totals), np.concatenate(mats), np.concatenate(grains))
 
 
 def render(cv, out_png, ss=3, samples=5, silk_seed=1, threads=None):
@@ -158,7 +227,7 @@ def render(cv, out_png, ss=3, samples=5, silk_seed=1, threads=None):
     me.materials.append(_material_silk(img))
 
     # painting
-    V, C, L, ST, TT, M = build_mesh(cv)
+    V, C, L, ST, TT, M, G = build_mesh(cv)
     me = bpy.data.meshes.new("art")
     me.vertices.add(len(V))
     me.vertices.foreach_set("co", V.astype(np.float32).ravel())
@@ -171,6 +240,8 @@ def render(cv, out_png, ss=3, samples=5, silk_seed=1, threads=None):
     me.polygons.foreach_set("material_index", M.astype(np.int32))
     ca = me.color_attributes.new("col", "FLOAT_COLOR", "POINT")
     ca.data.foreach_set("color", C.astype(np.float32).ravel())
+    ga = me.attributes.new("grain", "FLOAT", "POINT")
+    ga.data.foreach_set("value", G.astype(np.float32))
     me.materials.append(_material_paint())
     me.materials.append(_material_glaze())
     ob = bpy.data.objects.new("art", me)

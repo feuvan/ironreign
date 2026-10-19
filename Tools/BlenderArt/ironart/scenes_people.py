@@ -349,6 +349,10 @@ def figure(mb, rng, pose="stand", outfit="soldier", cloth=0, cloth2=1, height=1.
          [0.05 * s, 0.045 * s], "Skin", n=8, caps=False)
     hr = sk.B["head_r"]
     ellipsoid(mb, sk.head, (hr * 0.86, hr * 0.95, hr * 1.12), "Skin", 12, 9, rot=sk.Rh)
+    # a small nose so a head seen in profile reads as a face, not a blank oval
+    hf = sk.Rh @ Vector((0, -1, 0))
+    hu = sk.Rh @ Vector((0, 0, 1))
+    ellipsoid(mb, sk.head + hf * hr * 0.93 - hu * hr * 0.14, (hr * 0.13, hr * 0.22, hr * 0.26), "Skin", 8, 6, rot=sk.Rh)
     # hair / headwear
     Rh = sk.Rh
     hup = Rh @ Vector((0, 0, 1))
@@ -359,6 +363,9 @@ def figure(mb, rng, pose="stand", outfit="soldier", cloth=0, cloth2=1, height=1.
         # forehead instead of running down the cheeks
         ellipsoid(mb, sk.head + hup * hr * 0.3 - hfwd * hr * 0.16,
                   (hr * 0.9, hr * 0.9, hr * 0.92), "Hair", 12, 8, rot=Rh)
+        # hair down the back of the head to the nape (reads in profile and from behind)
+        ellipsoid(mb, sk.head - hfwd * hr * 0.32 - hup * hr * 0.12,
+                  (hr * 0.84, hr * 0.7, hr * 0.86), "Hair", 12, 8, rot=Rh)
     if hat in (None, "topknot", "band", "guan", "crown"):
         ellipsoid(mb, sk.head + hup * hr * 1.08 - hfwd * hr * 0.1, (hr * 0.38, hr * 0.38, hr * 0.42),
                   "Hair", 8, 6, rot=Rh)

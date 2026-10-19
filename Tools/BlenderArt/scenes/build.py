@@ -54,12 +54,42 @@ def opt(name, default=None, cast=str):
     return default
 
 
+def rss_mb():
+    """(current, peak) resident memory of this process in MB."""
+    cur = peak = 0.0
+    try:
+        with open("/proc/self/status") as f:
+            for line in f:
+                if line.startswith("VmRSS:"):
+                    cur = int(line.split()[1]) / 1024.0
+                elif line.startswith("VmHWM:"):
+                    peak = int(line.split()[1]) / 1024.0
+    except OSError:
+        pass
+    return cur, peak
+
+
+def free_scene():
+    """Drop the built scene (objects, meshes, materials, node groups, images) once its passes are
+    on disk, so the numpy composite does not stack on top of the render's memory (the 3840x2160
+    title otherwise peaks above the machine's memory)."""
+    import gc
+    import bpy
+    for coll in (bpy.data.objects, bpy.data.meshes, bpy.data.materials, bpy.data.node_groups,
+                 bpy.data.images, bpy.data.cameras, bpy.data.lights, bpy.data.linestyles):
+        items = list(coll)
+        if items:
+            bpy.data.batch_remove(items)
+    gc.collect()
+
+
 class Timer:
     def __init__(self):
         self.t = {}
         self._t0 = time.time()
 
     def lap(self, name):
+        print("[scenes] %s done, RSS %.0f MB (peak %.0f MB)" % ((name,) + rss_mb()))
         now = time.time()
         self.t[name] = round(now - self._t0, 1)
         self._t0 = now
@@ -108,6 +138,10 @@ def run_one(name, out_dir, preview=None, spp=None, save=True):
     if d.get("paint2d"):
         d["paint2d"](cv, r)
     look = dict(d.get("look", {}))
+    notes = d.get("notes", "")
+    d = None
+    free_scene()
+    t.lap("free")
     master_size = (int(round(W1 * m)), int(round(H1 * m)))
     res = GB.composite(ps, look, seed=seed, overlays=cv, master_size=master_size, k=k, m=m)
     master = res["master"]
@@ -129,7 +163,7 @@ def run_one(name, out_dir, preview=None, spp=None, save=True):
     q = qa(one)
     print("[scenes] QA %s %s" % (name, json.dumps(q)))
     info = dict(scene=name, render_s=round(secs, 1), times=t.t, samples=samples, render_size=[rw, rh],
-                qa=q, outputs=outputs, notes=d.get("notes", ""))
+                qa=q, outputs=outputs, notes=notes)
     print("[scenes] %s" % json.dumps(info))
     return info
 

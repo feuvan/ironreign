@@ -123,9 +123,19 @@ class Helmet:
         cv.fill(poly, metal, 1.0, "paint")
         # modelling: light from the upper left, dark on the right and at the rim
         cen = poly.mean(0)
-        hl_c = sh.P(-0.55, 0.55)
-        cv.blob(hl_c, s * 0.16, s * 0.10, "white", 0.35, rot=-0.5, mode="paint")
-        cv.blob(sh.P(-0.4, 0.75), s * 0.05, s * 0.03, "white", 0.5, rot=-0.3, mode="paint")
+        # lit plane of the bowl laid as a pale wash band, and a few brushed highlight strokes
+        # along the curvature (painted light, not an airbrushed specular)
+        light = pal.hexs(pal.mix(metal, "white", 0.55))
+        for k, (lat0, lat1, al) in enumerate(((0.35, 1.05, 0.30), (0.55, 0.95, 0.45))):
+            lon = -0.55 - 0.08 * k
+            lats = np.linspace(lat0, lat1, 14)
+            P = sh.P(np.full_like(lats, lon), lats, 0.003)
+            cv.stroke(P, s * (0.05 if k == 0 else 0.018), light, al, prof="orchid",
+                      taper=(0.4, 0.6), grain=1.0)
+        for lo_, la0, la1, w_ in ((-0.80, 0.30, 0.80, 0.008), (-0.30, 0.55, 1.10, 0.006)):
+            lats = np.linspace(la0, la1, 10)
+            P = sh.P(np.full_like(lats, lo_), lats, 0.004)
+            cv.stroke(P, s * w_, "white", 0.55, prof="orchid", taper=(0.3, 0.7))
         cv.edge(poly[len(front):], s * 0.07, "ink", 0.45, side=_inward(poly[len(front):], poly), rows=6)
         cv.edge(front, s * 0.05, "ink", 0.35, side=_inward(front, poly), rows=4)
         # ridges (盔梁): gold bands from rim to crown
@@ -261,10 +271,13 @@ class Helmet:
 
 
 def lamellar(cv, top, bot, rows, cols, color, s, lace="cinnabar", rng=None, row_light=0.22,
-             line="ink"):
-    """Rows of small plates (札甲) between curves top and bot: each row lit at its upper edge,
-    shaded at the lower, staggered plate seams, red lacing at the joints."""
+             line="ink", light=None):
+    """Rows of small plates (札甲) between curves top and bot: each plate with its own slight
+    tone, lit at its upper edge and shaded at its rounded lower edge; staggered seams, lacing
+    knots at the joints."""
     rng = rng or np.random.default_rng(0)
+    light = light or pal.hexs(pal.mix(color, "white", 0.45))
+    dark = pal.hexs(pal.mix(color, "ink", 0.6))
     n = max(len(top), len(bot), 30)
     T = g.resample(top, n)
     B = g.resample(bot, n)
@@ -272,23 +285,35 @@ def lamellar(cv, top, bot, rows, cols, color, s, lace="cinnabar", rng=None, row_
         t0, t1 = r / rows, (r + 1) / rows
         A_ = T + (B - T) * t0
         B_ = T + (B - T) * t1
-        cv.band(A_, B_, "white", lambda S, Tt: row_light * (1 - Tt) ** 2, mode="paint", rows=3)
-        cv.band(A_, B_, "ink", lambda S, Tt: 0.40 * Tt ** 2, rows=3)
-        cv.stroke(B_, s * 0.0035, line, 0.85, prof="iron", caps=False)
+        cv.band(A_, B_, light, lambda S, Tt: row_light * 2.2 * (1 - Tt) ** 2.5, mode="paint", rows=3,
+                grain=1.0)
         off = 0.5 * (r % 2)
-        L = g.length(A_)
         k = max(3, int(cols))
-        for c in range(k + 1):
-            u = (c + off) / k
-            if u <= 0.01 or u >= 0.99:
+        us = [(c + off) / k for c in range(-1, k + 2)]
+        us = [min(1.0, max(0.0, u + rng.uniform(-0.12, 0.12) / k)) for u in us]
+        us = sorted(set(us))
+        for a, b in zip(us[:-1], us[1:]):
+            if b - a < 0.2 / k:
                 continue
-            p = g.at(A_, u)
-            q = g.at(B_, u)
-            cv.stroke(np.array([p + (q - p) * 0.05, q]), s * 0.0028, line, 0.75, prof="iron")
-            if lace and (c + r) % 2 == 0:
-                m = p + (q - p) * 0.72
-                cv.stroke(np.array([m - (q - p) * 0.08, m + (q - p) * 0.08]), s * 0.0045, lace,
-                          0.85, prof="flat")
+            # rounded lower edge of the plate and a per-plate tone
+            pa, pb = g.at(B_, a), g.at(B_, b)
+            qa, qb = g.at(A_, a), g.at(A_, b)
+            h = (pa - qa)
+            mid = (pa + pb) / 2 + h * 0.10
+            arc = g.catmull([pa - h * 0.08, mid, pb - h * 0.08], 4)
+            tone = rng.uniform(-1, 1)
+            if abs(tone) > 0.35:
+                quad = np.array([qa, qb, pb - h * 0.08, mid, pa - h * 0.08])
+                cv.fill(quad, light if tone > 0 else dark, 0.10 + 0.08 * abs(tone), "paint", grain=1.0)
+            cv.stroke(arc, s * 0.0055, dark, 0.35, mode="glaze", prof="orchid")
+            cv.stroke(arc, s * 0.0036, line, 0.85, prof="orchid", taper=(0.3, 0.7), noise=0.12)
+            cv.stroke(np.array([qa + h * 0.05, pa - h * 0.05]), s * 0.003, line, 0.70,
+                      prof="iron", noise=0.1)
+            if lace and rng.uniform() < 0.55:
+                m = qa + h * 0.70
+                d = (pb - pa) * 0.12
+                cv.stroke(np.array([m - d * 0.5, m + d * 0.5]), s * 0.0050, lace, 0.9,
+                          prof="flat", noise=0.1)
 
 
 # ------------------------------------------------------------------------------------------
@@ -297,7 +322,7 @@ class ScholarCap:
     is parted in a V; two ribbons hang behind."""
 
     def __init__(self, fd, color="#1d1916", rim_front=0.255, rim_back=0.34, top=-0.11,
-                 outer_top=0.04, width=0.98, ribbons=True):
+                 outer_top=0.04, width=0.98, ribbons=False):
         self.fd = fd
         self.H = fd.H
         self.s = fd.H.s
@@ -340,7 +365,7 @@ class ScholarCap:
         bottom = H.proj(xb, self._rim_y(lv), zb)
         topl = H.proj(xt, yt, zt)
         poly = np.vstack([bottom, topl[::-1]])
-        cv.fill(poly, self.color, 0.95, "paint")
+        cv.fill(poly, self.color, 0.985, "paint")
         # gauze: fine diagonal threads catching the light
         n = 26
         for k in range(n):
@@ -358,8 +383,8 @@ class ScholarCap:
                 p1 = H.proj(xct, ytop_fn(np.array([lc])) + (notch * math.exp(-(lc / 0.22) ** 2) if notch else 0), zct)[0]
                 cv.stroke(np.array([p0, p1]), s * 0.004, "#8a8279", 0.55, prof="iron")
         # light from the left: a soft sheen on the left part; dark at the rim
-        cv.band(bottom, topl, "white", lambda S, T: 0.10 * (1 - S) ** 2 * np.sin(np.pi * T),
-                mode="paint", rows=3)
+        cv.band(bottom, topl, "ink_l", lambda S, T: 0.30 * (1 - S) ** 2 * np.sin(np.pi * T),
+                mode="paint", rows=3, grain=1.0)
         cv.edge(bottom, s * 0.03, "ink", 0.35, side=_inward(bottom, poly), rows=3)
         cv.stroke(topl, s * 0.004, "#7d756c", 0.6, prof="iron")
         cv.stroke(np.vstack([poly, poly[:1]]), s * 0.005, "ink", 0.95, prof="iron", caps=False)
@@ -384,19 +409,30 @@ class ScholarCap:
 
 # ------------------------------------------------------------------------------------------
 def small_crown(cv, fd, bun_shell, color="gold", pin="gold"):
-    """小冠 over the topknot with a hairpin (簪) through it."""
+    """小冠: a small crown cupping the topknot, with ridges (梁) and a hairpin (簪) through it."""
     H, s = fd.H, fd.H.s
     c = bun_shell.c
-    cr = Shell(H, (c[0], c[1] + 0.01, c[2]), bun_shell.r * np.array([1.12, 1.05, 1.12]))
-    O = cr.outline(0.0, n=48, keep=lambda x, y, z: y < c[1] + 0.035)
-    cv.fill(O, color, 1.0, "paint")
-    cv.edge(O, s * 0.02, "ink", 0.35, side=_inward(O, O), rows=3, closed=True)
-    cv.stroke(np.vstack([O, O[:1]]), s * 0.004, "ink", 0.9, prof="iron", caps=False)
-    a = H.Pz([(c[0] - 0.16, c[1] - 0.01, c[2] + 0.03)])[0]
-    b = H.Pz([(c[0] + 0.16, c[1] - 0.025, c[2] - 0.02)])[0]
-    cv.stroke(np.array([a, b]), s * 0.009, pin, 1.0, prof="flat")
+    cr = Shell(H, (c[0], c[1] - 0.006, c[2]), bun_shell.r * np.array([1.22, 1.30, 1.22]))
+    O = cr.outline(0.0, n=56, keep=lambda x, y, z: y < c[1] + 0.03)
+    dark = pal.hexs(pal.mix(color, "ink", 0.45))
+    light = pal.hexs(pal.mix(color, "white", 0.40))
+    cv.fill(O, color, 1.0, "paint", grain=1.0)
+    cv.edge(O, s * 0.022, dark, 0.45, side=_inward(O, O), rows=3, closed=True)
+    for lo in (-0.7, 0.0, 0.7):
+        lat = np.linspace(-0.25, 1.35, 16)
+        vis = cr.facing(np.full_like(lat, lo), lat) > 0.05
+        if vis.sum() > 3:
+            P = cr.P(np.full(vis.sum(), lo), lat[vis], 0.002)
+            cv.stroke(P, s * 0.005, dark, 0.8, prof="orchid")
+            cv.stroke(P + np.array([-s * 0.004, 0]), s * 0.003, light, 0.7, prof="orchid")
+    cv.brush(np.vstack([O, O[:1]]), s * 0.0055, "ink", style="iron", alpha=0.9, caps=False)
+    a = H.Pz([(c[0] - 0.20, c[1] + 0.005, c[2] + 0.03)])[0]
+    b = H.Pz([(c[0] + 0.20, c[1] - 0.012, c[2] - 0.02)])[0]
+    cv.stroke(np.array([a, b]), s * 0.010, pin, 1.0, prof="flat")
     cv.stroke(np.array([a, b]) + [0, -s * 0.003], s * 0.003, "gold_l", 0.9, prof="flat")
-    cv.dot(a, s * 0.010, pin, 1.0)
+    cv.dot(a, s * 0.013, pin, 1.0)
+    cv.dot(a - s * 0.004, s * 0.005, "gold_l", 0.9)
+    cv.dot(b, s * 0.009, pin, 1.0)
 
 
 def headband(cv, fd, color="cinnabar", y=0.255, width=0.05, tails=True):
@@ -420,3 +456,67 @@ def headband(cv, fd, color="cinnabar", y=0.255, width=0.05, tails=True):
             pts = [k, k + np.array([-far * s * (0.06 + 0.03 * j), s * (0.08 + 0.02 * j)]),
                    k + np.array([-far * s * (0.08 + 0.05 * j), s * (0.20 + 0.04 * j)])]
             cv.stroke(g.catmull(pts, 8), s * 0.03, color, 1.0, prof="tail", taper=(0.05, 0.8))
+
+
+# ------------------------------------------------------------------------------------------
+def fur_hat(cv, fd, color="#7a5a36", fur="#8a6a48", trim="gold", tassel="cinnabar",
+            rim_front=0.27, rim_back=0.36, seed=0):
+    """Steppe fur hat (皮帽): a brocade dome with gilt seams and a knob, over a deep fur brim
+    rolled round the head; the fur is painted as a soft mass with combed tufts (丝毛)."""
+    H, s = fd.H, fd.H.s
+    rng = np.random.default_rng(seed + 61)
+    w = H.sh["width"]
+    dome = Shell(H, (0.0, 0.24, -0.03), (0.335 * w, 0.30, 0.47))
+    dark = pal.hexs(pal.mix(color, "ink", 0.5))
+    O = dome.outline(0.0, n=72, keep=lambda x, y, z: y <= rim_front + 0.02)
+    cv.fill(O, color, 1.0, "paint", grain=1.0)
+    cv.edge(O, s * 0.06, dark, 0.45, side=_inward(O, O), rows=4, closed=True)
+    for lo in (-1.1, -0.35, 0.35, 1.1):
+        lat = np.linspace(0.15, 1.45, 24)
+        vis = dome.facing(np.full_like(lat, lo), lat) > 0.05
+        if vis.sum() < 4:
+            continue
+        P = dome.P(np.full(vis.sum(), lo), lat[vis], 0.003)
+        cv.stroke(P, s * 0.007, trim, 0.95, prof="iron", grain=1.0)
+    top = dome.P(0.0, math.pi / 2 - 0.01, 0.0)
+    cv.dot(top, s * 0.024, trim, 1.0)
+    cv.dot(top - s * 0.007, s * 0.008, "gold_l", 0.9)
+    for k in range(9):
+        a = top + np.array([0, s * 0.01])
+        b = a + np.array([(k - 4) * s * 0.012, s * rng.uniform(0.05, 0.08)])
+        cv.stroke(np.array([a, (a + b) / 2, b]), s * 0.006, tassel, 0.9, prof="hair")
+    cv.brush(np.vstack([O, O[:1]]), s * 0.007, "ink", style="iron", caps=False)
+    # fur brim: band round the head between two rims, puffed out
+    lon = np.linspace(-2.6, 2.6, 90)
+    yr = rim_front + (rim_back - rim_front) * (1 - np.cos(lon)) / 2
+    vis = H.facing_lon(lon, yr, 0.08) > -0.35
+    lon, yr = lon[vis], yr[vis]
+    up = H.Plon(lon, yr - 0.075, 0.075)
+    lo_ = H.Plon(lon, yr + 0.035, 0.085)
+    fd_ = pal.hexs(pal.mix(fur, "ink", 0.45))
+    fl_ = pal.hexs(pal.mix(fur, "white", 0.35))
+    cv.band(up, lo_, fur, 1.0, mode="paint", rows=3, grain=1.0)
+    cv.band(up, lo_, fd_, lambda S, T: 0.55 * (np.abs(T - 0.45) * 2) ** 2 * 0.8, rows=5)
+    cv.band(up, lo_, fl_, lambda S, T: 0.35 * np.exp(-((T - 0.35) / 0.18) ** 2), mode="paint", rows=5)
+    # tufts along both edges and over the body of the brim (combed, soft)
+    n = len(up)
+    for i in range(520):
+        t = rng.uniform(0, 1)
+        k = int(t * (n - 1))
+        v = rng.uniform(0, 1)
+        p = up[k] * (1 - v) + lo_[k] * v
+        d = (lo_[k] - up[k])
+        d = d / (np.linalg.norm(d) + 1e-9)
+        tang = np.array([-d[1], d[0]])
+        if v < 0.2:
+            dirn = -d * 0.8 + tang * rng.normal(0, 0.5)
+        elif v > 0.8:
+            dirn = d * 0.8 + tang * rng.normal(0, 0.5)
+        else:
+            dirn = tang * rng.choice([-1, 1]) + d * rng.normal(0, 0.4)
+        ln = s * rng.uniform(0.018, 0.04)
+        q = p + dirn / (np.linalg.norm(dirn) + 1e-9) * ln
+        col = [fd_, fur, fl_][rng.choice(3, p=[0.35, 0.35, 0.30])]
+        cv.stroke(np.array([p, (p + q) / 2 + tang * ln * 0.1, q]), s * 0.0045, col,
+                  rng.uniform(0.5, 0.9), prof="hair", noise=0.1)
+    return O

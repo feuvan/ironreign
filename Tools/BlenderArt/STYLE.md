@@ -490,37 +490,60 @@ runtime). Water / Ford / Bridge use `materials.water`; Wall, Gate, Castle and To
   side, each through the portrait QA) and review `portrait_archetypes.png`.
 - Same rig, background recipe and framing for every portrait, so a gallery reads as one set.
 
-**Icons (64x64).** Recipe `icon`: one prop per icon, sprite camera, centred, 4 px margins, ink
-0.75, no ground shadow.
+**Icons (64x64, @2x masters 128x128).** Gongbi object plates. The family recipe lives in
+`ironart/icons_gongbi.RECIPE` (the generic `icon` row above is the pre-gongbi default and is
+not used): one orthographic 3/4 camera for the set (elevation 28, azimuth -24), subject fitted
+to the keyline box (5, 5, 59, 59), emission pigments (no lights), Freestyle ink as a pass
+(outer 1.25 / inner 0.62 px at 64, tinted by the colour it bounds), region 分染, pigment on
+silk, a faint silk-tone halo; rendered at 1024 and Lanczos-downsampled. Painted motifs (flames,
+clouds, brush-stroke arrows) are drawn in 2D and extruded (`ironart/icons_shapes.py`).
+`Tools/BlenderArt/render.sh Tools/BlenderArt/icons/build.py` rebuilds all 40.
 
 **Fx_* (96x96).** Recipe `fx`: emission only, straight-alpha Kuwahara, no shadow, no edge bleed
 beyond 2 px.
 
 **UI (gongbi mounting, 装裱).** The UI chrome family (`ui_chrome/build.py`) paints every piece as
-layers on an `ironart.ui_chrome_paint.Canvas` (numpy, 4x the @1x size, 1 px = 1 mm): silk grounds,
-azurite brocade, mud-gold (泥金) rules, ruled ink lines, ivory 隔水 strips and 晕染 washes. Cycles
-renders the layers as one unlit orthographic emission plate (`ironart.ui_chrome_flat.plate`: Box
-filter, texel-exact, no light, no shadow, no specular); the scroll rollers are real lathe meshes
-in a toon pass (emission graded by the facing ratio) with Freestyle ink. The @2x masters and the
-@1x art are premultiplied Lanczos downsamples of the same render.
+layers on an `ironart.ui_chrome_paint.Canvas` (numpy, 4x the @1x size, 1 px = 1 mm) from the
+material models of `ironart.ui_chrome_gongbi` and the drawn ornaments of
+`ironart.ui_chrome_ornament`. Cycles renders the layers as one unlit orthographic emission plate
+(`ironart.ui_chrome_flat.plate`: texel-exact, no light, no shadow, no specular); the scroll
+rollers are real lathe meshes in a toon pass (emission graded by the facing ratio) with Freestyle
+ink. The @2x masters and the @1x art are premultiplied **box** downsamples of the same render
+(exact pixel coverage: rules drawn on the @1x pixel grid stay crisp, nothing rings).
 
+- **Materials (`ui_chrome_gongbi`).** `silk_weave` (plain weave: per-thread warp/weft tone,
+  interlacing checker, slubs), `silk_ground` (weave + ageing mottle + tea stains), `strip_threads`
+  (the same reduced to the distance across a 9-slice strip), `brocade` (twill ground + weft-float
+  figure with binding points and a contour thread), `mineral` (granulation, edge pooling, 晕染),
+  `mud_gold` (powder grain, paler flakes, rim pooling - never metallic), `ink_density`,
+  `glyph_mask` (Pillow/FreeType at the grid resolution), `direction_field` + `lic` (bristle
+  streaks along the stroke for brush calligraphy and 飞白), `subcanvas` (paint small motifs on a
+  view of the canvas).
+- **Ornaments (`ui_chrome_ornament`).** Bezier outlines turned into exact SDFs, parts kept
+  separate so silhouettes read at 10-20 px: `rosette` (柿蒂), `ruyi` (如意云头), `xiangyun`
+  (祥云 cloud with engraved curls), `volute` / `taper` strokes; the running cloud scroll is
+  `frame_portrait.scroll_strokes`, the seal impression `seal.impression` (also used by the logo).
 - **9-slice rule.** Everything in a border strip is a function of the distance across the strip
   (mitred `inset_distance` or Chebyshev `cheb_box` / `notched_window` offsets), so Slate can
   stretch it; patterned brocade lives in the corners and in pieces that are not 9-sliced
   (Frame_Portrait, the scroll's top/bottom borders, which the ~1040 px dialog never stretches
-  by more than 1.02x). Fine fibre texture is never put in a 9-slice centre (Slate stretches it
-  up to ~8x); only a large faint ageing mottle, faded out before the 9-slice boundary.
-- **Panel.** Paper silk field, slim mount within 10.2 px: ink binding, azurite brocade, mud-gold
-  rule, ink rule, ivory strip, hairline; square-notched (委角) corners with a mud-gold 柿蒂 flower.
-- **PanelDark.** Ink silk `#1E1A16` with a faint umber glow, umber edge silk, mud-gold rule and
-  hairline, mud-gold ruyi heads (如意云头) in the corners.
+  by more than 1.02x). Fine texture is never put in a panel/button 9-slice centre (Slate
+  stretches it up to ~8x); only a large faint ageing mottle, faded out before the 9-slice
+  boundary. Abutting anti-aliased bands get an opaque underlay (no alpha seams).
+- **Panel.** Paper silk field, mount within 10 px: ink binding, azurite brocade, mud-gold rule,
+  ink rule, ivory strip, hairline (rules on the @1x pixel grid); square-notched (委角) corners
+  with brocade corner blocks carrying a woven rosette.
+- **PanelDark.** Ink silk `#1D1814` with a faint umber glow, umber edge silk, mud-gold double
+  rule, mud-gold ruyi cloud scrolls (如意云头 + tendrils) in the corners.
 - **Button.** Cinnabar plaque with concave corners, ink outline, 晕染 into the outline, mud-gold
-  inner rule. Hover towards vermilion with a soft gold wash, pressed deeper with an inset double
-  rule, disabled an ink-grey wash. Label contrast is asserted (TextLight >= 3:1).
+  inner rule with a lead-white hairline (提白) and small ruyi corners. Hover towards vermilion
+  with a soft gold wash, pressed deeper with an inset double rule, disabled an ink-grey wash.
+  Label contrast is asserted (TextLight >= 3:1).
 - **Tab.** Light silk with an azurite (active: cinnabar) brocade edge; labels must be dark (Ink).
-- **Ornament vocabulary.** `ui_chrome_motifs.ruyi` / `cloud`, running cloud scroll
-  (`frame_portrait.scroll_strokes`), 柿蒂 flower (`panel.flower`), seal impression
-  (`seal.impression`, also used by the logo).
+- **Frame_Portrait / Scroll / Divider / Seal / Title_Logo.** Woven cloud-scroll brocade; hand
+  scroll with xiangyun brocade, celadon 隔水 and lathe rollers; ruyi-volute knot with a cinnabar
+  jewel; 白文 seal 铁血 with ink-pad texture; brush calligraphy 铁血王座 with 飞白 behind a
+  mud-gold IRON REIGN (ink outline, calligraphy knocked out around it) and the seal.
 
 ## 12. QA
 

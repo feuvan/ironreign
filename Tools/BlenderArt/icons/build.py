@@ -2,6 +2,7 @@
 
     Tools/BlenderArt/render.sh Tools/BlenderArt/icons/build.py [--only A,B,...] [--preview]
                                                               [--no-save] [--out DIR]
+                                                              [--set key=value ...]
     python3 Tools/BlenderArt/icons/build.py --recomp [--only ...] [--out DIR] [--save]
                                             # re-run the 2D finishing from the saved passes
     python3 Tools/BlenderArt/icons/build.py --sheets [--out DIR]   # review sheets only
@@ -17,9 +18,12 @@ Outputs
     $OUT/timings.json, qa_last.json              render times, QA measurements
 
 Every icon is a subject modelled in 3D (``comp_*.py``: ``<Name>(M, cam) -> dict(objs, fill,
-offset)``), rendered flat with the family camera, pigments and Freestyle ink of
-:mod:`ironart.icons_gongbi` at 512 px, and finished in numpy (分染, ink, silk halo, Lanczos to
-128 and 64).  ``--preview`` renders 256 px at low samples (look-dev only, never saved).
+offset)``; painted motifs - flames, clouds, the tiger tally, brush-stroke arrows, sword-wind -
+are drawn in 2D and extruded with :mod:`ironart.icons_shapes`), rendered flat with the family
+camera, pigments and Freestyle ink of :mod:`ironart.icons_gongbi` at 1024 px, and finished in
+numpy (region 分染, pigment on silk, ink tinted by the colour it bounds, silk halo, Lanczos to
+128 and 64).  ``--preview`` renders 512 px at low samples (look-dev only, never saved);
+``--set key=value`` overrides a RECIPE number for look-dev (e.g. ``--set ink.ink.outer=1.3``).
 """
 
 import json
@@ -63,6 +67,14 @@ def _args(argv):
             a["recomp"] = True
         elif k == "--module":
             a["modules"] = argv[i + 1].split(","); i += 1
+        elif k == "--set":
+            # look-dev override of a RECIPE number, e.g. --set ink.ink.outer=1.3
+            key, val = argv[i + 1].split("=", 1); i += 1
+            d = gb.RECIPE
+            path = key.split(".")
+            for q in path[:-1]:
+                d = d[q]
+            d[path[-1]] = eval(val)
         else:
             raise SystemExit("unknown argument %r" % k)
         i += 1
@@ -189,7 +201,8 @@ def main(argv):
         json.dump({k: [[l, bool(ok), t] for l, ok, t in v] for k, v in qa_rows.items()}, f,
                   indent=1)
     if saved:
-        ver, added = gb.manifest_add(saved)
+        # re-exported masters changed content: bump the version even when no path is new
+        ver, added = gb.manifest_add(saved, bump=True)
         print("[icons] ArtSource/manifest.json version %d (+%d files)" % (ver, len(added)))
     sheets(a["out"])
     if fails:

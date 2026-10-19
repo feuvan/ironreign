@@ -46,7 +46,8 @@ def hill(X, Y):
     from ironart.scenes_terrain import fbm2
     peaks = SM.peaks(HILLS)
     far = LD.peak_field(X, Y, peaks, seed=111, ridge=0.3, ridge_scale=180.0, softmax=4.0)
-    near = (-X * 0.35 - 6.0 + (Y + 10.0) * -0.06) + (fbm2(X, Y, 12.0, 3, seed=5) - 0.5) * 2.0
+    near = (-(X + 4.0) * 0.6 - 0.6 + (Y + 10.0) * -0.09) + (fbm2(X, Y, 12.0, 3, seed=5) - 0.5) * 1.6
+    near = np.minimum(near, 2.6 + (fbm2(X, Y, 8.0, 2, seed=6) - 0.5) * 1.2)
     return np.maximum(far, near)
 
 
@@ -60,7 +61,9 @@ def flood_water():
     x, y, z = b.sep(P)
     sx, sy = GB.screen(b)
     hgt = b.maprange(z, -0.4, 1.4, 0.0, 1.0)
-    col = b.mix(GB.lin4("#7A7462"), GB.lin4("#B8B09A"), hgt)
+    col = b.mix(GB.lin4("#7A6A48"), GB.lin4("#C2AE84"), hgt)
+    # azurite-grey in the deep troughs (the storm sky in the water)
+    col = b.mix(GB.lin4("#566468"), col, b.smooth(hgt, 0.0, 0.3))
     foam = b.smooth(hgt, 0.72, 0.86)
     col = b.mix(col, GB.lin4("white"), foam)
     n = GB.wnoise(b, P, 0.08, 2.0, 0.5)
@@ -81,9 +84,9 @@ def build(r):
     mats = K.materials(cloth=["#6A665E", "#4A4844", "#9A8A70", "#3A3530", "ochre", "#E2D6BC",
                               "rouge", "teal", "#7A5A3A", "white", "vermilion", "indigo"])
     mats["Thatch"] = GB.wash("GB_Thatch", "#A89470", "#7A6648", blend=0.4)
-    land = LD.qinglv("GB_Flood_Land", z0=0.0, z1=400.0, cun=0.7, cun_px=7.0, cun_len=30.0,
-                     moss_px=9.0, var_scale=0.01, near=10.0, far=3000.0, plain_h=0.0,
-                     foot="#9A8E70", low="#8A8A6A", mid="#4E6E5E", top="#3E5468", ribs=False)
+    land = LD.qinglv("GB_Flood_Land", z0=0.0, z1=160.0, cun=0.75, cun_px=6.0, cun_len=20.0,
+                     moss_px=8.0, var_scale=0.01, near=5.0, far=3000.0, plain_h=0.0,
+                     foot="#A88E62", low="#8E8A62", mid="#4E6E5E", top="#3E5468", ribs=False)
     yaw = math.degrees(SM.yaw)
     LD.fan_terrain("Hill", CAM[:2], yaw, 66.0, 3.0, 9000.0, 440, 300, hill, land, cols["land"])
     LD.fan_terrain("Flood", CAM[:2], yaw, 66.0, 3.0, 600.0, 520 if not pv else 360, 360 if not pv else 240,
@@ -109,7 +112,7 @@ def build(r):
     K.person(ppl, random.Random(1), "cheer", "peasant", at=(p[0], p[1], 2.6), rz=math.radians(200), cloth=2, cloth2=5)
     K.person(ppl, random.Random(2), "kneel", "lady", at=(p[0] + 1.2, p[1], 2.4), rz=math.radians(170), cloth=6, cloth2=5,
              hair_long=True)
-    for (sx, sy, pose, rz, cl) in ((0.12, 0.78, "point", 40, 0), (0.20, 0.83, "stand", 20, 2), (0.07, 0.86, "despair", 60, 5)):
+    for (sx, sy, pose, rz, cl) in ((0.10, 0.80, "point", 40, 0), (0.17, 0.86, "stand", 20, 2), (0.05, 0.88, "despair", 60, 5)):
         p = SM.ground(sx, sy, 0.0)
         hz = float(hill(np.array([[p[0]]]), np.array([[p[1]]]))[0, 0])
         K.person(ppl, random.Random(int(sx * 100)), pose, "peasant", at=(p[0], p[1], max(hz, 0.0)), rz=math.radians(rz),

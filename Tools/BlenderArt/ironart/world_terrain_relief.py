@@ -46,8 +46,8 @@ SPEC = {
         peak0=44.0, peak_per_w=0.18, peak_max=60.0,
         reach_per_w=1.25, reach_per_peak=0.0,
         extend=0.45, meander=0.12, crest_w=0.85, crest_p=1.9, crest_round=14.0,
-        summit=(0.82, 0.18, 0.08), summit_len=(70.0, 30.0), end_h=0.30,
-        spur_gap=0.45, spur_len=(0.6, 1.1), spur_h=(0.66, 0.84), spur_w=(0.55, 0.40),
+        summit=(0.74, 0.28, 0.12), summit_len=(52.0, 21.0), end_h=0.30, side=(1, 2),
+        spur_gap=0.32, spur_len=(0.6, 1.1), spur_h=(0.66, 0.84), spur_w=(0.55, 0.40),
         spur_p=1.7, spur_fall=1.0, spur_angle=(10.0, 45.0), spur_bend=30.0,
         sub=(0, 1), sub_len=(0.35, 0.55), sub_angle=(30.0, 60.0), sub_h=0.8,
         smooth_k=16.0, crag=3.0, crag_scale=40.0, crag2=1.0,
@@ -200,10 +200,10 @@ def build_range(stroke, kind, index, seed, cities, city_clear, road_lines=(), pa
         sad *= 1.0 - 0.45 * np.exp(-(dd / 45.0) ** 2)
     for (a, b) in pass_lines:
         dd = _seg_dist(pts, np.asarray(a, float), np.asarray(b, float))
-        sad *= 1.0 - 0.38 * np.exp(-(dd / 55.0) ** 2)
+        sad *= 1.0 - 0.58 * np.exp(-(dd / 60.0) ** 2)
     for rl in river_lines:
         dd = _poly_dist(pts, rl)
-        sad *= 1.0 - 0.62 * np.exp(-(dd / 70.0) ** 2)
+        sad *= 1.0 - 0.55 * np.exp(-(dd / 48.0) ** 2)
     hc = hc * sad
     # the crest never runs into a city
     dc = np.full(len(pts), 1e9)
@@ -232,6 +232,26 @@ def build_range(stroke, kind, index, seed, cities, city_clear, road_lines=(), pa
         if rng.random() < 0.18:           # now and then two spurs on the same side
             side = -side
         pos += gap * rng.uniform(0.7, 1.3)
+    # ---- side crests (hill chains): shorter, lower parallel ridges beside the main one
+    if "side" in sp:
+        for k in range(int(rng.integers(sp["side"][0], sp["side"][1] + 1))):
+            sd = 1.0 if (k % 2 == 0) == (rng.random() < 0.5) else -1.0
+            off = rng.uniform(0.55, 0.85) * R
+            f0 = rng.uniform(0.05, 0.4)
+            f1 = min(1.0, f0 + rng.uniform(0.4, 0.65))
+            i0, i1 = int(f0 * (len(pts) - 1)), int(f1 * (len(pts) - 1))
+            if i1 - i0 < 6:
+                continue
+            q = pts[i0:i1] + nrm[i0:i1] * sd * off
+            q = F.meander(q, 0.12 * R, seed + 40 + k, step=4.0, fade=0.3 * R)
+            uq = F.arclen(q)
+            hq = np.interp(np.linspace(i0, i1 - 1, len(q)), np.arange(len(pts)), hc) * rng.uniform(0.5, 0.78)
+            hq = hq * T.smoothstep(0.0, 0.3 * uq[-1], uq) * T.smoothstep(uq[-1], 0.7 * uq[-1], uq)
+            hq = hq * (0.85 + 0.3 * _noise1(uq, 40.0, seed + 50 + k))
+            dq = _dist_to_cities(q, cities)
+            hq = hq * T.smoothstep(40.0, 110.0, dq)
+            ridges.append(Ridge(q, hq, np.full(len(q), 0.75 * sp["crest_w"] * R), sp["crest_p"],
+                                sp["crest_round"], 1))
     # ---- knolls (foothill domes) in front of the flanks
     knolls = []
     nk = int(rng.integers(sp["knolls"][0], sp["knolls"][1] + 1))

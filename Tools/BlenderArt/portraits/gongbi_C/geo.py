@@ -219,8 +219,8 @@ def neck_loft(nk=None):
 
 TORSO_DEFAULT = dict(
     shoulder_w=1.0,      # half width at the shoulder points
-    shoulder_z=-1.08,    # height of the shoulder points
-    neck_base=-0.70,     # top of the trapezius at the neck (the collar sits here)
+    shoulder_z=-1.03,    # height of the shoulder points
+    neck_base=-0.64,     # top of the trapezius at the neck (the collar sits here)
     slope=0.5,           # 0 = square shoulders, 1 = very sloped
     chest_d=0.44,        # forward reach of the chest
     back_d=0.52,

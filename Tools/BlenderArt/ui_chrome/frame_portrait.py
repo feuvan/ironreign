@@ -101,6 +101,9 @@ def paint(G, variant=None, seed=None):
     corner = (np.minimum(G.X, W - G.X) < BLOCK) & (np.minimum(G.Y, H - G.Y) < BLOCK)
     corner = corner.astype(np.float32)
 
+    # opaque underlay of the whole border (abutting anti-aliased bands would leave alpha seams)
+    C.over(S.aa_mask(d - WINDOW, G) * shape, "#2A2119")
+
     # ---- brocade band with the woven scroll -------------------------------------------------
     fig_sd = band_figure(G, seed)
     fig = S.aa_mask(fig_sd, G) * (1.0 - corner)

@@ -49,7 +49,7 @@ def build(r):
     mats["ArmorRed"] = GB.lamellar("GB_ArmorRed", "#A8604A", lace="gold")
     mats["ArmorBlue"] = GB.lamellar("GB_ArmorBlue", "#5E7286", lace="white")
     mats["MetalRed"] = mats["Metal"]
-    land = LD.qinglv("GB_Battle_Land", z0=5.0, z1=420.0, cun=0.7, cun_px=7.0, cun_len=60.0,
+    land = LD.qinglv("GB_Battle_Land", z0=5.0, z1=240.0, cun=0.7, cun_px=7.0, cun_len=60.0,
                      moss_px=10.0, var_scale=0.004, near=40.0, far=5000.0, plain_h=0.02,
                      plain=("#D6CBA2", "#CDBB8E"), plain_bare=0.3, ribs=True)
     fpx = FOCAL / 36.0 * 640.0
@@ -161,9 +161,9 @@ def build(r):
     # a few trees on the rise and the hills
     tmb = MeshBuilder()
     pl = []
-    for (sx, sy, d, rad, n) in ((0.30, 0.31, 420, 30, 8), (0.66, 0.30, 520, 40, 9), (0.03, 0.34, 260, 20, 6)):
+    for (sx, sy, d, rad, n) in ((0.30, 0.31, 420, 30, 8), (0.66, 0.30, 520, 40, 9)):
         x, y, _ = SM.at(sx, sy, d)
-        pl += K.grove(rng, (x, y), rad, n, ground=ground, kinds=("Leaf", "LeafDark", "pine"))
+        pl += K.grove(rng, (x, y), rad, n, ground=ground, kinds=("pine", "pine", "LeafDark"))
     K.trees(tmb, pl, rng, cam_dir=Vector(TARGET) - Vector(CAM), size=0.5, low=True)
     K.emit(tmb, "Trees", mats, "tree")
     cam = L.camera(CAM, TARGET, focal_mm=FOCAL)
@@ -183,6 +183,16 @@ def build(r):
         for (cx, cy, rx, ry, a) in ((0.40, 0.50, 120, 30, 0.42), (0.22, 0.47, 160, 26, 0.35),
                                     (0.58, 0.44, 110, 22, 0.3), (0.12, 0.62, 130, 30, 0.22)):
             G2wash(cv, "front", "#DCC8A0", a, (cx, cy), rx, ry, rr)
+        # a volley of arrows arcing from the blue archers over the clash: fine parallel strokes
+        with cv.paint("front", "ink", 0.6, soft=0.0) as d:
+            for k in range(110):
+                t0 = rr.uniform(0.0, 1.0)
+                x0 = 0.30 + 0.36 * t0 + rr.uniform(-0.02, 0.02)
+                y0 = 0.27 + 0.13 * (2 * t0 - 1) ** 2 + rr.uniform(-0.025, 0.025)
+                vx, vy = -0.36 * cv.W, -0.52 * (2 * t0 - 1) * cv.H
+                n_ = math.hypot(vx, vy)
+                L_ = rr.uniform(4.5, 6.0) * cv.k
+                d.stroke([(x0, y0), (x0 + vx / n_ * L_ / cv.W, y0 + vy / n_ * L_ / cv.H)], 0.28, "flat")
     return dict(camera=cam, look=look, paint2d=paint2d, notes="no UI keep-out; clash centred at x ~45%")
 
 

@@ -1,9 +1,10 @@
 """World Terrain family recipe: legacy look numbers of the Blender scene helpers.
 
-The 2D map is now a gongbi blue-green painting: its numbers live with the code that uses them -
-:mod:`ironart.world_terrain_glyphs` (``ELEV_DEG``, ``GLYPH``, ``CITY_CLEAR_PX``, ``TREE_GLYPH``:
-the pictorial mountains, hills and trees) and :mod:`ironart.world_terrain_gongbi` (``GP``: the
-silk and mineral palette, glazes, ink weights).  The 3D albedo palette is
+The 2D map is a gongbi blue-green painting: its numbers live with the code that uses them -
+:mod:`ironart.world_terrain_glyphs` (``ELEV_DEG``: the oblique projection and its Blender helpers),
+:mod:`ironart.world_terrain_mapglyphs` (``PEAK``, ``HILL``, ``CITY_CLEAR_PX``, ``TREE_GLYPH``: the
+pictorial peaks, hills and trees) and :mod:`ironart.world_terrain_mappaint` (``GP``: the silk and
+mineral palette, line weights).  The 3D albedo palette is
 :data:`ironart.world_terrain_paint.PAL`.
 
 What is left here is used only by :mod:`ironart.world_terrain_render` (the scratch 3/4 previews):

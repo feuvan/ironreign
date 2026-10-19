@@ -601,10 +601,13 @@ def broadleaf(tb, rng, H=22.0, crown=0.66, lobes=7, cards_per=30, card=(3.0, 4.4
     return crown_c
 
 
-def pine(tb, rng, H=26.0, sides=7, tiers=6, card=(3.4, 4.8)):
+def pine(tb, rng, H=26.0, sides=7, tiers=6, card=(3.4, 4.8), pad_density=1.0, pad_spread=0.42, tilt_every=5):
     """Chinese pine (Pinus tabuliformis): tall, slightly bent trunk; near-horizontal limbs in
     loose tiers getting shorter upwards (an umbrella / flat top); layered needle-pad clouds of
-    horizontal cards at the limb ends and along them."""
+    horizontal cards at the limb ends and along them.  ``pad_density`` multiplies the cards per
+    pad, ``pad_spread`` is their gaussian spread (x pad radius), every ``tilt_every``-th card is
+    tilted 45 degrees outwards (gives the pads volume from low views); the defaults are the
+    lighter city prototypes."""
     r0 = H * 0.024
     lean = Vector((rng.uniform(-0.1, 0.1), rng.uniform(-0.1, 0.1), 1.0)).normalized()
     trunk = _curve((0, 0, -0.8), lean, H * 0.9, 8, (rng.uniform(-0.2, 0.2), rng.uniform(-0.2, 0.2), 0), rng, 0.035)
@@ -632,13 +635,13 @@ def pine(tb, rng, H=26.0, sides=7, tiers=6, card=(3.4, 4.8)):
     centre = Vector((0, 0, H * 0.72))
     for (c, R) in pads:
         c = Vector(c)
-        n_cards = 4 + int(R * 1.3)
+        n_cards = int(round((4 + int(R * 1.3)) * pad_density))
         for q in range(n_cards):
-            off = Vector((rng.gauss(0, 0.42), rng.gauss(0, 0.42), 0.0)) * R
+            off = Vector((rng.gauss(0, pad_spread), rng.gauss(0, pad_spread), 0.0)) * R
             off.z = rng.gauss(0, 0.05) * R + 0.18 * R * (1.0 - min(1.0, off.length / R))
             p = c + off
             n = Vector((rng.uniform(-0.18, 0.18), rng.uniform(-0.18, 0.18), 1.0)).normalized()
-            if q % 5 == 4:
+            if q % tilt_every == tilt_every - 1:
                 out = Vector((off.x, off.y, 0)).normalized() if off.length > 1e-3 else Vector((1, 0, 0))
                 n = (out + Vector((0, 0, 1.0))).normalized()
             tb.card(p, n, rng.uniform(*card) * (0.75 + 0.18 * R / 2.5), rng.uniform(0, TAU),

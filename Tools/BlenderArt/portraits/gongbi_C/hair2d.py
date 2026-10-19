@@ -24,7 +24,7 @@ STRAND_SETS = {
                                    ("#E6E2D8", 0.22, 0.9)]),
     "grey": ("#8E8880", 0.45, [("#4A4540", 0.30, 0.8), ("#9A948C", 0.35, 0.8),
                                ("#EEEAE0", 0.35, 0.9)]),
-    "white": ("#A9A49A", 0.42, [("#7E786E", 0.18, 0.65), ("#F7F4EC", 0.82, 0.95)]),
+    "white": ("#9E998F", 0.55, [("#6E685E", 0.28, 0.7), ("#F8F5EE", 0.72, 0.95)]),
 }
 
 
@@ -38,7 +38,7 @@ def paint_hair(cv, pr, meta, npz, spec, masks, seed):
     rng = np.random.default_rng(seed + 31)
     col = hp.get("color", "hair")
     light_hair = sum(PL.srgb(col)) > 1.2
-    s_col = hp.get("strand") or ("#7A746C" if light_hair else "#5C554E")
+    s_col = hp.get("strand") or ("#7A746C" if light_hair else "#6A625A")
     s_col2 = "#F4F1EA" if light_hair else "#0C0A09"
     strokes, strokes2 = [], []
     for c in meta["curves"]:
@@ -49,20 +49,20 @@ def paint_hair(cv, pr, meta, npz, spec, masks, seed):
         v = pr.visible(P, tol=0.02, soft=0.02)
         if v.max() < 0.1:
             continue
-        for k in range(3):
-            off = (rng.random(2) - 0.5) * cv.k(2.2)
+        for k in range(4):
+            off = (rng.random(2) - 0.5) * cv.k(3.0)
             Q = P.copy()
             Q[:, :2] += off * np.linspace(0.3, 1.0, len(Q))[:, None]
-            w = B.profile(len(Q), 0.15, 0.4, "silk", lo=0.1) * 0.55
-            if k == 0:
-                strokes.append((Q, w, v * 0.55))
+            w = B.profile(len(Q), 0.15, 0.4, "silk", lo=0.1) * 0.5
+            if k < 2:
+                strokes.append((Q, w, v * 0.7))
             else:
-                strokes2.append((Q, w * 0.8, v * 0.5))
+                strokes2.append((Q, w * 0.9, v * 0.7))
     hm = masks["hair"]
     if strokes:
-        cv.apply(cv.strokes_mask(strokes, soft=0.3), s_col, "paint", 0.6, clip=np.clip(hm * 1.3, 0, 1))
+        cv.apply(cv.strokes_mask(strokes, soft=0.25), s_col, "paint", 0.55, clip=np.clip(hm * 1.3, 0, 1))
     if strokes2:
-        cv.apply(cv.strokes_mask(strokes2, soft=0.3), s_col2, "paint", 0.5, clip=np.clip(hm * 1.3, 0, 1))
+        cv.apply(cv.strokes_mask(strokes2, soft=0.25), s_col2, "paint", 0.7, clip=np.clip(hm * 1.3, 0, 1))
     hairline(cv, pr, spec, hp, rng, light_hair,
              clip=np.clip(masks["hair"] + masks["face"] + masks["skin"], 0, 1))
 
@@ -72,13 +72,13 @@ def hairline(cv, pr, spec, hp, rng, light_hair, clip=None):
     import geo
     import gear_math as GM
     L = geo.head_loft(spec.get("head", {}))
-    n = hp.get("fringe_n", 260)
+    n = hp.get("fringe_n", 420)
     t = rng.uniform(-1.9, 1.9, n)
     z0 = GM.hairline(hp, t)
     strokes = []
     col = hp.get("color", "hair")
     a = np.linspace(0, 1, 8)[None, :]
-    up = z0[:, None] - 0.014 + a * (0.05 + 0.02 * rng.random((n, 1)))
+    up = z0[:, None] - 0.010 - 0.008 * rng.random((n, 1)) + a * (0.05 + 0.03 * rng.random((n, 1)))
     at = np.abs(t)[:, None]
     tmp = (at > 0.95) & (at < 1.32)
     dn = (z0[:, None] + 0.10 - a * (0.11 + 0.02 * rng.random((n, 1))))[:, ::-1]
@@ -105,6 +105,11 @@ def hairline(cv, pr, spec, hp, rng, light_hair, clip=None):
 # =============================================================================================
 # beard
 # =============================================================================================
+def geo_ss(e0, e1, x):
+    t = min(max((x - e0) / (e1 - e0), 0.0), 1.0)
+    return t * t * (3 - 2 * t)
+
+
 def lock(R, T, wr, rng, n, c1=0.0, c2=0.0, k=18, spread=1.0):
     """Strands of one lock (绺): a cubic S-curve from root R to tip T (2D work px); strands
     fan across ``wr`` px at the root and converge at the tip."""
@@ -177,7 +182,7 @@ def paint_beard(cv, pr, fc, spec, seed):
                 T = R[i, :2] + np.array([tox * (0.25 + 0.45 * a) + rng.normal() * 0.015 * upx, ln])
                 wr = upx * 0.055 * ws
                 st = lock(R[i, :2], T, wr, rng, 11, c1=side * 0.06, c2=-side * 0.05)
-                add("back", st, 0.5)
+                add("back", st, bd.get("strand_w", 0.55) * 0.9)
                 bases["back"].append((R[i, :2], T, wr))
     # ---- chin beard (须): locks from under the lower lip and round the chin -----------------
     cb = bd.get("chin")
@@ -188,10 +193,14 @@ def paint_beard(cv, pr, fc, spec, seed):
         nl = int(16 * cb.get("density", 1.0))
         ztop = m["z"] - m["lower"] - 0.02
         tip = chin_pt[:2] + np.array([cb.get("lean", 0.0) * upx, length])
+        mw = m["w"]
         for i in range(nl):
-            u = (i + 0.5) / nl * 2 - 1
-            x = u * width * (0.9 if shape != "full" else 1.05)
-            z = ztop - (1 - abs(u)) * 0.02 - abs(u) ** 1.6 * (ztop + 0.47) * 0.9 - rng.random() * 0.03
+            u = (i + 0.5) / nl * 2 - 1 + rng.normal() * 0.03
+            x = u * width
+            # top of the beard region: under the lower lip, rising to the mouth corners
+            z_top = ztop + geo_ss(mw * 0.7, mw * 1.3, abs(x)) * (m["lower"] + 0.03)
+            z_bot = -0.48 + (abs(u) ** 2) * 0.10
+            z = z_top - rng.random() ** 0.7 * max(z_top - z_bot, 0.0) * (0.85 if i % 2 else 0.3)
             R = fc.P(np.array([x]), np.array([z]), lift=0.008)[0]
             if shape == "pointed":
                 T = tip + np.array([u * 0.035 * upx, -abs(u) * 0.15 * length])
@@ -203,7 +212,7 @@ def paint_beard(cv, pr, fc, spec, seed):
             wr = upx * (0.05 + 0.02 * (1 - abs(u))) * ws
             cs = rng.normal() * 0.06
             st = lock(R[:2], T, wr, rng, 15, c1=cs + u * 0.06, c2=-cs * 1.3 - u * 0.03, k=22)
-            add("mid", st, 0.55)
+            add("mid", st, bd.get("strand_w", 0.55))
             bases["mid"].append((R[:2], T, wr))
     # ---- moustache (髭): sweeping locks on the upper lip, on the 3D face --------------------
     ms = bd.get("moustache")
@@ -285,14 +294,14 @@ def paint_strands(cv, pr, meta, spec, seed):
             col = c.get("color", "cinnabar")
             ln = c.get("length", 0.22) * upx
             strokes, strokes2 = [], []
-            for i in range(260):
-                ang = math.radians(rng.uniform(-170, -10) if rng.random() < 0.75 else rng.uniform(-200, 20))
+            for i in range(340):
+                ang = math.radians(rng.uniform(-165, -15) if rng.random() < 0.8 else rng.uniform(-195, 15))
                 v0 = np.array([math.cos(ang), math.sin(ang)])
-                L = ln * rng.uniform(0.55, 1.0)
+                L = ln * rng.uniform(0.6, 1.0)
                 s = np.linspace(0, 1, 14)[:, None]
                 g = np.array([0.0, 1.0]) * (0.9 + 0.4 * rng.random())
-                P = a[None, :2] + v0[None] * L * s * 0.75 + g[None] * L * s ** 2 * 0.9
-                w = B.profile(14, 0.05, 0.7, "nail", lo=0.05) * 0.75
+                P = a[None, :2] + v0[None] * L * s * 0.9 + g[None] * L * s ** 2 * 1.1
+                w = B.profile(14, 0.05, 0.7, "nail", lo=0.05) * 0.8
                 (strokes if rng.random() < 0.7 else strokes2).append((P, w, rng.uniform(0.6, 0.95)))
             base = cv.strokes_mask([(P, np.full(len(P), 4.0) * np.linspace(1, 0.3, len(P)), 1.0)
                                     for P, _, _ in strokes[::4]], soft=1.5)
@@ -316,6 +325,53 @@ def paint_strands(cv, pr, meta, spec, seed):
                 cv.radial(q[:2], r, colb, 0.95, mode="paint", power=0.25)
                 cv.radial(q[:2] + np.array([-0.3 * r, -0.3 * r]), r * 0.45, "#FFFFFF", 0.5,
                           mode="paint", power=0.5)
+        elif st == "earring":
+            P = pr.world(np.array(c["pts"]))
+            v = pr.visible(P, tol=0.03, soft=0.02)
+            if v[0] < 0.5:
+                continue
+            a = P[0, :2]
+            ln = c.get("length", 0.07) * upx
+            hook = np.stack([a, a + np.array([0.0, ln * 0.45]), a + np.array([0.0, ln * 0.6])], 0)
+            cv.stroke(hook, np.array([0.5, 0.55, 0.5]), c.get("metal", "gold"), 0.9)
+            q = a + np.array([0.0, ln * 0.82])
+            r = 0.022 * upx
+            cv.radial(q, r * 1.12, "ink", 0.6, mode="paint", power=0.2)
+            cv.radial(q, r, c.get("color", "pearl"), 0.97, mode="paint", power=0.25)
+            cv.radial(q + np.array([-0.3 * r, -0.35 * r]), r * 0.4, "#FFFFFF", 0.7, mode="paint",
+                      power=0.6)
+        elif st == "beads":
+            P = pr.world(np.array(c["pts"]))
+            v = pr.visible(P, tol=0.06, soft=0.04)
+            r = c.get("r", 0.028) * upx
+            col = c.get("color", "#5A3A26")
+            step = max(1, int(len(P) / max(8, np.sum(np.linalg.norm(np.diff(P[:, :2], axis=0), axis=1)) / (2.1 * r))))
+            for q, vv in zip(P[::step], v[::step]):
+                if vv < 0.5:
+                    continue
+                cv.radial(q[:2], r * 1.08, "ink", 0.85, mode="paint", power=0.15)
+                cv.radial(q[:2], r, col, 0.95, mode="paint", power=0.3)
+                cv.radial(q[:2] + np.array([-0.3 * r, -0.35 * r]), r * 0.35, "#E8D8C0", 0.6,
+                          mode="paint", power=0.8)
+        elif st == "fur":
+            P = pr.world(np.array(c["pts"]))
+            v = pr.visible(P, tol=0.12, soft=0.05)
+            r = c.get("r", 0.06) * upx
+            strokes = []
+            Pd = B.resample(P, 220)
+            vd = np.interp(np.linspace(0, 1, 220), np.linspace(0, 1, len(v)), v)
+            for q, vv in zip(Pd, vd):
+                if vv < 0.4:
+                    continue
+                for _ in range(3):
+                    ang = rng.uniform(0, 2 * math.pi)
+                    o = q[:2] + np.array([math.cos(ang), math.sin(ang)]) * r * rng.uniform(0.3, 1.1)
+                    d = np.array([math.cos(ang), math.sin(ang)]) * r * rng.uniform(0.25, 0.5)
+                    strokes.append((np.stack([o, o + d * 0.5, o + d], 0), np.array([0.6, 0.45, 0.1]),
+                                    rng.uniform(0.5, 0.9)))
+            if strokes:
+                cv.apply(cv.strokes_mask(strokes, soft=0.25), PL.deepen(c.get("color", "#8A6A48"), 0.5),
+                         "paint", 0.8, ink=0.3)
         elif st == "mirror":
             q = pr.world(np.array(c["pts"]))[0]
             r = c.get("r", 0.17) * upx

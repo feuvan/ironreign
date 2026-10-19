@@ -16,6 +16,7 @@ from ironart import scenes_gongbi_land as LD
 from ironart import scenes_gongbi_flora as F
 from ironart import scenes_look as L
 from ironart.geometry import MeshBuilder
+from ironart import scenes_people as P
 
 SPEC = dict(name="Bandits", art="Art/Events/Bandits.png", master="Events/Bandits@2x.png",
             size=(640, 360), k=4, m=2, seed=71, spp=12, preview_spp=6)
@@ -117,11 +118,14 @@ def build(r):
     ppl = MeshBuilder()
     torches = []
     cx, cy = at(0.47, 0.70)
-    cart(ppl, (cx, cy, ground(cx, cy)), math.radians(170), rng)
+    # the cart broadside across the road, its horse rearing in the shafts at the bandits
+    CRZ = math.radians(78)
+    cart(ppl, (cx, cy, ground(cx, cy)), CRZ, rng)
     hm = MeshBuilder()
     from ironart import scenes_people as P
-    P.horse(hm, random.Random(2), gait="rear", coat="HorseCoat3")
-    ppl.extend(hm, Matrix.Translation((cx + 0.3, cy - 4.4, ground(cx, cy - 4.4))) @ Matrix.Rotation(math.radians(165), 4, "Z"))
+    P.horse(hm, random.Random(2), gait="rear", coat="HorseCoat0", saddle="Saddle", cloth="Banner1")
+    hx, hy = cx + math.cos(CRZ - math.pi / 2) * 4.2, cy + math.sin(CRZ - math.pi / 2) * 4.2
+    ppl.extend(hm, Matrix.Translation((hx, hy, ground(hx, hy))) @ Matrix.Rotation(CRZ, 4, "Z"))
     # merchants
     for (sx, sy, pose, rz, cl) in ((0.40, 0.80, "fall", 200, 4), (0.55, 0.76, "cheer", 150, 5), (0.35, 0.72, "guard", 120, 3)):
         p = at(sx, sy)
@@ -139,7 +143,10 @@ def build(r):
         K.person(ppl, random.Random(30 + i), pose, "bandit", at=(p[0], p[1], ground(*p)), rz=math.radians(rz),
                  cloth=[0, 1, 2, 3][i % 4], cloth2=[3, 8, 1][i % 3], hat="band", weapon=wpn, jitter=5.0)
         if wpn == "torch":
-            torches.append((p[0], p[1], ground(*p) + 2.3))
+            sk = P.Skeleton(pose, 1.72, random.Random(30 + i), 5.0)
+            hand = sk.arm[-1]["hand"]
+            tip = Matrix.Translation((p[0], p[1], ground(*p))) @ Matrix.Rotation(math.radians(rz), 4, "Z") @ (hand + Vector((0, 0, 0.55)))
+            torches.append(tuple(tip))
     K.emit(ppl, "Ambush", mats, "fig", thin=K.THIN)
     cam = L.camera(CAM, TARGET, focal_mm=FOCAL)
     look = dict(
@@ -152,14 +159,25 @@ def build(r):
     )
 
     def paint2d(cv, r):
-        # torchlight: warm soft washes around every flame (no bloom - a painted glow)
+        rr = np.random.default_rng(71)
+        # torchlight: a warm painted glow round every flame (no bloom), then the flame itself as
+        # flame-pattern (火焰纹) tongues in gold and vermilion with a cinnabar edge
         for (x, y, z) in torches:
             sx, sy, sz = L.screen_pos(cam, (x, y, z))
             if sz <= 0:
                 continue
             c = (sx, 1.0 - sy)
-            with cv.paint("front", "#F0A050", 0.22, soft=26.0) as d:
-                d.disc(c, 30.0)
-            with cv.paint("front", "#F8C878", 0.25, soft=8.0) as d:
-                d.disc(c, 9.0)
+            scale = 26.0 / max(sz, 4.0)
+            with cv.paint("front", "#F0A050", 0.2, soft=22.0 * scale) as d:
+                d.disc(c, 26.0 * scale)
+            hgt = 9.0 * scale
+            for col, a, wk in (("cinnabar", 0.9, 1.25), ("vermilion", 0.95, 1.0), ("gold_l", 0.95, 0.5)):
+                with cv.paint("front", col, a, soft=0.15) as d:
+                    for k in range(3):
+                        off = (k - 1) * 0.8 * scale
+                        curl = rr.uniform(-0.5, 0.5)
+                        pts = [(c[0] + off * cv.k / cv.W, c[1]),
+                               (c[0] + (off * 0.6 + curl * 1.5 * scale) * cv.k / cv.W, c[1] - hgt * 0.45 * cv.k / cv.H),
+                               (c[0] + (curl * 3.0 * scale) * cv.k / cv.W, c[1] - hgt * (0.8 + 0.3 * (k == 1)) * cv.k / cv.H)]
+                        d.stroke(pts, 3.2 * scale * wk, "tail")
     return dict(camera=cam, look=look, paint2d=paint2d, notes="no UI keep-out")

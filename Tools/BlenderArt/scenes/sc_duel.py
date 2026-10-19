@@ -28,8 +28,8 @@ FOCAL = 34.0
 SM = K.ScreenMap(CAM, TARGET, FOCAL)
 BASE = 500.0
 SUN = (0.5, 0.47)
-PEAKS = [(0.08, 0.42, 900, 160, 0.9), (0.20, 0.38, 1700, 330, 0.85), (0.33, 0.47, 700, 120, 1.1),
-         (0.66, 0.46, 800, 140, 1.0), (0.80, 0.37, 1600, 300, 0.9), (0.93, 0.43, 1000, 180, 0.95),
+PEAKS = [(0.07, 0.30, 900, 160, 0.8), (0.20, 0.36, 1700, 330, 0.85), (0.33, 0.47, 700, 120, 1.1),
+         (0.66, 0.46, 800, 140, 1.0), (0.81, 0.34, 1600, 300, 0.85), (0.94, 0.28, 1000, 180, 0.8),
          (0.45, 0.50, 2600, 600, 1.2), (0.58, 0.49, 3000, 700, 1.2)]
 
 
@@ -56,10 +56,8 @@ def build(r):
                    attrs={"rib": lambda X, Y: LD.peak_ribs(X, Y, peaks_b(), CAM[:2], fpx, 6.0)})
     # ---- the plateau and its broken edge -------------------------------------------------------
     from ironart.scenes_terrain import fbm2, ridged2
-    rock = LD.qinglv("GB_Duel_Rock", z0=-30.0, z1=3.0, cun=0.85, cun_px=5.0, cun_len=5.0, moss_px=8.0,
-                     var_scale=0.04, near=3.0, far=200.0, plain_h=0.0, steep=(0.15, 0.55),
-                     foot="#9A7A62", low="#A8906E", mid="#6A8A70", top="#5E7E74", light_top="#D8C0A0",
-                     plain=("#C8A884", "#B8A07E"), shadow_cun=0.4)
+    rock = LD.ground("GB_Duel_Ground", color="#D2B48C", deep="#B08A62", cover=0.85, grass=0.5, scale=0.6,
+                     near=4.0, far=60.0, blotch=0.35)
 
     def plateau(X, Y):
         n = fbm2(X, Y, 6.0, 4, seed=7) - 0.5
@@ -75,8 +73,8 @@ def build(r):
         return float(plateau(np.array([[x]]), np.array([[y]]))[0, 0])
     # ---- the duellists ----------------------------------------------------------------------------
     ppl = MeshBuilder()
-    lx, ly, _ = SM.at(0.21, 0.5, 13.0)
-    rx_, ry_, _ = SM.at(0.79, 0.5, 13.0)
+    lx, ly, _ = SM.at(0.22, 0.5, 15.0)
+    rx_, ry_, _ = SM.at(0.78, 0.5, 15.0)
     K.person(ppl, random.Random(1), "sword_ready", "wanderer", at=(lx, ly, ground(lx, ly)), rz=math.radians(90),
              cloth=0, cloth2=2, hat="topknot", weapon="sword", cape=True, cape_wind=(0.2, 1.0), jitter=0.0)
     K.person(ppl, random.Random(2), "guard", "wanderer", at=(rx_, ry_, ground(rx_, ry_)), rz=math.radians(-90),
@@ -85,8 +83,25 @@ def build(r):
     # ---- the plum tree at the left edge, a few rocks ------------------------------------------
     tm = MeshBuilder()
     px_, py_, _ = SM.at(0.03, 0.5, 9.0)
-    F.plum(tm, random.Random(4), height=6.5, at=(px_, py_, ground(px_, py_)), depth=4, blossoms=160 if not pv else 80,
-           red=0.45)
+    F.plum(tm, random.Random(4), height=6.5, at=(px_, py_, ground(px_, py_)), depth=4, blossoms=420 if not pv else 200,
+           red=0.45, blossom_r=0.05)
+    # rocks along the broken edge and at the corners of the picture (lumpy 青绿 stones)
+    rk = LD.rock("GB_Duel_Stones", color="#B89878", deep="#7A6048", cun=0.8, scale=0.8, freq=5.0, ochre=0.35,
+                 moss=0.6, near=5.0, far=150.0, top="#5E8A74", top_amount=0.8)
+    st = MeshBuilder()
+    rr = random.Random(17)
+    for (sx, d, sz) in ((0.10, 16.0, (3.0, 2.4, 1.6)), (0.30, 22.0, (2.4, 2.0, 1.0)), (0.66, 23.0, (2.6, 2.0, 1.1)),
+                        (0.93, 19.0, (3.0, 2.4, 1.5)), (1.04, 12.0, (3.4, 2.8, 2.2)), (0.44, 26.0, (1.8, 1.4, 0.7)),
+                        (0.57, 25.0, (2.0, 1.6, 0.8))):
+        x, y, _ = SM.at(sx, 0.5, d)
+        LD.boulder(st, (x, y, ground(x, y) - sz[2] * 0.25), sz, rr, "Rock", lumps=5, seg=(18, 12), spread=0.45, rough=0.16)
+    K.emit(st, "Stones", dict(Rock=rk), "land")
+    for k in range(40 if not pv else 20):
+        sx, d = rng.uniform(0.0, 1.0), rng.uniform(8.0, 24.0)
+        if 0.3 < sx < 0.7 and d > 18.0:
+            continue
+        x, y, _ = SM.at(sx, 0.5, d)
+        F.tuft(tm, rng, (x, y, ground(x, y)), height=rng.uniform(0.3, 0.6), blades=rng.randint(5, 8), mat="Grass")
     K.emit(tm, "Plum", mats, "tree")
     cam = L.camera(CAM, TARGET, focal_mm=FOCAL)
     look = dict(

@@ -13,7 +13,20 @@ Outputs (DESIGN.md 12.2 / section 8):
     ArtSource/Textures/Water_Foam.png          1024 x 1024 tileable foam mask
     Content/Data/Art/Map/WorldMap.png          2400 x 1500 gongbi painted map on silk (2D fallback)
     ArtSource/manifest.json                    entries added, version bumped
-Scratch (previews, caches): $IRONART_OUT/world_terrain/
+Scratch (previews, caches, passes, contact sheet): $IRONART_OUT/world_terrain/
+
+Modules (Tools/BlenderArt/ironart/):
+    world_terrain_fields    the world: coast, plains, lakes, rivers, city pads, roads, forests
+    world_terrain_relief    mountain ranges and hill chains as ridge networks (crest, spurs, gullies)
+    world_terrain_paint     Albedo.png / Masks.png painter
+    world_terrain_trees     Trees.json scatter
+    world_terrain_water     Water_Normal.png / Water_Foam.png
+    world_terrain_mapglyphs the 2D map's pictorial peaks, hills and trees (layout, forms, Blender)
+    world_terrain_mappaint  the 2D map's numpy painting on silk
+    world_terrain_glyphs    oblique projection + Blender helpers shared by the two above
+    world_terrain_render    the scratch 3/4 previews
+The 2D map's glyph layer renders in tiles, each in its own Blender process (glyph_tile.py), so
+Freestyle's memory is returned after every tile.
 
 Options
     --stages a,b,...   subset of: fields paint trees water worldmap preview qa manifest
@@ -26,6 +39,7 @@ Options
 """
 
 import json
+import math
 import os
 import sys
 import time
@@ -40,6 +54,8 @@ from ironart import world_terrain_fields as F  # noqa: E402
 
 STAGES = ["fields", "paint", "trees", "water", "worldmap", "preview", "qa", "manifest"]
 ART3D = os.path.join(REPO_DIR, "Content", "Data", "Art3D", "Terrain")
+HERE = os.path.dirname(os.path.abspath(__file__))
+TOOLS = os.path.dirname(HERE)
 ARTSRC = os.path.join(REPO_DIR, "ArtSource")
 WORLDMAP = os.path.join(REPO_DIR, "Content", "Data", "Art", "Map", "WorldMap.png")
 MANIFEST_FILES = ["Terrain/Albedo.png", "Terrain/Masks.png", "Textures/Water_Normal.png",
@@ -47,9 +63,12 @@ MANIFEST_FILES = ["Terrain/Albedo.png", "Terrain/Masks.png", "Textures/Water_Nor
 
 #: worldmap render: glyph layer samples (flat emission + AOVs: anti-aliasing only)
 GLYPH_SPP = 12
+#: worldmap glyph render tiles (map metres) and the margin each tile renders around itself
+TILE_M = (620.0, 520.0)
+TILE_MARGIN = 60.0
 #: the 3/4 previews: (map x, map y, camera distance m, pitch deg) like the Unreal strategy camera
-PREVIEW_VIEWS = [(1240, 760, 1700.0, 60.0), (700, 430, 1050.0, 52.0), (1250, 1150, 1100.0, 55.0),
-                 (1200, 820, 2600.0, 68.0)]
+PREVIEW_VIEWS = [(1240, 760, 1700.0, 55.0), (700, 430, 1050.0, 55.0), (1250, 1250, 1000.0, 55.0),
+                 (1750, 900, 900.0, 55.0), (1200, 820, 2800.0, 62.0)]
 
 
 def scratch(*p):
@@ -114,6 +133,11 @@ class Build:
                 log("[build] world cache unusable (%s): rebuilding" % exc)
         self.world = F.build_world(log=log)
         self.world.save(cache)
+        return self.world
+
+    def get_world_cached(self):
+        if self.world is None:
+            self.world = F.World.load(scratch("world.pkl"), log=log)
         return self.world
 
     def stage_fields(self):
@@ -210,61 +234,62 @@ class Build:
         import bpy
         from ironart import scene
         from ironart import world_terrain_glyphs as G
-        from ironart import world_terrain_gongbi as G2
+        from ironart import world_terrain_mapglyphs as MG
+        from ironart import world_terrain_mappaint as MP
         w = self.get_world()
+        self.painter = None                      # the albedo painter holds ~2 GB of layers
+        import gc
+        gc.collect()
         crop = self.a["crop"]
         x0, y0, x1, y1 = crop if crop else (0.0, 0.0, float(F.MAP_W), float(F.MAP_H))
         t0 = time.time()
-        peaks = G.layout(w)
-        r = G.rasterize(peaks, cell=1.0)
-        mtrees = G.map_trees(w, self.get_trees_cat())
+        peaks = MG.layout(w)
+        r = MG.rasterize(peaks, cell=0.5)
+        mtrees = MG.map_trees(w, self.get_trees_cat())
         for t in mtrees:
-            t["z"] = G.raster_z(r, t["x"], t["y"])
+            t["z"] = MG.raster_z(r, t["x"], t["y"])
+        del r
         log("[worldmap] %d glyph peaks (%d mountain), %d painted trees" % (
             len(peaks), sum(p["kind"] == "mountain" for p in peaks), len(mtrees)))
         with open(scratch("peaks.json"), "w") as f:
             json.dump(peaks, f)
-        # ---- Blender: the glyph layer (flat emission + AOVs + Freestyle ink as passes)
-        scene.reset(seed=3)
-        spp = self.a["spp"] or GLYPH_SPP
-        scene.setup_cycles(samples=spp, transparent=True, preset="fast", view="Standard", look="None",
-                           adaptive_threshold=0.0)
-        bpy.context.scene.cycles.filter_width = 1.0
-        scene.set_resolution(int(round(x1 - x0)), int(round(y1 - y0)), G2.SS)
-        mat = G.glyph_material()
-        rel = bpy.data.collections.new("Relief")
-        bpy.context.scene.collection.children.link(rel)
-        gb = (x0 - 160.0, y0 - 20.0, x1 + 160.0, y1 + 180.0)
-        obj = G.build_relief_glyphs(r, peaks, mat, box=gb)
-        for c in obj.users_collection:
-            c.objects.unlink(obj)
-        rel.objects.link(obj)
-        trc = bpy.data.collections.new("Trees")
-        bpy.context.scene.collection.children.link(trc)
-        prc = bpy.data.collections.new("Protos")
-        bpy.context.scene.collection.children.link(prc)
-        protos = G.tree_prototypes(prc)
-        sel = [t for t in mtrees if gb[0] < t["x"] < gb[2] and gb[1] < t["y"] < gb[3]]
-        G.instance_trees(sel, protos, trc)
-        G.camera((x0, y0, x1, y1))
-        G.ground_plane()
-        G.setup_aovs()
-        G.ink_lines(G2.SS, relief_collection=rel, tree_collection=trc)
-        pdir = scratch("passes")
-        os.makedirs(pdir, exist_ok=True)
-        files, names = G.comp_passes(pdir, "glyph")
-        self.times["worldmap_build"] = time.time() - t0
-        self.times["worldmap_render"] = scene.render(scratch("passes", "glyph_beauty.png"))
-        passes = {nm: G.read_exr(fp) for nm, fp in zip(names, files)}
-        bpy.ops.wm.read_factory_settings(use_empty=True)          # free the render memory
+        # the world is not needed while the tiles render (each in its own Blender process):
+        # free it and reload it from the cache for the painting
+        if os.path.isfile(scratch("world.pkl")):
+            self.world = None
+            w = None
+            gc.collect()
+        # ---- Blender: the glyph layer (flat emission + AOVs + Freestyle ink as passes), rendered in
+        #      overlapping tiles (Freestyle on the whole map needs > 13 GB); each tile frames its
+        #      region plus a margin and gets the geometry around it, the margins are cropped away
+        W2, H2 = int(round((x1 - x0) * MP.SS)), int(round((y1 - y0) * MP.SS))
+        passes = None
+        tiles = _tiles(x0, y0, x1, y1, TILE_M)
+        self.times["worldmap_render"] = 0.0
+        for ti, (tx0, ty0, tx1, ty1) in enumerate(tiles):
+            fx0, fy0 = max(x0, tx0 - TILE_MARGIN), max(y0, ty0 - TILE_MARGIN)
+            fx1, fy1 = min(x1, tx1 + TILE_MARGIN), min(y1, ty1 + TILE_MARGIN)
+            P = self._render_glyph_tile(peaks, mtrees, (fx0, fy0, fx1, fy1), ti)
+            if passes is None:      # float16 is plenty for the colour/attribute passes
+                passes = {nm: np.zeros((H2, W2, 4), np.float32 if nm in ("gD", "Depth") else np.float16)
+                          for nm in P}
+            sx0, sy0 = int(round((tx0 - fx0) * MP.SS)), int(round((ty0 - fy0) * MP.SS))
+            sx1, sy1 = sx0 + int(round((tx1 - tx0) * MP.SS)), sy0 + int(round((ty1 - ty0) * MP.SS))
+            dx0, dy0 = int(round((tx0 - x0) * MP.SS)), int(round((ty0 - y0) * MP.SS))
+            for nm, arr in P.items():
+                passes[nm][dy0:dy0 + (sy1 - sy0), dx0:dx0 + (sx1 - sx0)] = arr[sy0:sy1, sx0:sx1]
+            del P
+            log("[worldmap] tile %d/%d done" % (ti + 1, len(tiles)))
+        self.times["worldmap_build"] = time.time() - t0 - self.times["worldmap_render"]
         # ---- numpy: the painting
-        crop_tx = tuple(int(round(v * G2.SS)) for v in (x0, y0, x1, y1))
-        mp = G2.MapPainter(w, log=log, crop=crop_tx)
-        mp.map_trees = mtrees
+        w = self.get_world_cached()
+        passes = {nm: np.asarray(v, np.float32) if v.dtype != np.float32 else v for nm, v in passes.items()}
+        crop_tx = tuple(int(round(v * MP.SS)) for v in (x0, y0, x1, y1))
+        mp = MP.MapPainter(w, log=log, crop=crop_tx)
         t1 = time.time()
         col = mp.paint_map(passes)
         del passes
-        small = G2.downsample(col)
+        small = MP.downsample(col)
         self.times["worldmap_paint"] = time.time() - t1
         img = np.concatenate([small, np.ones(small.shape[:2] + (1,), np.float32)], -1)
         if crop:
@@ -277,7 +302,35 @@ class Build:
             from ironart import post
             path = post.save_asset(img, "Art/Map/WorldMap.png")
             Image.open(path).convert("RGB").resize((1200, 750), Image.LANCZOS).save(scratch("worldmap_small.png"))
+            Image.fromarray(np.round(np.clip(col, 0, 1) * 255).astype(np.uint8)).save(scratch("worldmap_2x.png"))
             log("[build] WorldMap.png -> %s" % path)
+
+    def _render_glyph_tile(self, peaks, mtrees, frame, ti):
+        """Render one glyph tile in its own Blender process (glyph_tile.py) and read its passes."""
+        import subprocess
+        from ironart import world_terrain_glyphs as G
+        pdir = scratch("passes")
+        os.makedirs(pdir, exist_ok=True)
+        if ti == 0 or not os.path.isfile(scratch("mtrees.json")):
+            with open(scratch("mtrees.json"), "w") as f:
+                json.dump(mtrees, f)
+        tag = "glyph%d" % ti
+        cmd = [os.path.join(TOOLS, "render.sh"), os.path.join(HERE, "glyph_tile.py"),
+               "%.3f,%.3f,%.3f,%.3f" % frame, tag, str(self.a["spp"] or GLYPH_SPP), scratch(), pdir]
+        t0 = time.time()
+        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        out = res.stdout or ""
+        for line in out.splitlines():
+            if "rendered" in line or "Traceback" in line or "Error" in line or "FAILED" in line:
+                log("[tile %d] %s" % (ti, line))
+        if res.returncode != 0:
+            log(out[-3000:])
+            raise RuntimeError("glyph tile %d failed (exit %d)" % (ti, res.returncode))
+        self.times["worldmap_render"] += time.time() - t0
+        P = {}
+        for nm in ("Image", "Freestyle", "gA", "gB", "gC", "gD", "Depth"):
+            P[nm] = G.read_exr(os.path.join(pdir, "%s_%s_0001.exr" % (tag, nm)))
+        return P
 
     # -- 3/4 previews (scratch) ------------------------------------------------------------------
     def stage_preview(self):
@@ -333,6 +386,17 @@ class Build:
                 self.times[st] = time.time() - t0
                 log("[build] stage %s %.1fs" % (st, self.times[st]))
         log("[build] TIMES " + json.dumps({k: round(v, 1) for k, v in self.times.items()}))
+
+
+def _tiles(x0, y0, x1, y1, size):
+    """Split a map rectangle into a grid of tiles of at most ``size`` (w, h) metres."""
+    nx = max(1, int(math.ceil((x1 - x0) / size[0])))
+    ny = max(1, int(math.ceil((y1 - y0) / size[1])))
+    xs = [x0 + (x1 - x0) * i / nx for i in range(nx + 1)]
+    ys = [y0 + (y1 - y0) * j / ny for j in range(ny + 1)]
+    xs = [round(v) for v in xs]
+    ys = [round(v) for v in ys]
+    return [(xs[i], ys[j], xs[i + 1], ys[j + 1]) for j in range(ny) for i in range(nx)]
 
 
 def _upsample_grid2(h2):
@@ -487,25 +551,29 @@ def _height_at_pixels(w=2400, h=1500):
 
 def worldmap_alignment(b, rgb):
     """Best (dx, dy) shift between the painted sea (pale azurite: blue above red) and the
-    heightfield's sea (h < 0), measured in the shore band (|h| < 6 m); (0, 0) means the 2D map
-    is registered to map metres."""
+    heightfield's sea (h < 0), measured in the shore band (|h| < 6 m) and ignoring the coast's
+    ink line (dark pixels); (0, 0) means the 2D map is registered to map metres.  A shift is only
+    reported when it beats (0, 0) clearly (the ink line straddles the coast, which can tip a
+    1 px shift by a hair)."""
     hm = _height_at_pixels()
     sea_d = hm < 0.0
     band = np.abs(hm) < 6.0
     sea_r = rgb[..., 2] > rgb[..., 0] + 6
-    best, arg = -1.0, (0, 0)
+    luma = rgb @ np.array([0.299, 0.587, 0.114])
+    valid = luma > 110
+    scores = {}
     for dy in range(-3, 4):
         for dx in range(-3, 4):
             a = np.roll(np.roll(sea_d, dy, 0), dx, 1)[8:-8, 8:-8]
-            m = np.roll(np.roll(band, dy, 0), dx, 1)[8:-8, 8:-8]
+            m = np.roll(np.roll(band, dy, 0), dx, 1)[8:-8, 8:-8] & valid[8:-8, 8:-8]
             r = sea_r[8:-8, 8:-8]
-            score = float((a == r)[m].mean())
-            if score > best:
-                best, arg = score, (dx, dy)
-    log("[qa] WorldMap registration: best shift %s, shore-band sea agreement %.4f" % (arg, best))
-    if best < 0.9:
+            scores[(dx, dy)] = float((a == r)[m].mean())
+    arg = max(scores, key=scores.get)
+    best, s0 = scores[arg], scores[(0, 0)]
+    log("[qa] WorldMap registration: best shift %s (%.4f), at (0, 0) %.4f" % (arg, best, s0))
+    if s0 < 0.9:
         log("[qa] WARNING low sea agreement")
-    return arg
+    return (0, 0) if s0 >= best - 0.01 else arg
 
 
 def worldmap_city_calm(b, rgb):

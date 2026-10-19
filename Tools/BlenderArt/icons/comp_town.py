@@ -13,134 +13,193 @@ from ironart import icons_kit as K
 from ironart import icons_props as P
 
 FACE = P.FACE
+TILT = P.TILT
 TAU = math.tau
 
 
 # ---------------------------------------------------------------------------------------------
-TIGER = [(-1.0, 0.62), (-1.0, 0.5), (-0.92, 0.46), (-0.9, 0.38), (-0.78, 0.36), (-0.74, 0.26),
-         (-0.86, 0.1), (-0.92, 0.0), (-0.62, 0.0), (-0.58, 0.16), (-0.3, 0.2), (0.2, 0.2),
-         (0.32, 0.12), (0.28, 0.0), (0.66, 0.0), (0.72, 0.18), (0.86, 0.36), (0.9, 0.6),
-         (0.9, 0.7), (1.02, 0.86), (1.08, 1.04), (1.02, 1.16), (0.96, 1.1), (0.99, 0.98),
-         (0.86, 0.84), (0.6, 0.78), (0.2, 0.74), (-0.2, 0.78), (-0.42, 0.88), (-0.5, 1.0),
-         (-0.6, 1.08), (-0.68, 0.98), (-0.8, 0.93), (-0.92, 0.84), (-0.98, 0.74)]
+TIGER_BOX = (-1.25, -0.1, 1.25, 1.2)
 
 
-def _tiger_inlay(name, box):
-    """Gold-inlaid stripes, eye and inscription of the tally (Pillow, alpha = inlay)."""
-    from PIL import Image, ImageDraw
+def _tiger_shape(cv):
+    """A crouching tiger in profile facing left, the shape of a tiger tally (虎符): long low
+    body, round head with ears and muzzle, forelegs and hind legs folded with the paws forward,
+    the tail rising and curling over the back."""
+    body = [(-0.62, 0.62), (-0.3, 0.7), (0.15, 0.66), (0.55, 0.64), (0.8, 0.56), (0.86, 0.38),
+            (0.78, 0.22), (0.5, 0.18), (0.0, 0.2), (-0.45, 0.22), (-0.7, 0.28), (-0.78, 0.48)]
+    cv.poly(K.spline_outline(body, 8))
+    cv.disc(-0.8, 0.66, 0.21)
+    cv.poly(K.spline_outline([(-0.98, 0.72), (-1.07, 0.6), (-1.05, 0.49), (-0.9, 0.45),
+                              (-0.76, 0.5)], 6))
+    for ex, ez in ((-0.86, 0.86), (-0.68, 0.86)):
+        cv.disc(ex, ez, 0.07)
+    cv.brush([(-0.6, 0.38), (-0.74, 0.14), (-1.0, 0.07)], [0.24, 0.16, 0.12])
+    cv.brush([(-0.36, 0.34), (-0.46, 0.13), (-0.68, 0.06)], [0.22, 0.15, 0.11])
+    cv.brush([(0.62, 0.38), (0.42, 0.13), (0.16, 0.07)], [0.3, 0.17, 0.12])
+    cv.brush([(0.78, 0.38), (0.66, 0.13), (0.44, 0.06)], [0.28, 0.15, 0.11])
+    pts = K.spline_outline([(0.82, 0.5), (0.98, 0.58), (1.07, 0.75), (1.05, 0.93), (0.95, 1.02),
+                            (0.86, 0.96)], 6, closed=False)
+    cv.brush(pts, [0.11 - 0.06 * i / len(pts) for i in range(len(pts))])
+
+
+def _tiger_inlay(name, box, seed=0):
+    """Gold inlay of the tally (Pillow, alpha = inlay): tiger stripes, the eye, a line of
+    inscription along the back."""
+    from PIL import Image, ImageDraw, ImageFont
     x0, z0, x1, z1 = box
-    W, H = 640, int(640 * (z1 - z0) / (x1 - x0))
+    W = 1024
+    H = int(W * (z1 - z0) / (x1 - x0))
     im = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     d = ImageDraw.Draw(im)
 
     def px(x, z):
         return ((x - x0) / (x1 - x0) * W, (1 - (z - z0) / (z1 - z0)) * H)
-    g = (226, 196, 120, 255)
-    for x in (-0.3, -0.05, 0.2, 0.45, 0.68):
-        pts = [px(x - 0.08 + 0.03 * math.sin(t * 3.0), 0.74 - 0.36 * t) for t in
-               [k / 8.0 for k in range(9)]]
-        d.line(pts, fill=g, width=15, joint="curve")
-    d.ellipse([*px(-0.84, 0.8), *px(-0.74, 0.72)], fill=g)
-    d.line([px(-0.94, 0.56), px(-0.8, 0.6)], fill=g, width=8)
-    d.line([px(-0.55, 0.3), px(0.6, 0.3)], fill=g, width=7)
+    g = (232, 200, 122, 255)
+    for x in (-0.42, -0.18, 0.06, 0.3, 0.54):
+        pts = [px(x + 0.06 * math.sin(t * 2.6) - 0.05 * t, 0.66 - 0.34 * t) for t in
+               [k / 10.0 for k in range(11)]]
+        for (ax, ay), (bx, by), k in zip(pts[:-1], pts[1:], range(10)):
+            d.line([(ax, ay), (bx, by)], fill=g, width=max(3, int(16 * (1 - k / 11.0))))
+    ex, ey = px(-0.86, 0.7)
+    d.ellipse([ex - 13, ey - 9, ex + 13, ey + 9], fill=g)
+    f = ImageFont.truetype(FONT_BRUSH, 46)
+    for k, ch in enumerate("甲兵之符"):
+        cx, cy = px(-0.5 + k * 0.2, 0.58)
+        d.text((cx, cy), ch, font=f, fill=g, anchor="mm")
     return K.pil_image(name, im)
 
 
 def Alliance(M, cam):
-    """Two halves of a tiger tally (虎符) fitted together: a crouching tiger in profile, the
-    front half bronze inlaid with gold, the back half gold, tied with a red cord."""
+    """Two halves of a tiger tally (虎符) slid together: crouching tigers cast in bronze, the
+    near half green with patina, the far half bright gold-bronze, both inlaid with gold stripes
+    and an inscription, a red cord knotted through them."""
+    from ironart import icons_shapes as S
     objs = []
-    ol = K.spline_outline(TIGER, 6)
-    box = (-1.1, 0.0, 1.15, 1.2)
-    inl = _tiger_inlay("TigerInlay", box)
-    front = gb.pigment("I_TallyBronze", "#B8925A", "#5E4420", fen=0.7, image=inl,
-                       image_color="#E2C67E", image_box=box)
-    a = K.outline_mesh("tallyA", ol, 0.22, front, plane="XZ", bevel_w=0.08, segments=4)
-    a.location = (-0.12, -0.07, -0.12)
-    b = K.outline_mesh("tallyB", ol, 0.22, M["gold"], plane="XZ", bevel_w=0.08, segments=4)
-    b.location = (0.3, 0.22, 0.42)
-    objs += [b, a]
-    cord = P.cord("cord", M["rope_red"], [(-0.1, -0.16, 0.5), (-0.05, -0.2, 0.3),
-                                          (0.05, -0.16, 0.12)], 0.03)
-    ring = K.torus("cring", 0.16, 0.03, M["rope_red"], 32, 8)
-    K.place(ring, (-0.05, 0.0, 0.47), (0, 90, 0))
-    ring.scale = (1.0, 1.4, 1.0)
+    cv = S.Canvas(TIGER_BOX, 900)
+    _tiger_shape(cv)
+    inl = _tiger_inlay("TigerInlay", TIGER_BOX)
+    near = gb.pigment("I_TallyPatina", "#8CB496", "#3A6450", fen=0.75, formk=0.25, image=inl,
+                      image_color="#E8C87A", image_box=TIGER_BOX)
+    far = gb.pigment("I_TallyBronze", "#D8B46A", "#8A6228", fen=0.75, formk=0.25, image=inl,
+                     image_color="#F4DE9A", image_box=TIGER_BOX)
+    a = S.shape_mesh("tallyA", cv, 0.24, near, bevel_w=0.07, segments=3)
+    b = S.shape_mesh("tallyB", cv, 0.24, far, bevel_w=0.07, segments=3)
+    objs += P.group("tbG", b, (0.32, 0.3, 0.46), (0, 0, 0))
+    objs += P.group("taG", a, (0.0, 0.0, 0.0), (0, 0, 0))
+    cord = P.cord("cord", M["rope_red"], [(0.05, -0.16, 0.72), (0.0, -0.2, 0.5),
+                                          (0.05, -0.2, 0.25), (0.12, -0.18, 0.05)], 0.03)
+    ring = K.torus("cring", 0.15, 0.03, M["rope_red"], 32, 8)
+    K.place(ring, (0.03, 0.04, 0.72), (0, 90, 0))
+    ring.scale = (1.0, 1.6, 1.0)
     objs += [cord, ring]
-    objs += P.tassel("ts", M["tassel_red"], (0.05, -0.17, 0.12), 0.42, 0.07)
-    objs = P.group("al", objs, (0, 0, 0), (0, 0, FACE + 6))
+    objs += P.tassel("ts", M["tassel_red"], (0.12, -0.18, 0.05), 0.4, 0.07)
+    objs = P.group("al", objs, (0, 0, 0), (0, 0, FACE + 8))
     return dict(objs=objs, fill=1.0)
 
 
 # ---------------------------------------------------------------------------------------------
 def Truce(M, cam):
-    """A white silk flag of truce on a dark pole with a mud-gold finial."""
-    objs = P.flag_on_pole("tf", M, M["silk_white"], 1.15, 0.85, 2.3, wave=0.1, droop=0.18,
-                          tassel=False)
-    objs = P.group("truce", objs, (0, 0, 0), (0, 0, FACE + 10))
+    """A white silk flag of truce streaming from a dark pole: deep folds shaded with ink grey,
+    a mud-gold finial and a red tassel at the top."""
+    objs = []
+    pr = 0.04
+    H = 2.3
+    objs.append(K.lathe("tr_pole", [(0.0, 0.0), (pr, 0.0), (pr * 0.85, H), (0.0, H)],
+                        M["wood_dark"], 16))
+    fin = K.lathe("tr_fin", [(0.0, 0.0), (pr * 1.6, 0.0), (pr * 1.9, 0.05), (pr * 1.2, 0.09),
+                             (pr * 0.9, 0.16), (pr * 1.6, 0.21), (0.0, 0.36)], M["gold"], 20)
+    fin.location = (0, 0, H)
+    objs.append(fin)
+    w, h = 1.55, 1.08
+    fold = gb.pigment("I_TruceSilk", "#F6F0E2", "#B8AE9C", fen=0.75, formk=0.3)
+
+    def fn(u, v):
+        x = u * w
+        y = 0.16 * math.sin(u * math.pi * 2.3 + 0.3) * u ** 0.6 + 0.05 * math.sin(v * 3.0) * u
+        z = h * (v - 1.0) - 0.28 * u ** 1.5 + 0.06 * math.sin(u * 7.0) * u * (1 - v)
+        return (x + pr, y, z)
+    cl = K.grid("tr_cloth", fn, 60, 24, fold, thickness=0.0)
+    cl.location = (0, 0, H - 0.04)
+    objs.append(cl)
+    for k, zz in enumerate((H - 0.06, H - 0.04 - h * 0.5, H - 0.02 - h)):
+        rg = K.torus("tr_ring%d" % k, pr * 1.3, 0.012, M["rope_red"], 16, 6)
+        rg.location = (0, 0, zz)
+        objs.append(rg)
+    objs += P.tassel("tr_ts", M["tassel_red"], (0.0, -0.02, H + 0.02), 0.36, 0.06)
+    objs = P.group("truce", objs, (0, 0, 0), (0, 0, FACE + 14))
     return dict(objs=objs, fill=1.0)
 
 
 # ---------------------------------------------------------------------------------------------
+def _gift_motif(name):
+    """Mud-gold painted lid / front motif: a round 寿 medallion inside a cloud border."""
+    from PIL import Image, ImageDraw, ImageFont
+    im = Image.new("RGBA", (512, 512), (0, 0, 0, 0))
+    d = ImageDraw.Draw(im)
+    g = (228, 196, 116, 255)
+    d.ellipse([86, 86, 426, 426], outline=g, width=16)
+    for k in range(8):
+        a = TAU * k / 8
+        cx, cy = 256 + 200 * math.cos(a), 256 + 200 * math.sin(a)
+        d.arc([cx - 40, cy - 40, cx + 40, cy + 40], math.degrees(a) - 100, math.degrees(a) + 100,
+              fill=g, width=12)
+    f = ImageFont.truetype(FONT_BRUSH, 250)
+    d.text((256, 262), "寿", font=f, fill=g, anchor="mm")
+    return K.pil_image(name, im)
+
+
 def Gift(M, cam):
-    """A black-lacquer gift box with mud-gold rims and corner fittings, tied with a cinnabar
-    silk ribbon and bow; a smaller azurite brocade box behind."""
+    """A cinnabar-lacquer gift box (礼盒): a deep lid with mud-gold rims and a painted 寿
+    medallion, bound with a malachite silk cord that crosses the lid and ties in a looped knot,
+    two tassels falling over the front."""
     objs = []
+    s, h, lid = 1.08, 0.72, 0.24
+    img = _gift_motif("GiftMotif")
+    body = gb.pigment("I_GiftBody", "#C8503A", "#7E2018", fen=0.55, formk=0.22, image=img,
+                      image_box=(-0.2, -0.2, 0.2, 0.2))
+    b = K.box("gb_body", (s, s, h - lid), body)
+    b.location = (0, 0, (h - lid) / 2)
+    objs.append(b)
+    ld = K.box("gb_lid", (s * 1.05, s * 1.05, lid), M["lacquer_black"])
+    ld.location = (0, 0, h - lid / 2 + 0.01)
+    objs.append(ld)
 
-    def roundel(name):
-        from PIL import Image, ImageDraw
-        im = Image.new("RGBA", (256, 256), (0, 0, 0, 0))
-        d = ImageDraw.Draw(im)
-        g = (226, 194, 112, 255)
-        d.ellipse([28, 28, 228, 228], outline=g, width=12)
-        for k in range(4):
-            a = math.pi / 2 * k + math.pi / 4
-            cx, cy = 128 + 52 * math.cos(a), 128 + 52 * math.sin(a)
-            d.ellipse([cx - 30, cy - 30, cx + 30, cy + 30], fill=g)
-        d.ellipse([104, 104, 152, 152], fill=(30, 26, 22, 255), outline=g, width=8)
-        return K.pil_image(name, im)
-
-    def box(name, s, h, mat, x=0.0, y=0.0, ribbon="silk_red", motif=False):
+    def frame(name, size, z, t, w=0.035):
         out = []
-        bm = M[mat]
-        if motif:
-            bm = gb.pigment("I_GiftLacquer", "#5A5048", "#1E1A16", fen=0.5, hi=("#7A7068", 0.35),
-                            image=roundel("GiftRoundel"),
-                            image_box=(-s * 0.2, -s * 0.2, s * 0.2, s * 0.2))
-        b = K.box(name, (s, s, h * 0.72), bm)
-        b.location = (x, y, h * 0.36)
-        out.append(b)
-        ld = K.box(name + "_lid", (s * 1.05, s * 1.05, h * 0.3), M[mat])
-        ld.location = (x, y, h * 0.72 + h * 0.15 - 0.02)
-        out.append(ld)
-        rim = K.box(name + "_rim", (s * 1.06, s * 1.06, h * 0.05), M["gold"])
-        rim.location = (x, y, h * 0.72 - 0.01)
-        out.append(rim)
-        rim2 = K.box(name + "_rim2", (s * 1.065, s * 1.065, h * 0.04), M["gold"])
-        rim2.location = (x, y, h * 1.0 - 0.06)
-        out.append(rim2)
-        for ax in (0, 1):
-            sz = (s * 1.08, 0.11, h * 1.05) if ax == 0 else (0.11, s * 1.08, h * 1.05)
-            rb = K.box(name + "_rb%d" % ax, sz, M[ribbon])
-            rb.location = (x, y, h * 0.52)
-            out.append(rb)
+        for k, (dx, dy, sx, sy) in enumerate(((0, -1, 1, 0), (0, 1, 1, 0), (-1, 0, 0, 1),
+                                              (1, 0, 0, 1))):
+            bx = K.box("%s%d" % (name, k), (size * sx + w * (1 - sx), size * sy + w * (1 - sy), t),
+                       M["gold"])
+            bx.location = (dx * (size - w) / 2, dy * (size - w) / 2, z)
+            out.append(bx)
         return out
-    objs += box("b2", 0.72, 0.58, "silk_blue", x=0.48, y=0.58, ribbon="gold")
-    objs += box("b1", 1.05, 0.8, "lacquer_black", x=-0.12, y=-0.1, motif=True)
-    top = 0.8 + 0.02
-    cx, cy = -0.12, -0.1
-    for sx in (-1, 1):
-        loop = P.cord("loop%d" % sx, M["silk_red"], [(cx, cy, top), (cx + sx * 0.14, cy - 0.04, top + 0.2),
-                                                     (cx + sx * 0.34, cy - 0.02, top + 0.16),
-                                                     (cx + sx * 0.3, cy, top + 0.03),
-                                                     (cx + sx * 0.06, cy, top)], 0.04)
-        objs.append(loop)
-        tail = P.cord("tail%d" % sx, M["silk_red"], [(cx, cy - 0.02, top), (cx + sx * 0.12, cy - 0.3, top - 0.02),
-                                                     (cx + sx * 0.2, cy - 0.56, top - 0.2)], 0.035)
-        objs.append(tail)
-    kn = K.sphere("knot", 0.08, M["silk_red"], 16, 8)
-    kn.location = (cx, cy, top + 0.03)
+    objs += frame("gb_rimA", s * 1.062, h - lid + 0.012, 0.035)
+    objs += frame("gb_rimB", s * 1.062, h + 0.012 - 0.012, 0.03)
+    objs += frame("gb_rimC", s * 1.012, 0.02, 0.04)
+    cord = gb.pigment("I_GiftCord", "#6EAE8C", "#2A6A52", fen=0.45, formk=0.15)
+    top = h + 0.025
+    for ax in (0, 1):
+        sz = (s * 1.075, 0.075, h + 0.05) if ax == 0 else (0.075, s * 1.075, h + 0.05)
+        cb = K.box("gb_cord%d" % ax, sz, cord)
+        cb.location = (0, 0, (h + 0.05) / 2)
+        objs.append(cb)
+    # the knot: a flat button knot and two loops lying on the lid, two tails to the front
+    kn = K.sphere("gb_knot", 0.1, cord, 24, 12, (1.0, 1.0, 0.6))
+    kn.location = (0, 0, top + 0.03)
     objs.append(kn)
-    objs = P.group("gift", objs, (0, 0, 0), (0, 0, 8))
+    for sx in (-1, 1):
+        lp = K.torus("gb_loop%d" % sx, 0.16, 0.032, cord, 40, 8)
+        K.place(lp, (sx * 0.2, 0.04, top + 0.04), (0, -sx * 18, sx * 28))
+        lp.scale = (1.0, 0.62, 1.0)
+        objs.append(lp)
+    for k, (dx, ln) in enumerate(((-0.1, 0.5), (0.1, 0.42))):
+        objs.append(P.cord("gb_tail%d" % k, cord, [(0.0, 0.0, top + 0.03),
+                                                   (dx * 0.6, -s * 0.3, top + 0.02),
+                                                   (dx, -s * 0.54, top - 0.04),
+                                                   (dx * 1.1, -s * 0.56, top - 0.2)], 0.028))
+        objs += P.tassel("gb_ts%d" % k, M["tassel_red"], (dx * 1.1, -s * 0.56, top - 0.2), ln,
+                         0.065)
+    objs = P.group("gift", objs, (0, 0, 0), (0, 0, FACE + 4))
     return dict(objs=objs, fill=1.0)
 
 
@@ -189,7 +248,8 @@ def Factions(M, cam):
     objs = []
     for k, (mat, ry, x, h) in enumerate((("silk_blue", -16, -0.42, 2.0), ("silk_green", 16, 0.42, 2.0),
                                          ("silk_red", 0, 0.0, 2.3))):
-        f = P.flag_on_pole("f%d" % k, M, M[mat], 0.72, 0.55, h, wave=0.06, droop=0.1, tassel=False)
+        f = P.flag_on_pole("f%d" % k, M, M[mat], 0.72, 0.55, h, wave=0.06, droop=0.1,
+                           tassel=(k == 2), border="gold", swallow=0.32 if k == 2 else 0.0)
         objs += P.group("fG%d" % k, f, (x, 0.08 * (2 - k), 0.0), (0, ry, FACE + 8))
     return dict(objs=objs, fill=1.0)
 
@@ -232,38 +292,43 @@ def SectTraining(M, cam):
 
 
 # ---------------------------------------------------------------------------------------------
-def Search(M, cam):
-    """Searching the land: a white paper lantern on its stick held over an unrolled map."""
-    objs = []
-    W, H = 1.4, 0.95
+def _map_image(name):
+    """A painted map for the Search scroll: blue-green peaks, a winding river, a red-walled
+    town and a dotted route in ink (Pillow, RGBA)."""
     from PIL import Image, ImageDraw
-    im = Image.new("RGBA", (512, 348), (0, 0, 0, 0))
+    W, H = 768, 640
+    im = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     d = ImageDraw.Draw(im)
     ink = (42, 36, 30, 255)
-    for (x, y, sz) in ((90, 120, 44), (150, 100, 58), (215, 125, 40), (400, 95, 48)):
-        d.polygon([(x - sz, y + sz * 0.6), (x, y - sz * 0.55), (x + sz, y + sz * 0.6)],
-                  fill=(62, 142, 110, 255), outline=ink, width=6)
-    d.line([(20, 268), (120, 238), (220, 278), (330, 228), (490, 258)], fill=(43, 92, 138, 255),
-           width=14, joint="curve")
-    d.rectangle([300, 150, 370, 200], fill=(181, 56, 42, 255), outline=ink, width=5)
-    img = K.pil_image("MapImg", im)
-    pm = gb.pigment("I_MapPaper", "#F2E8CE", "#CDB98E", fen=0.35, formk=0.12, image=img)
+    d.line([(0, 470), (130, 420), (250, 480), (390, 400), (520, 450), (768, 380)],
+           fill=(70, 118, 160, 255), width=26, joint="curve")
+    for (x, y, sz, c) in ((120, 230, 92, (62, 142, 110)), (250, 200, 120, (50, 120, 96)),
+                          (380, 250, 80, (62, 142, 110)), (620, 190, 104, (78, 150, 120))):
+        d.polygon([(x - sz, y + sz * 0.7), (x - sz * 0.2, y - sz * 0.5), (x, y - sz * 0.62),
+                   (x + sz * 0.3, y - sz * 0.35), (x + sz, y + sz * 0.7)],
+                  fill=c + (255,), outline=ink, width=7)
+    d.rectangle([520, 520, 610, 590], fill=(181, 56, 42, 255), outline=ink, width=7)
+    for k in range(9):
+        x = 150 + k * 42
+        y = 560 - int(40 * math.sin(k * 0.6))
+        d.ellipse([x - 7, y - 7, x + 7, y + 7], fill=ink)
+    return K.pil_image(name, im)
 
-    def sheet(u, v):
-        return (-W / 2 + u * W, -H / 2 + v * H, 0.03 * math.sin(u * math.pi * 2))
-    objs.append(K.grid("map", sheet, 24, 2, pm))
-    for sx in (-1, 1):
-        rod = K.lathe("rod%d" % sx, [(0.0, -H / 2 - 0.06), (0.07, -H / 2 - 0.06),
-                                     (0.07, H / 2 + 0.06), (0.0, H / 2 + 0.06)], M["wood_dark"], 24)
-        K.place(rod, (sx * (W / 2 + 0.05), 0, 0.05), (90, 0, 0))
-        objs.append(rod)
-    objs = P.group("mapG", objs, (0.25, 0.25, 0.0), (0, 0, 8))
-    lt = P.lantern("lt", M, 0.42, 0.66, "white")
-    stick = K.tube("stick", [(-0.85, -0.2, 0.3), (-0.55, -0.3, 1.5), (-0.3, -0.32, 1.66),
-                             (-0.22, -0.32, 1.55)], 0.03, M["bamboo"], 8)
-    objs.append(stick)
-    objs.append(P.cord("lcord", M["rope_red"], [(-0.22, -0.32, 1.55), (-0.22, -0.32, 1.38)], 0.015))
-    objs += P.group("ltG", lt, (-0.22, -0.32, 1.0), (0, 0, 0))
+
+def Search(M, cam):
+    """Searching the land: an unrolled map scroll held upright (peaks, river, a town, the
+    dotted route) and, before it, a white paper lantern hanging from a bent bamboo stick."""
+    objs = []
+    W, H = 1.5, 1.15
+    pm = gb.pigment("I_MapPaper", "#F2E8CE", "#CDB98E", fen=0.35, formk=0.12,
+                    image=_map_image("MapImg"))
+    objs += P.handscroll_open("mp", M, W, H, pm, 0.05, knob="jade", border="silk_green")
+    objs = P.group("mapG", objs, (0.28, 0.45, 0.82), (-10, 0, FACE + 6))
+    lt = P.lantern("lt", M, 0.38, 0.6, "white")
+    objs += P.group("ltG", lt, (-0.5, -0.5, 0.85), (0, 0, 0))
+    objs.append(K.tube("stick", [(-1.05, -0.45, 0.05), (-0.95, -0.5, 1.2), (-0.75, -0.52, 1.5),
+                                 (-0.52, -0.5, 1.48)], 0.03, M["bamboo"], 8))
+    objs.append(P.cord("lcord", M["rope_red"], [(-0.52, -0.5, 1.48), (-0.5, -0.5, 1.16)], 0.016))
     return dict(objs=objs, fill=1.0)
 
 

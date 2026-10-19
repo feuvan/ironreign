@@ -1,5 +1,5 @@
 {
-  "version": 17,
+  "version": 28,
   "files": [
     "Models/Banner.glb",
     "Models/City_1.glb",
@@ -10,6 +10,10 @@
     "Models/Tree_Bamboo.glb",
     "Models/Tree_Broad.glb",
     "Models/Tree_Pine.glb",
+    "Terrain/Albedo.png",
+    "Terrain/Masks.png",
+    "Textures/Water_Foam.png",
+    "Textures/Water_Normal.png",
     "UI/Button@2x.png",
     "UI/Button_Disabled@2x.png",
     "UI/Button_Hover@2x.png",
@@ -64,10 +68,20 @@
     "UI/Tab@2x.png",
     "UI/Tab_Active@2x.png",
     "UI/Title_Logo@2x.png",
-    "Terrain/Albedo.png",
-    "Terrain/Masks.png",
-    "Textures/Water_Normal.png",
-    "Textures/Water_Foam.png"
+    "UI/Title_Background@2x.png",
+    "Events/Court@2x.png",
+    "Events/Battle@2x.png",
+    "Events/Harvest@2x.png",
+    "Events/Disaster@2x.png",
+    "Events/Wanderer@2x.png",
+    "Events/Sect@2x.png",
+    "Events/Bandits@2x.png",
+    "Events/Envoy@2x.png",
+    "Events/Festival@2x.png",
+    "Events/Plague@2x.png",
+    "Events/Flood@2x.png",
+    "Events/Omen@2x.png",
+    "Duel/Background@2x.png"
   ],
   "normalMapConvention": "opengl"
 }

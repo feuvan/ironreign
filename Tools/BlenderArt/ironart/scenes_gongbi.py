@@ -518,9 +518,9 @@ def arch_materials(variant=None):
     m["W_Gable"] = wash("GB_W_Gable", "cinnabar", "cinnabar_d")
     m["W_Marble"] = wash("GB_W_Marble", c("marble", "white"), "#C8C0B0", ao=0.3, ao_dist=1.0)
     m["W_Paving"] = wash("GB_W_Paving", c("paving", "#D6CCB8"), "#B8AE9A", grad="none")
-    m["W_Stone"] = wash("GB_W_Stone", c("stone", "stone"), "stone_d", ao=0.3, ao_dist=2.0)
-    m["W_StoneDark"] = wash("GB_W_StoneDark", "stone_d", "#5E564A")
-    m["W_Brick"] = wash("GB_W_Brick", c("brick", "#A89C88"), "#7E7462")
+    m["W_Stone"] = masonry("GB_W_Stone", c("stone", "stone"), "stone_d")
+    m["W_StoneDark"] = masonry("GB_W_StoneDark", c("stone_dark", "#9C9384"), "#6E665A")
+    m["W_Brick"] = masonry("GB_W_Brick", c("brick", "#A89C88"), "#7E7462", course=0.3, block=0.6, ink=0.22, far=120.0)
     m["W_BrickWarm"] = wash("GB_W_BrickWarm", "#B49A7A", "#86705A")
     m["W_Plaster"] = wash("GB_W_Plaster", c("plaster", "plaster"), "#C8B898", ao=0.3)
     m["W_PlasterWarm"] = wash("GB_W_PlasterWarm", "#E6D2B0", "#C8AE88")
@@ -532,7 +532,35 @@ def arch_materials(variant=None):
     m["Water"] = wash("GB_W_Water", "azurite_l", "#6A90B0", grad="none", bare=0.45, form=0.0)
     m["Tint"] = wash("GB_W_Tint", "cinnabar", "cinnabar_d")
     m["Ground"] = wash("GB_W_Ground", "#D8CCAE", "#C0B090", grad="none", form=0.0)
+    m["Thatch"] = thatch("GB_W_Thatch", c("thatch", "#B89A62"), c("thatch_d", "#7E6238"))
     return m
+
+
+def masonry(name, color, deep, course=0.55, block=1.1, ink=0.32, near=20.0, far=220.0, ao=0.3):
+    """Stone / brick wall: the wash with fine ruled courses (horizontal every ``course`` m,
+    staggered joints every ``block`` m) in ink, fading with distance."""
+    mat, b, created = _builder(name)
+    if not created:
+        return mat
+    x, y, z = b.sep(wpos(b))
+    nz = b.math("ABSOLUTE", b.sep(b.node("ShaderNodeNewGeometry").outputs["Normal"])[2])
+    side = b.smooth(nz, 0.6, 0.3)
+    row = b.math("FLOOR", b.math("DIVIDE", z, course))
+    h = stripes(b, b.math("DIVIDE", z, course), 1.0, width=0.06)
+    u = b.math("ADD", b.math("ADD", x, y), b.math("MULTIPLY", b.math("FRACT", b.math("MULTIPLY", row, 0.5)), block))
+    v = stripes(b, b.math("DIVIDE", u, block), 1.0, width=0.03)
+    lines = b.math("MULTIPLY", b.math("MAXIMUM", h, b.math("MULTIPLY", v, 0.8)), side)
+    dist = b.node("ShaderNodeCameraData").outputs["View Distance"]
+    lines = b.math("MULTIPLY", b.math("MULTIPLY", lines, ink), b.smooth(dist, far, near))
+    g = facing(b, 0.35, 0.05, 0.95)
+    a = b.node("ShaderNodeAmbientOcclusion")
+    a.samples = 6
+    a.inputs["Distance"].default_value = 2.0
+    g = b.math("MAXIMUM", g, b.math("MULTIPLY", b.math("SUBTRACT", 1.0, a.outputs["AO"]), ao))
+    n = wnoise(b, wpos(b), 0.15, 3.0, 0.55)
+    base = b.mix(lin4(color), lin4(mixc(color, deep, 0.35)), b.smooth(n, 0.4, 0.7))
+    col = b.mix(base, lin4(deep), g)
+    return finish(mat, b, col, ink=lines)
 
 
 def tile(name, color):
@@ -548,6 +576,26 @@ def tile(name, color):
     g = b.math("MAXIMUM", b.maprange(v, 0.0, 2.5, 0.7, 0.0), facing(b, 0.3, 0.2, 1.0))
     col = b.mix(lin4(c), lin4(d), g)
     return finish(mat, b, col)
+
+
+def thatch(name, color="#B89A62", deep="#7E6238"):
+    """Thatched roof: straw wash deepening to the eaves, fine ink strokes down the slope (UV u =
+    metres along the eave), broken by noise."""
+    mat, b, created = _builder(name)
+    if not created:
+        return mat
+    uv = b.node("ShaderNodeUVMap")
+    uv.uv_map = "MetreUV"
+    u, v, _ = b.sep(uv.outputs["UV"])
+    n = wnoise(b, wpos(b), 1.5, 2.0, 0.5)
+    lines = stripes(b, b.math("ADD", b.math("DIVIDE", u, 0.22), b.math("MULTIPLY", n, 1.5)), 1.0, width=0.1)
+    brk = b.smooth(wnoise(b, wpos(b), 0.6, 2.0, 0.5), 0.4, 0.6)
+    ink = b.math("MULTIPLY", b.math("MULTIPLY", lines, brk), 0.4)
+    dist = b.node("ShaderNodeCameraData").outputs["View Distance"]
+    ink = b.math("MULTIPLY", ink, b.smooth(dist, 160.0, 20.0))
+    g = b.math("MAXIMUM", b.maprange(v, 0.0, 2.0, 0.6, 0.0), facing(b, 0.3, 0.2, 1.0))
+    col = b.mix(lin4(color), lin4(deep), g)
+    return finish(mat, b, col, ink=ink)
 
 
 def lattice(name, color):
@@ -618,7 +666,10 @@ def collections():
     import bpy
     sc = bpy.context.scene
     out = {}
-    for k in [k for k in INK if "col" not in INK[k]] + ["none"]:
+    from .scenes_gongbi_ink import CODES
+    kinds = [k for k in INK if "col" not in INK[k]] + ["none"]
+    kinds += [k for k in CODES if k not in kinds]
+    for k in kinds:
         nm = "GB_" + k
         c = bpy.data.collections.get(nm)
         if c is None:

@@ -121,10 +121,11 @@ def male_hairline(far, top=0.205, sideburn=0.50, recede=0.0, nape=0.64):
     over the near ear -> nape."""
     t = top + 0.035 * recede
     r = recede
+    # a gentle arch: highest at the centre, curving down to the temples and sideburns
     return np.array([
-        (far * 1.36, 0.44), (far * 1.18, 0.31 + 0.03 * r), (far * 0.88, 0.250 + 0.05 * r),
-        (far * 0.42, t + 0.012), (0.0, t), (-far * 0.42, t + 0.012),
-        (-far * 0.88, 0.250 + 0.05 * r), (-far * 1.14, 0.30 + 0.04 * r),
+        (far * 1.36, 0.44), (far * 1.18, 0.325 + 0.03 * r), (far * 0.88, 0.268 + 0.05 * r),
+        (far * 0.42, t + 0.022), (0.0, t), (-far * 0.42, t + 0.022),
+        (-far * 0.88, 0.268 + 0.05 * r), (-far * 1.14, 0.315 + 0.04 * r),
         (-far * 1.30, 0.40), (-far * 1.37, sideburn),
         (-far * 1.47, sideburn - 0.04), (-far * 1.62, 0.43), (-far * 1.85, 0.45),
         (-far * 2.05, 0.54), (-far * 2.30, nape)])
@@ -143,13 +144,15 @@ def male_hair(cv, fd, color="hair", grey=0.0, top=0.205, sideburn=0.50, bun=True
     y_nape = hl[-1, 1]
     near_sil, _ = H.silhouette(0.0, y_nape, 40, side=-far, dr=volume)
     far_sil, _ = H.silhouette(0.0, hl[0, 1], 40, side=far, dr=volume)
-    poly = np.vstack([HL, near_sil[::-1], far_sil])
-    base = pal.hexs(pal.mix(color, "hair_white", grey * 0.85))
+    base = pal.hexs(pal.mix(pal.hexs(pal.mix(color, "ink_m", 0.20 * (1 - grey))), "hair_white",
+                            grey * 0.85))
+    HLin = feather_hairline(cv, fd, HL, base, s)
+    poly = np.vstack([HLin, near_sil[::-1], far_sil])
     cv.fill(poly, base, 0.97, "paint")
-    # sheen band following the skull (light from the upper left)
-    sheen_col = pal.hexs(pal.mix(base, "white", 0.30 + 0.2 * grey))
+    # sheen band following the skull (light from the upper left): a lighter ink, not white
+    sheen_col = pal.hexs(pal.mix(base, "ink_l", 0.55 + 0.3 * grey))
     lon = np.linspace(-1.5, 1.5, 50)
-    for yc, al in ((0.11, 0.20), (0.17, 0.10)):
+    for yc, al in ((0.11, 0.16), (0.17, 0.08)):
         P1 = H.Plon(lon, np.full_like(lon, yc - 0.035), volume * 0.8)
         P2 = H.Plon(lon, np.full_like(lon, yc + 0.035), volume * 0.8)
         vis = H.facing_lon(lon, np.full_like(lon, yc)) > 0.05
@@ -208,6 +211,22 @@ def male_hair(cv, fd, color="hair", grey=0.0, top=0.205, sideburn=0.50, bun=True
     return out
 
 
+def feather_hairline(cv, fd, HL, base, s, width=0.011, wash=0.16):
+    """Soft hairline (发际): the hair mass stops a little short of the hairline and fades in
+    over it, with a pale ink wash on the skin side, as a painter softens the edge with a damp
+    brush.  Returns the inner (hair-side) curve used to close the hair mass."""
+    H = fd.H
+    cen = H.P([(0.0, 0.5)])[0]
+    m = len(HL) // 2
+    nrm = g.normals(HL)
+    into_hair = 1 if np.dot(nrm[m], HL[m] - cen) > 0 else -1
+    HLin = g.offset(HL, into_hair * s * width)
+    cv.band(HL, HLin, base, lambda S, T: 0.97 * g.smoothstep(0.0, 1.0, T) ** 0.8, mode="paint",
+            rows=4, cols=max(20, len(HL)))
+    cv.edge(HL, s * 0.022, "ink_l", wash, side=-into_hair, rows=4, end_fade=0.08, power=1.6)
+    return HLin
+
+
 def _inward(P, poly):
     c = poly.mean(0)
     m = len(P) // 2
@@ -245,14 +264,14 @@ def beard_colors(grey, color="hair"):
     dark = pal.hexs(pal.mix("ink", "hair_grey", max(0.0, g_ - 0.6) * 1.5))
     mid = pal.hexs(pal.mix("ink_m", "hair_grey", 0.3 + 0.7 * g_))
     light = "hair_white"
-    mix = [(dark, 0.85, max(0.05, 1.0 - 1.15 * g_)), (mid, 0.75, 0.35 + 0.3 * g_),
-           (light, 0.85, 0.05 + 1.2 * g_ ** 1.3), ("white", 0.9, 0.6 * max(0.0, g_ - 0.5))]
+    mix = [(dark, 0.85, max(0.05, 1.0 - 1.15 * g_)), (mid, 0.75, 0.40 + 0.3 * g_),
+           (light, 0.80, 0.04 + 0.85 * g_ ** 1.4), ("white", 0.85, 0.5 * max(0.0, g_ - 0.55))]
     return base, mix
 
 
 def flow_mass(cv, R, B, cols, rng, n, s, sway=0.012, tips=None, tip_pull=0.6,
               base_alpha=0.55, root_band=0.25, strand_w=0.0030, waves=1.3, phase=0.0,
-              soft=True, end_spread=0.04, fade_in=0.35):
+              soft=True, end_spread=0.04, fade_in=0.35, wash=0.0):
     """Hair mass flowing from root curve R to end curve B (both ordered the same way).
     Strands keep their order (combed), sway together in soft waves, and cluster into the lock
     tips given as parameters along B.  cols = (base, [(colour, alpha, weight), ...])."""
@@ -263,11 +282,19 @@ def flow_mass(cv, R, B, cols, rng, n, s, sway=0.012, tips=None, tip_pull=0.6,
     poly = np.vstack([Rr, Br[::-1]])
     if soft:
         cv.band(Rr, Br, base, lambda S, T: base_alpha * g.smoothstep(-0.01, fade_in, T)
-                * (1 - 0.75 * g.smoothstep(0.8, 1.0, T))
+                * (1 - 0.95 * g.smoothstep(0.78, 0.96, T))
                 * (0.3 + 0.7 * g.smoothstep(0.0, 0.12, S) * g.smoothstep(0.0, 0.12, 1 - S)),
                 mode="paint", rows=8)
     else:
         cv.fill(poly, base, base_alpha, "paint")
+    # ink-wash body of the mass: denser near the roots and inside the locks, mottled, so the
+    # beard reads as a mass with combed strands on top (not as loose hairs)
+    if wash:
+        sd = int(rng.integers(1 << 20))
+        cv.band(Rr, Br, "ink_m", lambda S, T: wash * g.smoothstep(-0.02, fade_in * 0.8, T)
+                * (1 - 0.8 * g.smoothstep(0.45, 1.0, T))
+                * (0.35 + 0.65 * g.smoothstep(0.0, 0.15, S) * g.smoothstep(0.0, 0.15, 1 - S)),
+                rows=8, alpha_xy=lambda V: np.clip(1 + 0.45 * g.vnoise(V, s * 0.05, sd), 0.2, 1.6))
     tips = np.asarray(tips if tips is not None else [], float)
     wts = np.array([m[2] for m in mix], float)
     wts = wts / wts.sum()
@@ -301,6 +328,39 @@ def flow_mass(cv, R, B, cols, rng, n, s, sway=0.012, tips=None, tip_pull=0.6,
     return poly
 
 
+def lock(cv, C, W0, cols, rng, n, s, strand_w=0.0034, wash=0.3, base_alpha=0.95):
+    """One lock of hair (绺) along centreline C (root -> tip) of half-width W0 px at its fullest:
+    a soft base mass, an ink-wash body, then strands combed along it converging to the tip."""
+    base, mix = cols
+    M = 60
+    Cr = g.resample(C, M)
+    t = np.linspace(0, 1, M)
+    w = W0 * (0.60 + 0.40 * np.sin(np.pi * np.clip(t * 1.7, 0, 1)) ** 0.7) \
+        * (1 - 0.80 * g.smoothstep(0.50, 1.0, t))
+    N = g.normals(Cr)
+    L = Cr + N * w[:, None]
+    R = Cr - N * w[:, None]
+    cv.band(L, R, base, lambda S, T: base_alpha * g.smoothstep(0.0, 0.10, S)
+            * (1 - 0.35 * (np.abs(T - 0.5) * 2) ** 3), mode="paint", rows=4)
+    if wash:
+        sd = int(rng.integers(1 << 20))
+        cv.band(L, R, "ink_m", lambda S, T: wash * (1 - 0.6 * S) * (1 - (np.abs(T - 0.5) * 2) ** 2),
+                rows=4, alpha_xy=lambda V: np.clip(1 + 0.4 * g.vnoise(V, s * 0.03, sd), 0.3, 1.6))
+    wts = np.array([m[2] for m in mix], float)
+    wts = wts / wts.sum()
+    for i in range(n):
+        col, al, _ = mix[rng.choice(len(mix), p=wts)]
+        v = rng.uniform(-0.95, 0.95)
+        t0 = rng.uniform(0.0, 0.25)
+        t1 = rng.uniform(0.55, 1.0)
+        ts = np.linspace(t0, t1, 8)
+        k = (ts * (M - 1)).astype(int)
+        conv = 1 - 0.55 * (ts - t0) / max(t1 - t0, 1e-3)          # strands converge to the tip
+        P = Cr[k] + N[k] * (v * conv * w[k])[:, None]
+        cv.stroke(g.catmull(P, 4), s * strand_w * rng.uniform(0.7, 1.2), col,
+                  al * rng.uniform(0.55, 1.0), prof="hair", noise=0.12, taper=(0.12, 0.6))
+
+
 def beard(cv, fd, kind="full", length=0.30, width=1.0, grey=0.0, density=1.0, seed=0,
           moustache=True, whiskers=True, color="hair", droop=1.0):
     """kind: 'full' (络腮胡 whiskers + chin beard + moustache), 'long' (长髯 to the chest),
@@ -331,7 +391,8 @@ def beard(cv, fd, kind="full", length=0.30, width=1.0, grey=0.0, density=1.0, se
                    (0.0, my + F.lip_lo + 0.04), (far * 0.3, 0.875), (far * 0.7, 0.85),
                    (far * 0.95, 0.79)]
         else:
-            top = [(-far * 0.25, 0.90), (0.0, my + F.lip_lo + 0.045), (far * 0.25, 0.90)]
+            top = [(-far * 0.36, 0.89), (-far * 0.15, my + F.lip_lo + 0.05), (0.0, my + F.lip_lo + 0.045),
+                   (far * 0.15, my + F.lip_lo + 0.05), (far * 0.36, 0.89)]
         top = np.array(top)
         R = H.Plon(*g.catmull(top, 8).T, 0.012)
         # end curve: short below the jaw at the sides, long at the centre, lobed into locks
@@ -356,36 +417,40 @@ def beard(cv, fd, kind="full", length=0.30, width=1.0, grey=0.0, density=1.0, se
                            jf + np.array([far * s * 0.005, s * 0.26])], 8)
             tips = [0.35, 0.5, 0.62]
         else:
-            sp = s * 0.05 * width
-            B = g.catmull([R[0] + np.array([-far * s * 0.01, s * 0.06]),
-                           tip + np.array([-far * sp, -L * 0.2]), tip,
-                           tip + np.array([far * sp, -L * 0.2]),
-                           R[-1] + np.array([far * s * 0.01, s * 0.06])], 8)
-            tips = [0.5]
-        n = int({"full": 900, "stubble": 450, "long": 900, "goatee": 260}[kind] * density)
+            # 山羊须 done the dignified way: a full, rounded chin lock, not a stringy point
+            sp = s * 0.075 * width
+            B = g.catmull([R[0] + np.array([-far * s * 0.015, s * 0.06]),
+                           tip + np.array([-far * sp, -L * 0.30]),
+                           tip + np.array([-far * sp * 0.45, -L * 0.04]), tip,
+                           tip + np.array([far * sp * 0.45, -L * 0.04]),
+                           tip + np.array([far * sp, -L * 0.30]),
+                           R[-1] + np.array([far * s * 0.015, s * 0.06])], 8)
+            tips = [0.42, 0.5, 0.58]
+        n = int({"full": 900, "stubble": 450, "long": 900, "goatee": 380}[kind] * density)
         out["mass"] = flow_mass(cv, R, B, cols, rng, n, s, sway=0.014 if kind != "long" else 0.02,
                                 tips=tips, tip_pull=0.55, root_band=0.35 if kind == "full" else 0.15,
-                                base_alpha=0.92, fade_in=0.30)
-    # --- moustache: from the philtrum over the mouth corners, drooping into points ---
+                                base_alpha=0.92, fade_in=0.30, wash=0.45 * (1 - 0.6 * grey))
+    # --- moustache (髭): two locks combed outward from the philtrum over the upper lip, full
+    # at the root, draping past the mouth corners and tapering (into the beard when there is
+    # one) - never thin drooping whiskers ---
     if moustache and kind != "none":
-        ny = F.nose_y + 0.022
-        drop = {"long": 0.20, "full": 0.09, "goatee": 0.075, "stubble": 0.05}[kind] * droop
-        thick = {"long": 1.0, "full": 1.25, "goatee": 0.75, "stubble": 1.0}[kind]
+        ny = F.nose_y + 0.020
+        drop = {"long": 0.17, "full": 0.085, "goatee": 0.028, "stubble": 0.030}[kind] * droop
+        W0 = {"long": 0.022, "full": 0.030, "goatee": 0.022, "stubble": 0.020}[kind]
         for side in (-far, far):
             fs = side == far
-            Rm = g.catmull(Pf([(side * 0.004, ny - 0.006), (side * mw * 0.55, ny - 0.002),
-                               (side * mw * 1.10, my - 0.036 * thick)], 0.045), 8)
-            c0 = Pf([(side * 0.016, ny + 0.016)], 0.045)[0]
-            c1 = Pf([(side * (mw * 0.45), my - 0.010)], 0.04)[0]
-            mid = Pf([(side * (mw * 0.92), my + 0.004)], 0.035)[0]
-            end = Pf([(side * (mw + 0.03), my + drop)], 0.0)[0]
-            Bm = g.catmull([c0, c1, mid, end], 8)
-            # base: a solid crescent so the moustache reads as a mass, then the strands
-            cres = np.vstack([Rm, g.catmull([Rm[-1], end], 4)[1:], Bm[::-1]])
-            cv.fill(cres, cols[0], 0.92, "paint")
-            flow_mass(cv, Rm, Bm, cols, rng, int(320 * density * thick * (0.8 if fs else 1)), s,
-                      sway=0.004, tips=[1.0], tip_pull=0.22, base_alpha=0.95, root_band=0.15,
-                      strand_w=0.0038, waves=0.5, end_spread=0.10, fade_in=0.02)
+            if kind in ("goatee", "stubble"):
+                # a neat moustache that ends at the mouth corner (never thin drooping whiskers)
+                fr = [(side * 0.006, ny + 0.010), (side * mw * 0.50, ny + 0.024),
+                      (side * mw * 0.92, my - 0.016), (side * (mw + 0.010), my + drop)]
+            else:
+                fr = [(side * 0.006, ny + 0.010), (side * mw * 0.45, ny + 0.026),
+                      (side * mw * 0.90, my - 0.014), (side * (mw + 0.020), my + drop * 0.45),
+                      (side * (mw + 0.028), my + drop)]
+            dz = [0.050, 0.048, 0.040, 0.020, 0.0][:len(fr)]
+            C = g.catmull(H.P(fr, np.array(dz)), 10)
+            lock(cv, C, s * W0 * (0.85 if fs else 1.0), cols, rng,
+                 int(170 * density * (0.8 if fs else 1.0)), s, wash=0.35 * (1 - 0.5 * grey))
     out["tip"] = tip
     return out
 
@@ -423,7 +488,7 @@ def _shell_mass(cv, sh, base, rng, s, keep=None, sheen=0.18, dark="ink", lines=4
     # sheen: lighter crescent towards the upper left
     c = O.mean(0)
     cv.blob(c + np.array([-0.18, -0.22]) * (O.max(0) - O.min(0)), (O[:, 0].max() - O[:, 0].min()) * 0.32,
-            (O[:, 1].max() - O[:, 1].min()) * 0.18, "white", sheen, rot=-0.5, mode="paint")
+            (O[:, 1].max() - O[:, 1].min()) * 0.18, "ink_l", sheen * 1.2, rot=-0.5, mode="paint")
     _shell_strands(cv, sh, axis_lat, lines, s * 0.0026, dark, 0.7, rng, lat_range)
     _shell_strands(cv, sh, axis_lat, lines // 3, s * 0.0022, pal.hexs(pal.mix(base, "white", 0.35)),
                    0.35, rng, lat_range)
@@ -452,17 +517,30 @@ def lady_hair(cv, fd, color="hair", style="high_bun", seed=0, volume=0.03, puff=
     s = H.s
     far = fd.far
     rng = np.random.default_rng(seed + 9)
-    base = pal.hexs(pal.mix(color, "hair_white", 0.03))
+    # the mass is laid in a slightly lighter ink so the combed strands (darker) can be read
+    base = pal.hexs(pal.mix(pal.hexs(pal.mix(color, "ink_m", 0.22)), "hair_white", 0.03))
     dark = "ink"
     light = pal.hexs(pal.mix(base, "white", 0.32))
     out = {}
     # --- high bun: one big cloud bun (云髻), optionally a second lobe set back ---
     buns = []
-    tiers_spec = [((0.0, -0.06, -0.04), (0.235, 0.16 * bun_h, 0.19))]
-    if tiers > 1:
-        tiers_spec.append(((-far * 0.10, -0.17 * bun_h, -0.12), (0.13, 0.10 * bun_h, 0.11)))
+    tilt = -6 * far
+    if style == "double":           # 双髻: twin buns, for young ladies and swordswomen
+        tiers_spec = [((-far * 0.17, -0.03, -0.02), (0.125, 0.115, 0.12)),
+                      ((far * 0.17, -0.03, -0.06), (0.120, 0.110, 0.115))]
+    elif style == "low":            # 低髻: a low, quiet chignon behind the crown (matrons)
+        tiers_spec = [((0.0, 0.03, -0.20), (0.20, 0.13, 0.17))]
+    elif style == "tilted":         # 倭堕髻: a large bun leaning to one side
+        tiers_spec = [((-far * 0.12, -0.07, -0.05), (0.21, 0.15 * bun_h, 0.17))]
+        if tiers > 1:
+            tiers_spec.append(((far * 0.06, -0.15 * bun_h, -0.12), (0.12, 0.09 * bun_h, 0.10)))
+        tilt = 16 * far
+    else:                           # 高髻: one big cloud bun, optionally a second lobe set back
+        tiers_spec = [((0.0, -0.06, -0.04), (0.235, 0.16 * bun_h, 0.19))]
+        if tiers > 1:
+            tiers_spec.append(((-far * 0.10, -0.17 * bun_h, -0.12), (0.13, 0.10 * bun_h, 0.11)))
     for c, r in tiers_spec[::-1]:
-        bun = Shell(H, c, r, tilt=-6 * far)
+        bun = Shell(H, c, r, tilt=tilt)
         O = _shell_mass(cv, bun, base, rng, s, lines=55, lat_range=(-1.3, 1.4), sheen=0.22)
         buns.append(bun)
     out["bun"] = buns[-1]
@@ -480,7 +558,8 @@ def lady_hair(cv, fd, color="hair", style="high_bun", seed=0, volume=0.03, puff=
     HL = np.vstack([H.Plon(lo, y, d) for (lo, y), d in zip(HLc, dr_l)])
     near_sil, _ = H.silhouette(0.0, hl[-1, 1], 50, side=-far, dr=vol)
     far_sil, _ = H.silhouette(0.0, hl[0, 1], 50, side=far, dr=vol)
-    poly = np.vstack([HL, near_sil[::-1], far_sil])
+    HLin = feather_hairline(cv, fd, HL, base, s, width=0.009, wash=0.12)
+    poly = np.vstack([HLin, near_sil[::-1], far_sil])
     cv.fill(poly, base, 0.98, "paint")
 
     def strand(lon0, y0, lon1, y1, w, col, al, n=30):
@@ -509,12 +588,12 @@ def lady_hair(cv, fd, color="hair", style="high_bun", seed=0, volume=0.03, puff=
         B_ = np.vstack([H.Plon(a, b + 0.025, vol(b)) for a, b in zip(lo, yy)])
         vis = H.facing_lon(lo, yy) > 0.05
         if vis.sum() > 4:
-            cv.band(A_[vis], B_[vis], "white", lambda S, T: 0.20 * np.sin(np.pi * T) *
+            cv.band(A_[vis], B_[vis], "ink_l", lambda S, T: 0.22 * np.sin(np.pi * T) *
                     np.sin(np.pi * S) ** 0.7, mode="paint", rows=3)
     pt = H.Plon(np.zeros(12), np.linspace(0.0, 0.215, 12), volume)
     cv.stroke(pt, s * 0.003, "skin_ivory", 0.45, prof="silk")
     # hairline fringe (fine baby hairs at the forehead and temples)
-    HLd = g.resample(HL[: int(len(HL) * 0.62)], 150)
+    HLd = g.resample(HL[int(len(HL) * 0.12): int(len(HL) * 0.55)], 120)
     nrm = g.normals(HLd)
     tan = g.tangents(HLd)
     cen = H.P([(0.0, 0.5)])[0]

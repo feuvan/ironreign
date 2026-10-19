@@ -1,8 +1,9 @@
 """Aged silk ground (numpy + Pillow only; cached PNG per size/seed).
 
-Warm tea-toned silk: base tone, soft tea-stain mottling, horizontal weft slubs (the irregular
-threads of hand-woven silk), a whisper of warp/weft grain, darker aged edges and a few foxing
-specks.  Kept low-contrast so it never fights the painting.
+Warm tea-toned silk: base tone, soft tea-stain mottling, a fine isotropic warp/weft thread
+grain (per-thread thickness variation, no streaks), the faintest weft slubs, pigment-grain
+flecks, a darker handled rim and a few foxing specks.  Kept low-contrast so it never fights the
+painting.
 """
 
 import os
@@ -36,12 +37,21 @@ def silk_array(w, h, seed=1, base="#d9c6a0"):
     warm = _noise(h, w, rng, 90 * s, 90 * s)
     img[..., 0] *= 1 + 0.008 * warm
     img[..., 2] *= 1 - 0.018 * warm
-    # weft slubs: long horizontal streaks
-    sl = _noise(h, w, rng, 0.55 * s, 40 * s)
-    img *= (1 + 0.012 * sl)[..., None]
-    # fine grain
+    # weft slubs: only a whisper (the old streaks read as a texture, not as silk)
+    sl = _noise(h, w, rng, 0.55 * s, 22 * s)
+    img *= (1 + 0.0035 * sl)[..., None]
+    # warp / weft threads: per-thread thickness variation in both directions (isotropic)
+    per = max(1, int(round(0.85 * s)))
+    rows = rng.standard_normal(h // per + 2)
+    cols = rng.standard_normal(w // per + 2)
+    yy0, xx0 = np.mgrid[0:h, 0:w]
+    thr = rows[yy0 // per] * 0.0035 + cols[xx0 // per] * 0.0035
+    img *= (1 + thr)[..., None]
+    # fine grain and pigment-sized flecks
     gr = _noise(h, w, rng, 0.45 * s, 0.45 * s)
-    img *= (1 + 0.006 * gr)[..., None]
+    img *= (1 + 0.009 * gr)[..., None]
+    fl = _noise(h, w, rng, 1.6 * s, 1.6 * s)
+    img *= (1 - 0.010 * np.clip(fl - 1.2, 0, None))[..., None]
     # aged edges: darker and browner towards the border
     yy, xx = np.mgrid[0:h, 0:w]
     u = (xx + 0.5) / w * 2 - 1
@@ -67,7 +77,7 @@ def silk_array(w, h, seed=1, base="#d9c6a0"):
 
 def silk_png(w, h, seed=1, base="#d9c6a0"):
     os.makedirs(CACHE, exist_ok=True)
-    p = os.path.join(CACHE, "silk_%dx%d_%d_%s.png" % (w, h, seed, base.lstrip("#")))
+    p = os.path.join(CACHE, "silk2_%dx%d_%d_%s.png" % (w, h, seed, base.lstrip("#")))
     if not os.path.exists(p):
         from PIL import Image
         a = silk_array(w, h, seed, base)

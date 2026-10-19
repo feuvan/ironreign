@@ -29,7 +29,7 @@ from ironart import ui_chrome_sdf as S
 NAME = "PanelDark"
 SPEC = dict(size=(128, 128), ss=4, margins=(24, 24, 24, 24), seed=21)
 W = H = 128
-FIELD = "#1E1A16"
+FIELD = "#1D1814"
 EDGE_C = "#33261B"
 GLOW = "#2B2219"
 

@@ -28,8 +28,8 @@ from . import world_terrain_fields as F
 #: Pine ~23 m with open pads, Bamboo ~14 m)
 CROWN_R = {"broad": 10.5, "pine": 9.5, "bamboo": 6.2}
 #: centre spacing in crown radii by category: < 2 means overlapping crowns
-SPACING = {"forest": 1.15, "grove": 1.3, "mountain": 1.35, "hill": 1.4, "riparian": 1.5,
-           "lone": 2.4}
+SPACING = {"forest": 0.9, "grove": 1.05, "mountain": 1.0, "hill": 1.1, "riparian": 1.05,
+           "lone": 1.1}
 #: keep clear of the city sites (m): the flat pad plus a margin (contract: >= 25 m)
 CITY_CLEAR = {1: 44.0, 2: 60.0, 3: 82.0}
 
@@ -87,15 +87,20 @@ def scatter(world, fieldm=None, seed=None, log=print, budget=24000, **_):
     p_forest = 0.97 * T.smoothstep(0.25, 0.65, forest) * (1.0 - 0.85 * T.smoothstep(0.74, 0.86, clearing))
     p_edge = 0.32 * T.smoothstep(0.06, 0.25, forest) * (1 - T.smoothstep(0.25, 0.5, forest)) \
         * T.smoothstep(0.45, 0.7, clump)
-    p_mtn = (0.85 * T.smoothstep(0.15, 0.45, mtn) * T.smoothstep(18.0, 30.0, h)
-             * (1.0 - T.smoothstep(108.0, 126.0, h)) * T.smoothstep(0.48, 0.6, clump + 0.12 * np.clip(form, -1, 1))
-             * (1.0 - T.smoothstep(0.85, 1.2, slope)))
-    p_hill = (0.75 * T.smoothstep(0.2, 0.55, f["hill_env"]) * T.smoothstep(0.5, 0.62, clump)
+    # mountain pines: clumped woods on the spurs and shoulders of the lower and middle slopes
+    p_mtn = (0.85 * T.smoothstep(0.15, 0.45, mtn) * T.smoothstep(14.0, 26.0, h)
+             * (1.0 - T.smoothstep(70.0, 112.0, h))
+             * T.smoothstep(0.50, 0.62, clump + 0.16 * np.clip(form, -1, 1))
+             * (1.0 - T.smoothstep(0.9, 1.25, slope)))
+    p_hill = (0.75 * T.smoothstep(0.2, 0.55, f["hill_env"]) * T.smoothstep(0.52, 0.62, clump)
               * T.smoothstep(10.0, 22.0, h) * (1 - T.smoothstep(0.3, 0.5, mtn)))
-    p_rip = (0.55 * T.smoothstep(18.0, 7.0, river_edge) * T.smoothstep(0.44, 0.58, clump)
+    p_rip = (0.6 * T.smoothstep(18.0, 7.0, river_edge) * T.smoothstep(0.6, 0.7, clump)
              * (1 - f["mtn_core"]) + 0.4 * T.smoothstep(-18.0, -9.0, f["lake_sd"])
-             * T.smoothstep(0.44, 0.58, clump))
-    p_lone = 0.012 * (forest < 0.05) * (f["desert"] < 0.25) * T.smoothstep(0.55, 0.75, clump)
+             * T.smoothstep(0.58, 0.7, clump))
+    # lone trees: in twos and threes (a fine cluster noise), never sprinkled evenly
+    pair = 0.5 + 0.5 * T.fbm_at(xs, ys, 9.0, 2, seed=seed + 7)
+    p_lone = 0.05 * (forest < 0.05) * (f["desert"] < 0.25) * T.smoothstep(0.68, 0.8, clump) \
+        * T.smoothstep(0.72, 0.82, pair)
     cats = [("forest", p_forest), ("grove", p_edge), ("mountain", p_mtn), ("hill", p_hill),
             ("riparian", p_rip), ("lone", p_lone)]
     cell = 3.0
@@ -139,7 +144,7 @@ def scatter(world, fieldm=None, seed=None, log=print, budget=24000, **_):
         elif name == "hill":
             t = "pine" if (pine_n[j, i] > (0.45 if north else 0.62)) else "broad"
         else:   # forest / grove
-            if south and bamboo_n[j, i] > 0.56:
+            if south and bamboo_n[j, i] > 0.6:
                 t = "bamboo"
             elif north:
                 t = "pine" if pine_n[j, i] > 0.36 else "broad"
@@ -177,6 +182,44 @@ def scatter(world, fieldm=None, seed=None, log=print, budget=24000, **_):
         if len(out) >= budget:
             log("[trees] budget reached")
             break
+    # understory: smaller trees in the gaps of the forest cores -> a closed, clumped canopy
+    n_fill = 0
+    cand = np.nonzero((T.smoothstep(0.55, 0.9, forest) > rng.random(forest.shape) * 1.6)
+                      & eligible & (clearing < 0.74))
+    if len(cand[0]):
+        pick = rng.permutation(len(cand[0]))[: min(len(cand[0]), 60000)]
+        for idx in pick:
+            if len(out) >= budget:
+                break
+            y, x = float(cand[0][idx]) + rng.random(), float(cand[1][idx]) + rng.random()
+            j, i = int(y), int(x)
+            if j >= H - 1 or i >= W - 1:
+                continue
+            south = y > 900.0
+            t = "bamboo" if (south and bamboo_n[j, i] > 0.6) else (
+                "pine" if (y < 500.0 and pine_n[j, i] > 0.36) or pine_n[j, i] > 0.68 else "broad")
+            sc = rng.uniform(0.48, 0.64) * (1.15 if t == "bamboo" else 1.0)
+            rmin = 0.8 * CROWN_R[t] * sc
+            gx_, gy_ = int(x // gcell), int(y // gcell)
+            ok = True
+            for ddx in (-2, -1, 0, 1, 2):
+                for ddy in (-2, -1, 0, 1, 2):
+                    for (qx, qy, qr) in grid.get((gx_ + ddx, gy_ + ddy), ()):
+                        if (qx - x) ** 2 + (qy - y) ** 2 < (0.5 * (rmin + 0.8 * qr)) ** 2:
+                            ok = False
+                            break
+                    if not ok:
+                        break
+                if not ok:
+                    break
+            if not ok:
+                continue
+            grid.setdefault((gx_, gy_), []).append((x, y, rmin))
+            out.append({"t": t, "x": round(x, 2), "y": round(y, 2), "s": round(float(sc), 3),
+                        "r": round(float(rng.uniform(0, 360)), 1), "_cat": "forest"})
+            counts["understory"] = counts.get("understory", 0) + 1
+            counts[t] = counts.get(t, 0) + 1
+            n_fill += 1
     log("[trees] %d trees: %s" % (len(out), ", ".join("%s %d" % kv for kv in sorted(counts.items()))))
     return out, counts
 

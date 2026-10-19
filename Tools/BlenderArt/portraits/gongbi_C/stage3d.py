@@ -27,6 +27,7 @@ def run(name, out_dir, ss=3, samples=6):
     t0 = time.time()
     spec = specs.load(name)
     st = b3d.Stage(384, 480, ss=ss, samples=samples, seed=spec.get("seed", 0))
+    st.spec = spec
     pose = spec.get("pose", {})
     st.pose(body_yaw=pose.get("body_yaw", -28.0), head_yaw=pose.get("head_yaw", 6.0),
             head_pitch=pose.get("head_pitch", 0.0), head_roll=pose.get("head_roll", 0.0))

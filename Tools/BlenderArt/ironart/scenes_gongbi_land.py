@@ -37,7 +37,7 @@ def qinglv(name, z0, z1, foot="ochre_l", low="#B9A06A", mid="malachite", top="az
            light_top="azurite_l", cun=0.6, cun_px=6.0, cun_len=40.0, moss=0.7,
            moss_px=9.0, var_scale=0.006, blue=0.5, near=60.0, far=900.0, bare=0.0,
            seed=0.0, plain=("#C4C29A", "#D6C49A"), plain_bare=0.35, plain_h=0.12, shadow_cun=0.55,
-           steep=(0.12, 0.45), ribs=False):
+           steep=(0.12, 0.45), ribs=False, z1_near=None):
     """Blue-green landscape (青绿山水) mountain wash.
 
     Height fraction h = (z - z0) / (z1 - z0) (+ noise) runs ochre foot -> malachite slopes ->
@@ -54,8 +54,15 @@ def qinglv(name, z0, z1, foot="ochre_l", low="#B9A06A", mid="malachite", top="az
     x, y, z = b.sep(P)
     nz_off = b.vmath("ADD", P, b.vec((seed * 13.1, seed * 7.7, 0.0))).outputs[0]
     hn = GB.wnoise(b, nz_off, var_scale * 2.5, 3.0, 0.55)
-    h = b.math("ADD", b.maprange(z, z0, z1, 0.0, 1.0, clamp=False),
-               b.math("MULTIPLY", b.math("SUBTRACT", hn, 0.5), 0.35))
+    if z1_near is not None:
+        # nearer hills turn blue-green at a lower height (d0, d1, z1 at d0): the painter keys
+        # the mineral layers to each hill, not to one altitude for the whole picture
+        d0, d1, zn = z1_near
+        zt = b.maprange(_cam_dist(b), d0, d1, zn, z1)
+        hz = b.math("DIVIDE", b.math("SUBTRACT", z, z0), b.math("SUBTRACT", zt, z0))
+    else:
+        hz = b.maprange(z, z0, z1, 0.0, 1.0, clamp=False)
+    h = b.math("ADD", hz, b.math("MULTIPLY", b.math("SUBTRACT", hn, 0.5), 0.35))
     h = b.clamp01(h)
     # blue vs green: large-scale variation per massif
     bv = b.smooth(GB.wnoise(b, nz_off, var_scale, 2.0, 0.5), 0.35, 0.65)
@@ -463,3 +470,30 @@ def boulder(mb, center, size, rng, mat="Rock", lumps=6, seg=(18, 12), flat_top=N
             if flat_top is not None and p.z > flat_top:
                 p.z = flat_top + (p.z - flat_top) * 0.05
             mb.verts[vi] = p
+
+
+def crag_stack(mb, center, z0, z1, r0, r1, rng, mat="Rock", lean=(0.0, 0.0), flat_top=True,
+               seg=(20, 14), lumps=5, rough=0.15, squash=0.9):
+    """A 青绿 rock pinnacle built as a stack of lumpy boulders (rounded rock forms one above the
+    other, the way painters pile up a crag): radius ``r0`` at the foot (z0) to ``r1`` at the
+    top (z1), leaning by ``lean`` (dx, dy at the top); ``flat_top`` levels the summit so
+    buildings or figures can stand on it.  Returns the summit point."""
+    cx, cy = center[0], center[1]
+    H = z1 - z0
+    ravg = (r0 + r1) * 0.5
+    n = max(2, int(round(H / (ravg * 1.15))))
+    h = H / n
+    top = None
+    for i in range(n):
+        t = i / max(1, n - 1)
+        r = r0 + (r1 - r0) * t
+        jx, jy = rng.uniform(-0.18, 0.18) * r, rng.uniform(-0.12, 0.12) * r
+        x = cx + lean[0] * t + jx
+        y = cy + lean[1] * t + jy
+        zc = z0 + i * h - h * 0.25
+        sz = h * 1.55 if i < n - 1 else (z1 - zc) / 0.92
+        last = i == n - 1
+        boulder(mb, (x, y, zc), (2.0 * r, 2.0 * r * 0.88, sz), rng, mat, lumps=lumps, seg=seg,
+                flat_top=z1 if (last and flat_top) else None, squash=squash, spread=0.42, rough=rough)
+        top = (x, y, z1)
+    return top

@@ -65,7 +65,7 @@ def impression(G, cx, cy, side, rot, seed, chars=CHARS, margin=8.5, gap=5.5, str
     q = np.maximum(np.abs(u), np.abs(v))
     corner = np.hypot(np.maximum(np.abs(u) - half + rc, 0), np.maximum(np.abs(v) - half + rc, 0))
     block = np.where((np.abs(u) > half - rc) & (np.abs(v) > half - rc), corner - rc, q - half)
-    wob = 0.55 * P.fbm2(G, 7.0, seed + 1, octaves=3) + 0.30 * P.fbm2(G, 1.4, seed + 2, octaves=2)
+    wob = 0.55 * P.fbm2(G, 7.0, seed + 1, octaves=3) + 0.14 * P.fbm2(G, 1.6, seed + 2, octaves=2)
     block = block + wob
     chips = G.empty()
     for _ in range(11):
@@ -92,7 +92,7 @@ def impression(G, cx, cy, side, rot, seed, chars=CHARS, margin=8.5, gap=5.5, str
             loc[y0:y0 + g.shape[0], x0:x0 + g.shape[1]], g)
     im = Image.fromarray(loc, "F").rotate(-rot, Image.BICUBIC, center=(o, o))
     big = np.zeros(G.shape, np.float32)
-    ox, oy = int(round(cx * ss - o)), int(round(cy * ss - o))
+    ox, oy = int(round((cx - G.x0) * ss - o)), int(round((cy - G.y0) * ss - o))
     arr = np.asarray(im, np.float32)
     ys0, xs0 = max(0, oy), max(0, ox)
     ys1, xs1 = min(G.ny, oy + n), min(G.nx, ox + n)

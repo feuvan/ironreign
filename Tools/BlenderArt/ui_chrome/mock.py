@@ -30,6 +30,27 @@ def map_backdrop(W, H):
     return P.backdrop(W, H, "map")
 
 
+def _portrait():
+    """A portrait to put in the frame: the committed art, else $IRONART_UI_PORTRAIT."""
+    from ironart import REPO_DIR
+    for p in (os.path.join(REPO_DIR, "Content", "Data", "Art", "Portraits", "m_warrior_01.png"),
+              os.environ.get("IRONART_UI_PORTRAIT", ""),
+              os.path.join(os.environ.get("IRONART_OUT", "/tmp/ironart"), "styleframes",
+                           "sf_portrait_192x240.png")):
+        if p and os.path.exists(p):
+            return p
+    return None
+
+
+def _event():
+    from ironart import REPO_DIR
+    for n in ("Wanderer", "Court", "Festival", "Battle"):
+        p = os.path.join(REPO_DIR, "Content", "Data", "Art", "Events", n + ".png")
+        if os.path.exists(p):
+            return p
+    return None
+
+
 def main(out):
     W, H = 1920, 1080
     ms = P.margins()
@@ -68,11 +89,10 @@ def main(out):
     dv = P.load("Divider").resize((lw - 60, 12), Image.BICUBIC)
     bg.alpha_composite(dv, (lx + 30, ly + 70))
     # portrait frame + portrait (scaled to 156 px high, as the city panel does)
-    sf = os.path.join(os.environ.get("IRONART_OUT", "/tmp/ironart"), "styleframes",
-                      "sf_portrait_192x240.png")
+    sf = _portrait()
     s = 156 / 260.0
     fx, fy = lx + 30, ly + 96
-    if os.path.exists(sf):
+    if sf and os.path.exists(sf):
         bg.alpha_composite(Image.open(sf).convert("RGBA").resize((int(192 * s), int(240 * s)),
                                                                   Image.LANCZOS),
                            (fx + int(10 * s), fy + int(10 * s)))
@@ -161,9 +181,15 @@ def main(out):
     dr.text((dx + dw // 2, dy + 78), "A Wandering Swordsman", font=P.font("Heading.ttf", 30),
             fill=P.LACQUER, anchor="mm")
     bg.alpha_composite(P.load("Divider").resize((dw - 200, 12), Image.BICUBIC), (dx + 100, dy + 100))
-    ill = Image.new("RGBA", (640, 300), (120, 110, 95, 255))
-    bg.alpha_composite(ill, (dx + 200, dy + 128))
-    dr.text((dx + 520, dy + 278), "[event illustration]", font=fr15, fill=(230, 220, 200), anchor="mm")
+    ev = _event()
+    if ev:
+        ill = Image.open(ev).convert("RGBA").resize((533, 300), Image.LANCZOS)
+        bg.alpha_composite(ill, (dx + (dw - 533) // 2, dy + 128))
+    else:
+        ill = Image.new("RGBA", (640, 300), (120, 110, 95, 255))
+        bg.alpha_composite(ill, (dx + 200, dy + 128))
+        dr.text((dx + 520, dy + 278), "[event illustration]", font=fr15, fill=(230, 220, 200),
+                anchor="mm")
     dr.text((dx + 100, dy + 446), "A ragged traveller asks for an audience. He claims to have studied",
             font=P.font("Body-Regular.ttf", 17), fill=P.INK)
     dr.text((dx + 100, dy + 470), "the sword under the hermits of Mount Hua and offers his service.",

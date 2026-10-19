@@ -22,9 +22,9 @@ EYES = {
                    tail=0.07, tail_lift=0.02, crease=0.095, crease_a=0.45, iris=0.215,
                    line=2.0, lower_a=0.45, iris_up=0.02),
     # wide-open fierce eye of a general (环眼 tempered): rounder, strong lid, a little sclera
-    "tiger": dict(w=0.136, open=0.38, lo=0.16, tilt=0.05, peak=-0.06, round=1.05,
-                  tail=0.07, tail_lift=0.015, crease=0.085, crease_a=0.5, iris=0.21,
-                  line=2.5, lower_a=0.6, iris_up=0.05),
+    "tiger": dict(w=0.136, open=0.37, lo=0.15, tilt=0.05, peak=-0.06, round=1.05,
+                  tail=0.07, tail_lift=0.015, crease=0.085, crease_a=0.5, iris=0.215,
+                  line=2.5, lower_a=0.6, iris_up=0.03),
     # steady eye of a seasoned man
     "steady": dict(w=0.132, open=0.35, lo=0.14, tilt=0.04, peak=-0.06, round=0.9,
                    tail=0.07, tail_lift=0.0, crease=0.09, crease_a=0.45, iris=0.21,
@@ -42,14 +42,15 @@ BROWS = {
                      shape="silkworm", hairs=1.5, wash=0.80),
     "sword": dict(x0=0.055, z0=0.078, x1=0.262, z1=0.135, peak=(0.60, 0.010), thick=0.032,
                   shape="sword", hairs=1.0, wash=0.58),
-    "willow": dict(x0=0.062, z0=0.090, x1=0.250, z1=0.098, peak=(0.42, 0.028), thick=0.017,
-                   shape="willow", hairs=0.55, wash=0.50),
+    "willow": dict(x0=0.060, z0=0.090, x1=0.255, z1=0.094, peak=(0.42, 0.030), thick=0.021,
+                   shape="willow", hairs=0.7, wash=0.66),
     "crescent": dict(x0=0.060, z0=0.088, x1=0.245, z1=0.090, peak=(0.48, 0.030), thick=0.020,
                      shape="willow", hairs=0.7, wash=0.48),
     "calm": dict(x0=0.058, z0=0.086, x1=0.250, z1=0.100, peak=(0.50, 0.020), thick=0.026,
                  shape="even", hairs=0.9, wash=0.52),
-    "longevity": dict(x0=0.055, z0=0.090, x1=0.255, z1=0.070, peak=(0.40, 0.018),
-                      thick=0.030, shape="longevity", hairs=1.2, wash=0.35, droop=0.075),
+    "longevity": dict(x0=0.052, z0=0.090, x1=0.250, z1=0.078, peak=(0.40, 0.020),
+                      thick=0.030, shape="longevity", hairs=1.0, wash=0.55, droop=0.09,
+                      hair_len=1.7, conv=18),
 }
 
 # ------------------------------------------------------------------------------------- noses
@@ -108,6 +109,17 @@ def face(spec):
     n.update(src.get("nose_mod", {}))
     m = dict(MOUTHS[f["mouth"]] if isinstance(f["mouth"], str) else f["mouth"])
     m.update(src.get("mouth_mod", {}))
+    e["open"] = e["open"] + e.pop("open_add", 0.0)
+    e["tilt"] = e["tilt"] + e.pop("tilt_add", 0.0)
+    b["thick"] = b["thick"] * b.pop("thick_k", 1.0)
+    b["z1"] = b["z1"] + b.pop("z1_add", 0.0)
+    n["ala_w"] = n["ala_w"] * n.pop("ala_k", 1.0)
+    m["w"] = m["w"] * m.pop("w_k", 1.0)
+    lk = m.pop("lip_k", 1.0)
+    m["upper"] *= lk
+    m["lower"] *= lk
+    e["open"] = min(max(e["open"], 0.30), 0.46)
+    e["tilt"] = min(max(e["tilt"], -0.02), 0.13)
     f.update(eyeP=e, browP=b, noseP=n, mouthP=m)
     check(f)
     return f
