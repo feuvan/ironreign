@@ -874,10 +874,13 @@ class World:
 
         def clear(size):
             return PAD_FLAT[size] + 25.0
+
+        def clear_h(size):
+            return PAD_FLAT[size] + 8.0
         rivers = [np.asarray(r["points"], float) for r in self.m["rivers"]]
         self.ranges = [RL.build_range(s_, "mountain", k, self.seed + 500 + 37 * k, self.cities, clear,
                                       roads, passes, rivers) for k, s_ in enumerate(self.m["mountains"])]
-        self.hill_ranges = [RL.build_range(s_, "hill", k, self.seed + 600 + 41 * k, self.cities, clear,
+        self.hill_ranges = [RL.build_range(s_, "hill", k, self.seed + 600 + 41 * k, self.cities, clear_h,
                                            roads, passes, rivers) for k, s_ in enumerate(self.m["hills"])]
         mtn, mlev, mrd = RL.rasterize(self.ranges, self.shape, seed=self.seed + 5)
         hills, hlev, hrd = RL.rasterize(self.hill_ranges, self.shape, seed=self.seed + 6)

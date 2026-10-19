@@ -209,7 +209,7 @@ def build_range(stroke, kind, index, seed, cities, city_clear, road_lines=(), pa
     dc = np.full(len(pts), 1e9)
     for (_k, cx, cy, s) in cities:
         dc = np.minimum(dc, np.hypot(pts[:, 0] - cx, pts[:, 1] - cy) - city_clear(s))
-    hc = hc * T.smoothstep(0.0, 0.6 * R, dc)
+    hc = hc * T.smoothstep(0.0, (0.6 if kind == "mountain" else 0.35) * R, dc)
     Wc = sp["crest_w"] * R * (0.55 + 0.45 * np.sqrt(np.clip(hc / max(peak, 1), 0, 1)))
     ridges = [Ridge(pts, hc, Wc, sp["crest_p"], sp["crest_round"], 0)]
     nrm, tg = F.normals(pts)

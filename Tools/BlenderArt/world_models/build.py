@@ -104,6 +104,9 @@ def main():
         for n in names:
             rep.add(n + ".png", **sprites.render_sprite(n, common.out("sprites")))
         rep.save()
+        sdir = common.out("sprites")
+        print("[ironart] context sheets", sprites.context_sheet(os.path.join(sdir, "Sprites_in_context.png")),
+              sprites.context_sheet(os.path.join(sdir, "Sprites_on_silk.png"), on_map=False))
         times["sprites"] = time.time() - t
     print("[ironart] wrote", write_models_json())
     glbs = [os.path.join(common.MODELS_DIR, m + ".glb") for m in MODELS

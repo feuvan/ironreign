@@ -57,11 +57,11 @@ PAL = {
     "steppe": "#D2BC90", "desert": "#D4B583", "desert_light": "#DEC69A", "desert_dot": "#93704A",
     # uplands
     "foot_ochre": "#C8A57A", "ochre": "#B07C4E", "umber": "#86603F",
-    "hill_green": "#A3BC94", "mal_light": "#8CBFA0", "malachite": "#3E8E6E", "mal_deep": "#2C6E56",
+    "hill_green": "#ABBD8C", "mal_light": "#8CBFA0", "malachite": "#3E8E6E", "mal_deep": "#2C6E56",
     "azu_light": "#7FA6C8", "azurite": "#2B5C8A", "azu_deep": "#23496F",
     "ink": "#1E1A16", "ink_green": "#24382E", "ink_blue": "#1C2A3C", "ink_umber": "#4A3324",
     # forest floor
-    "forest": "#7C9670", "forest_deep": "#5F7E5E", "leaf_dot": "#33503E", "leaf_dot2": "#4F7556",
+    "forest": "#869E74", "forest_deep": "#6A8762", "leaf_dot": "#33503E", "leaf_dot2": "#4F7556",
     # water
     "sand": "#E2D4AC", "sand_wet": "#C8BE9C", "bank": "#9BA884",
     "river": "#9DB7C6", "river_deep": "#87A6BC", "lake": "#98B4C6", "lake_deep": "#7F9FB8",
@@ -258,7 +258,7 @@ class Painter:
         n_low = self.vn(90.0, 51, 2)
         jag = self.vn(6.0, 52, 2)
         for (key, cx, cy, size) in self.w.cities:
-            R = 120.0 + 45.0 * size
+            R = 75.0 + 32.0 * size
             x0, x1 = int(max(0, (cx - R - 60) * 2)), int(min(AW, (cx + R + 60) * 2))
             y0, y1 = int(max(0, (cy - R - 60) * 2)), int(min(AH, (cy + R + 60) * 2))
             sl = self.sl(x0, y0, x1, y1)
@@ -298,7 +298,7 @@ class Painter:
                   * T.smoothstep(-6.0, -16.0, self.lake_sd[sl])
                   * T.smoothstep(25.0, 60.0, self.sd[sl])
                   * (1 - T.smoothstep(0.2, 0.4, self.desert[sl])))
-            m = np.clip(keep * ok * np.where(r2 > 0.22, 0.5, 0.0), 0, 1)
+            m = np.clip(keep * ok * np.where(r2 > 0.3, 0.42, 0.0), 0, 1)
             # balks: a slightly deeper, ragged line along every parcel edge
             balk = T.smoothstep(1.6, 0.4, edge + 0.6 * jag[sl])
             pc = lerp(pc, C["field_balk"], 0.45 * balk)
@@ -317,12 +317,12 @@ class Painter:
         n = self.vn(55.0, 11, 3)
         st = lerp(C["steppe"], C["plain_ochre"], 0.4 * T.smoothstep(-1.0, 1.0, n))
         col = over(col, st, 0.85 * np.clip(T.smoothstep(0.0, 0.5, des + 0.12 * n), 0, 1))
-        band = 0.5 + 0.5 * np.sin((self.x * 0.8 + self.y * 0.6) / 21.0 + 0.9 * self.vn(80.0, 12, 2))
-        sand = lerp(C["desert"], C["desert_light"], 0.4 * band + 0.25 * T.smoothstep(-1, 1, self.vn(140.0, 17, 2)))
+        band = 0.5 + 0.5 * np.sin((self.x * 0.8 + self.y * 0.6) / 34.0 + 1.6 * self.vn(70.0, 12, 2))
+        sand = lerp(C["desert"], C["desert_light"], 0.22 * band + 0.25 * T.smoothstep(-1, 1, self.vn(140.0, 17, 2)))
         core = np.clip(T.smoothstep(0.35, 0.85, des + 0.15 * n), 0, 1)
         col = over(col, sand, core)
         streak = self.strokes(26.0, 1.2, 33.0, 15)
-        col *= (1.0 - 0.025 * streak * core)[..., None]
+        col *= (1.0 - 0.012 * streak * core)[..., None]
         # 点: fine ochre-ink dots, denser in the sand, sparse in the steppe
         dens = 0.10 * T.smoothstep(0.1, 0.5, des) + 0.17 * core
         d1 = self.dots(0.5, dens, 13)
@@ -364,7 +364,7 @@ class Painter:
         n1 = self.vn(30.0, 21, 2)
         n2 = self.vn(8.0, 22, 2)
         hf = lift / np.maximum(top, 40.0)
-        hp = hf + 0.10 * form + 0.06 * brush + 0.04 * n1          # brushed pigment height
+        hp = hf + 0.10 * form + 0.025 * brush + 0.045 * n1          # brushed pigment height
         relief = T.smoothstep(3.0, 14.0, lift) * (1 - 0.7 * self.sand_core)
         # ---- 1. ochre underpainting: foothills, lower slopes, every hill flank
         och = lerp(C["foot_ochre"], C["ochre"], T.smoothstep(0.08, 0.38, hp))
@@ -373,8 +373,8 @@ class Painter:
         col = over(col, och, a_och)
         # ---- 2. hills: pale malachite over the ochre on their tops and shoulders
         hill_top = hl * T.smoothstep(0.30, 0.70, hp) * relief
-        hg = lerp(C["hill_green"], C["mal_light"], 0.5 * T.smoothstep(0.55, 0.95, hp))
-        hg = lerp(hg, C["malachite"], 0.18 + 0.22 * valley)
+        hg = lerp(C["hill_green"], C["mal_light"], 0.3 * T.smoothstep(0.55, 0.95, hp))
+        hg = lerp(hg, C["malachite"], 0.10 + 0.18 * valley)
         col = over(col, hg, 0.70 * hill_top)
         # ---- 3. ranges: malachite middle slopes, azurite upper slopes and crests
         mid = mt * T.smoothstep(0.20, 0.42, hp) * relief
