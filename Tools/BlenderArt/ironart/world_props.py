@@ -249,16 +249,21 @@ def flag(mb, H=10.0, length=5.2, hoist=3.0, amp=0.28, nu=18, nv=8):
         y = _wave(u, v, amp, waves=1.2, phase=0.8)
         return Vector((x, y, z))
 
-    ids = [[mb.v(P(i / nu, j / nv)) for i in range(nu + 1)] for j in range(nv + 1)]
+    # swallowtail: the fly edge is a clean V - every row of the grid ends at u_end(v), 1 at the two
+    # tails and 1 - notch on the centre line (no skipped quads, so no stair-stepped notch)
+    notch = 0.2
+
+    def u_end(v):
+        return 1.0 - notch * (1.0 - abs(2.0 * v - 1.0))
+
+    uu = [[u_end(j / nv) * i / nu for i in range(nu + 1)] for j in range(nv + 1)]
+    ids = [[mb.v(P(uu[j][i], j / nv)) for i in range(nu + 1)] for j in range(nv + 1)]
     for j in range(nv):
         for i in range(nu):
-            u0, u1 = i / nu, (i + 1) / nu
-            # swallowtail: cut a notch out of the last 18 % around the centre line
-            if u0 >= 0.82 and abs((j + 0.5) / nv - 0.5) < 0.5 * (u0 - 0.82) / 0.18 * 1.0:
-                continue
             mb.face((ids[j][i], ids[j][i + 1], ids[j + 1][i + 1], ids[j + 1][i]), "Tint",
-                    [(u0 * length, -j / nv * hoist), (u1 * length, -j / nv * hoist),
-                     (u1 * length, -(j + 1) / nv * hoist), (u0 * length, -(j + 1) / nv * hoist)], True)
+                    [(uu[j][i] * length, -j / nv * hoist), (uu[j][i + 1] * length, -j / nv * hoist),
+                     (uu[j + 1][i + 1] * length, -(j + 1) / nv * hoist), (uu[j + 1][i] * length, -(j + 1) / nv * hoist)],
+                    True)
     for k in range(4):
         z = top - 0.2 - k * (hoist - 0.4) / 3
         mb.lathe([(0.12, -0.05), (0.15, 0.0), (0.12, 0.05)], "W_Gold~d", 8, center=(0, 0, z), smooth=True)

@@ -388,6 +388,19 @@ namespace IronBattleBoard3DDetail
 			return {0.22, 0.32, 2.0};
 		}
 	}
+
+	/**
+	 * Direction (not normalised) of the board camera's ray through clip position Clip (+Y up) at PitchDegrees, yaw
+	 * fixed north: the axes of RecomputeFraming and ComputeCameraLocation.
+	 */
+	FVector BoardClipRay(double PitchDegrees, const FVector2D& Clip, double TanHalfX, double TanHalfY)
+	{
+		const double PitchRadians = FMath::DegreesToRadians(PitchDegrees);
+		const FVector Forward(0.0, -FMath::Cos(PitchRadians), -FMath::Sin(PitchRadians));
+		const FVector Right(1.0, 0.0, 0.0);
+		const FVector Up(0.0, -FMath::Sin(PitchRadians), FMath::Cos(PitchRadians));
+		return Forward + Right * (Clip.X * TanHalfX) + Up * (Clip.Y * TanHalfY);
+	}
 }
 
 AIronBattleBoard3D::AIronBattleBoard3D()
@@ -3320,16 +3333,23 @@ void AIronBattleBoard3D::RecomputeFraming()
 	const FVector Right(1.0, 0.0, 0.0);
 	const FVector Up(0.0, -FMath::Sin(PitchRadians), FMath::Cos(PitchRadians));
 	const double TanHalf = FMath::Tan(FMath::DegreesToRadians(static_cast<double>(FieldOfViewDegrees) * 0.5));
+	// Half extents of the free rectangle, and its centre in clip space where ComputeCameraLocation puts the target.
 	const double TanH = TanHalf * FMath::Max(0.25, 1.0 - static_cast<double>(InsetLeft) - static_cast<double>(InsetRight));
 	const double TanV = TanHalf / Aspect * FMath::Max(0.25, 1.0 - static_cast<double>(InsetTop) - static_cast<double>(InsetBottom));
+	const double TanHalfX = TanHalf;
+	const double TanHalfY = TanHalf / Aspect;
+	const double ScreenX = static_cast<double>(InsetLeft) - static_cast<double>(InsetRight);
+	const double ScreenY = static_cast<double>(InsetBottom) - static_cast<double>(InsetTop);
 	double Needed = MinDistanceM;
 	for (int32 Corner = 0; Corner < 8; ++Corner)
 	{
 		const FVector Point((Corner & 1) != 0 ? BoardMaxM.X : BoardMinM.X, (Corner & 2) != 0 ? BoardMaxM.Y : BoardMinM.Y, (Corner & 4) != 0 ? UnitHeightForFramingM : 0.0);
 		const FVector Relative = Point - FVector(FitTargetM, 0.0);
 		const double Along = FVector::DotProduct(Relative, Forward);
-		Needed = FMath::Max(Needed, FMath::Abs(FVector::DotProduct(Relative, Right)) / TanH - Along);
-		Needed = FMath::Max(Needed, FMath::Abs(FVector::DotProduct(Relative, Up)) / TanV - Along);
+		// Off-axis camera: a point Side metres right of the target lands (Side - ScreenX * Along * TanHalfX) /
+		// ((D + Along) * TanHalfX) in clip space from the shifted centre; likewise upwards.
+		Needed = FMath::Max(Needed, FMath::Abs(FVector::DotProduct(Relative, Right) - ScreenX * Along * TanHalfX) / TanH - Along);
+		Needed = FMath::Max(Needed, FMath::Abs(FVector::DotProduct(Relative, Up) - ScreenY * Along * TanHalfY) / TanV - Along);
 	}
 	FitDistanceM = Needed;
 	if (!bUserMovedCamera)
@@ -3401,10 +3421,34 @@ void AIronBattleBoard3D::Zoom(float WheelDelta, const FVector2D& CursorViewportP
 	}
 	else
 	{
-		FVector2D CursorM;
-		if (DeprojectToBoard(CursorViewportPixel, CursorM))
+		// The board point under the cursor stays under it once the camera settles (the pitch changes with the distance).
+		// It is picked from the goal pose, not the gliding view, so quick notches agree: there the camera is
+		// target - distance * (the ray through the framing centre), ComputeCameraLocation's offset.
+		const FIronViewProjection& View = GetViewProjection();
+		const FIntRect& ViewRect = View.GetViewRect();
+		if (bBoardActive && View.IsValid() && ViewRect.Width() > 0 && ViewRect.Height() > 0)
 		{
-			GoalTargetM = CursorM + (GoalTargetM - CursorM) * (NewDistance / OldDistance);
+			const FVector2D CursorClip(
+				2.0 * (CursorViewportPixel.X - static_cast<double>(ViewRect.Min.X)) / static_cast<double>(ViewRect.Width()) - 1.0,
+				1.0 - 2.0 * (CursorViewportPixel.Y - static_cast<double>(ViewRect.Min.Y)) / static_cast<double>(ViewRect.Height()));
+			const FVector2D FramingClip(static_cast<double>(InsetLeft) - static_cast<double>(InsetRight), static_cast<double>(InsetBottom) - static_cast<double>(InsetTop));
+			const FVector2D Viewport = GetViewportSizePx();
+			const double TanHalfX = FMath::Tan(FMath::DegreesToRadians(static_cast<double>(FieldOfViewDegrees) * 0.5));
+			const double TanHalfY = TanHalfX * Viewport.Y / FMath::Max(1.0, Viewport.X);
+			const double OldPitch = PitchForDistance(OldDistance);
+			const double NewPitch = PitchForDistance(NewDistance);
+			const FVector OldCursorRay = BoardClipRay(OldPitch, CursorClip, TanHalfX, TanHalfY);
+			const FVector NewCursorRay = BoardClipRay(NewPitch, CursorClip, TanHalfX, TanHalfY);
+			if (OldCursorRay.Z < -1.0e-3 && NewCursorRay.Z < -1.0e-3)
+			{
+				// Along the cursor ray, the camera (height -Distance * CentreRay.Z) meets the board plane after Reach.
+				const FVector OldCentreRay = BoardClipRay(OldPitch, FramingClip, TanHalfX, TanHalfY);
+				const FVector NewCentreRay = BoardClipRay(NewPitch, FramingClip, TanHalfX, TanHalfY);
+				const double OldReach = OldDistance * OldCentreRay.Z / OldCursorRay.Z;
+				const FVector2D CursorM = GoalTargetM - FVector2D(OldCentreRay.X, OldCentreRay.Y) * OldDistance + FVector2D(OldCursorRay.X, OldCursorRay.Y) * OldReach;
+				const double NewReach = NewDistance * NewCentreRay.Z / NewCursorRay.Z;
+				GoalTargetM = CursorM + FVector2D(NewCentreRay.X, NewCentreRay.Y) * NewDistance - FVector2D(NewCursorRay.X, NewCursorRay.Y) * NewReach;
+			}
 		}
 	}
 	GoalDistanceM = NewDistance;

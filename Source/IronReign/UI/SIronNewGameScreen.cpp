@@ -455,7 +455,7 @@ TSharedRef<SWidget> SIronNewGameScreen::MakeDifficultyRow()
 						SNew(STextBlock)
 						.Text(IronUI::ToText(IronSim::DisplayName(Level)))
 						.Font(IronStyle::BodyBold(16.0f))
-						.ColorAndOpacity(IronStyle::TextLight())
+						.ColorAndOpacity(IronStyle::TabText(Level == Difficulty))
 					]
 				]
 			];

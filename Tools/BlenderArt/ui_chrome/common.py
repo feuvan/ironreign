@@ -46,16 +46,18 @@ def font(name):
     return os.path.join(FONTS, name)
 
 
-def finish(raw, ss, lo=0.004, hi=0.996):
-    """Supersampled RGBA render -> (@1x, @2x) straight-alpha float images (premultiplied
-    Lanczos; an odd ``ss`` resamples the @2x by ss/2)."""
+def finish(raw, ss, lo=0.004, hi=0.996, method="box"):
+    """Supersampled RGBA render -> (@1x, @2x) straight-alpha float images.  The default
+    premultiplied **box** filter is exact pixel coverage: rules painted on the @1x pixel grid
+    stay crisp and nothing rings (Lanczos left light halos beside ink rules); an odd ``ss``
+    resamples the @2x by ss/2."""
     img = post.load(raw) if isinstance(raw, str) else raw
     h, w = img.shape[:2]
     if ss % 2 == 0:
-        x2 = post.downsample(img, ss // 2) if ss > 2 else img
+        x2 = post.downsample(img, ss // 2, method) if ss > 2 else img
     else:
-        x2 = post.resize(img, (w * 2 // ss, h * 2 // ss))
-    x1 = post.downsample(img, ss)
+        x2 = post.resize(img, (w * 2 // ss, h * 2 // ss), method)
+    x1 = post.downsample(img, ss, method)
     out = []
     for im in (x1, x2):
         out.append(post.alpha_cleanup(im, lo=lo, hi=hi, bleed=4))
@@ -100,7 +102,7 @@ def render_piece(mod, variant=None, preview=False, tag=None, numpy_only=False):
         t1 = time.time()
         t_render = scene.render(raw)
         bpy.ops.wm.read_factory_settings(use_empty=True)
-    img1, img2 = finish(raw, ss)
+    img1, img2 = finish(raw, ss, method=spec.get("filter", "box"))
     if hasattr(mod, "post"):
         img1, img2 = mod.post(img1, img2, variant)
     times = {"paint": round(t_paint, 2), "build": round(t1 - t0 - t_paint, 2),

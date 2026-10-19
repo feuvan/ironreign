@@ -19,6 +19,8 @@ Options
                     (master crop) next to the previews - for full-resolution detail checks
     --no-save       do not write Content/Data or ArtSource
     --no-manifest   do not touch ArtSource/manifest.json
+    --no-ink        skip Freestyle (scenes that still ask for it); image-space ink is unaffected
+    --reuse         re-composite the passes of the previous render (look / ink iteration)
 
 Each scene module ``sc_<name>.py`` defines ``SPEC`` (name, art, master, size = game size,
 k = render px per game px, m = master px per game px, seed, spp) and ``build(r)`` which builds
@@ -83,8 +85,9 @@ def run_one(name, out_dir, preview=None, spp=None, save=True):
     cam = d.get("camera") or bpy.context.scene.camera
     GB.set_screen(cam.data.lens / cam.data.sensor_width * W1)
     t.lap("build")
-    GB.setup_ink(k=k, scale=d.get("ink_scale", 1.0), overrides=d.get("ink"),
-                 crease_deg=d.get("crease_deg", 140.0))
+    if d.get("ink_mode") == "freestyle" and "--no-ink" not in scene.args():
+        GB.setup_ink(k=k, scale=d.get("ink_scale", 1.0), overrides=d.get("ink"),
+                     crease_deg=d.get("crease_deg", 140.0))
     region = opt("--region")
     if region:
         x0, y0, x1, y1 = [float(v) for v in region.split(",")]
@@ -94,7 +97,11 @@ def run_one(name, out_dir, preview=None, spp=None, save=True):
         sc.render.border_min_x, sc.render.border_max_x = x0, x1
         sc.render.border_min_y, sc.render.border_max_y = 1.0 - y1, 1.0 - y0
     pdir = os.path.join(out_dir, "%s_passes" % name)
-    ps, secs = GB.render(pdir)
+    if "--reuse" in scene.args() and os.path.isdir(pdir) and any(f.endswith(".exr") for f in os.listdir(pdir)):
+        # composite-only iteration on the passes of the previous render
+        ps, secs = GB.load_passes(pdir), 0.0
+    else:
+        ps, secs = GB.render(pdir)
     print("[scenes] %s rendered %dx%d %d spp in %.1fs" % (name, rw, rh, samples, secs))
     t.lap("render")
     cv = G2.Canvas(rw, rh, k=k, ovs=2 if rw < 5000 else 1)

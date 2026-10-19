@@ -16,8 +16,8 @@ space exactly like ``world_mats``; painted line widths follow the atlas texel de
 
 Foliage: :func:`leaf_atlas` renders the modelled leaves of :mod:`world_trees` as gongbi leaves:
 flat malachite / azurite washes darkening towards the leaf base (晕染), double-line ink outlines
-(双勾) found from a per-leaf ID pass, pine needles as ink-green strokes over a soft malachite
-wash pad.  :func:`bark_texture` bakes seamless painted bark (ink scale rings on pine, furrows on
+(双勾) found from a per-leaf ID pass; pine pads are painted directly as ink-green needle wheels
+over a malachite wash cloud (:mod:`ironart.world_gongbi_foliage`).  :func:`bark_texture` bakes seamless painted bark (ink scale rings on pine, furrows on
 broadleaf, ink node rings on bamboo).
 
 The mineral palette (:data:`G`) is the one shared by every gongbi family (DESIGN.md section 8).
@@ -626,11 +626,12 @@ def relibrary(objs, size, verbose=True):
 # ---------------------------------------------------------------------------------------------
 LEAF = {
     # (base, mid, tip) wash colours, outline ink, twig, outline alpha
-    "broad": dict(cols=("#2A5C44", "#3D8062", "#88B490"), alt=("#285A72", "#3A7690", "#7FA6C8"), alt_frac=0.12,
+    # alt: a few teal-azurite leaves (between malachite and azurite, so the crown is not speckled)
+    "broad": dict(cols=("#2A5C44", "#3D8062", "#88B490"), alt=("#265A62", "#387A84", "#7EAAAA"), alt_frac=0.08,
                   line="#1C3328", twig="#3A2A20", line_alpha=0.9),
     "pine": dict(cols=("#16302A", "#1F4436", "#33604C"), pad=("#4F9A7A", "#9CC9AE"), line="#1C3328",
                  twig="#3A2A20", line_alpha=0.0),
-    "bamboo": dict(cols=("#2C6248", "#468866", "#9CC4A2"), alt=("#2E6070", "#4A8098", "#8EB2CC"), alt_frac=0.1,
+    "bamboo": dict(cols=("#2C6248", "#468866", "#9CC4A2"), alt=("#28605E", "#3E7E80", "#86B0AE"), alt_frac=0.08,
                    line="#1C3328", twig="#56704A", line_alpha=0.85),
 }
 
@@ -703,6 +704,10 @@ def leaf_atlas(kind, out_dir, size=1024, ss=3, seed=7, samples=6):
     import time as _t
     from PIL import Image
     from . import post, world_trees as WT
+    if kind == "pine":
+        # pine pads are painted directly (needle wheels, 松针), see world_gongbi_foliage
+        from . import world_gongbi_foliage as WGF
+        return WGF.pine_atlas(out_dir, size=size, ss=4, seed=seed)
     t0 = _t.time()
     scene.reset(seed)
     rng = random.Random(seed)
@@ -856,20 +861,23 @@ def bark_material(kind, ext=(1.6, 3.2)):
         plates = _vor4(w, vec, wv, 2.6, aniso=(1.0, 1.0, 0.45))
         cell = _vor4(w, vec, wv, 2.6, feature="F1", aniso=(1.0, 1.0, 0.45), out="Color")
         tone = w.sep(cell)["X"]
-        col = w.mix(L("#6E4A32"), L("#8C6040"), w.mr(tone, 0.2, 0.8))
+        col = w.mix(L("#5C4232"), L("#7E5A3C"), w.mr(tone, 0.2, 0.8))
         rim = w.mr(plates, 0.0, 0.07, 1.0, 0.0)
         inner = w.mr(plates, 0.07, 0.2, 1.0, 0.0)
-        col = w.mix(col, L("#4A3222"), w.m("MULTIPLY", inner, 0.35))
+        col = w.mix(col, L("#3E2C20"), w.m("MULTIPLY", inner, 0.4))
         col = w.mix(col, L("#22180F"), w.m("MULTIPLY", rim, 0.9))
         w.out(col, ROUGH, 0.0, w.bump(w.m("SUBTRACT", 1.0, rim), 0.3, 0.02), spec=0.3)
         return m
-    # broadleaf: ink-grey trunk with long furrow strokes
-    fur = _noise4(w, vec, wv, 2.6, 4, 0.6, aniso=(5.0, 5.0, 0.6))
+    # broadleaf: a calm ink-grey wash (晕染 in long vertical bands) with sparse, broken dry-brush
+    # furrow strokes (皴) in warm ink - painted, not a photographed bark
+    tone = _noise4(w, vec, wv, 1.1, 2, 0.4, aniso=(3.0, 3.0, 0.7))
+    col = w.mix(L("#4E453E"), L("#6C6054"), w.mr(tone, 0.36, 0.64))
+    fur = _noise4(w, vec, wv, 2.0, 2, 0.45, aniso=(5.0, 5.0, 0.45))
     ridge = w.m("ABSOLUTE", w.m("SUBTRACT", fur, 0.5))
-    furrow = w.mr(ridge, 0.0, 0.05, 1.0, 0.0)
-    col = w.mix(L("#4C433C"), L("#6A5C50"), w.mr(fur, 0.3, 0.7))
-    col = w.mix(col, L("#1E1813"), w.m("MULTIPLY", furrow, 0.85))
-    w.out(col, ROUGH, 0.0, w.bump(w.m("SUBTRACT", 1.0, furrow), 0.3, 0.02), spec=0.3)
+    brk = _noise4(w, vec, wv, 2.4, 1, 0.4, aniso=(2.5, 2.5, 0.9))
+    furrow = w.m("MULTIPLY", w.mr(ridge, 0.0, 0.032, 1.0, 0.0), w.mr(brk, 0.40, 0.52))
+    col = w.mix(col, L("#221A14"), w.m("MULTIPLY", furrow, 0.85))
+    w.out(col, ROUGH, 0.0, w.bump(w.m("SUBTRACT", 1.0, furrow), 0.2, 0.02), spec=0.3)
     return m
 
 

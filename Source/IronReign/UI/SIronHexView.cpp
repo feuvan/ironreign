@@ -234,6 +234,8 @@ void SIronHexView::Construct(const FArguments& InArgs)
 		BoardExtent = (MaxCenter - MinCenter) + HalfHex * 2.0f;
 	}
 
+	ResetQueuedGateHp();
+
 	// Over the 3D board the plates follow the animated models: repaint every frame.
 	RegisterActiveTimer(Board.IsValid() ? 0.0f : 1.0f / 60.0f, FWidgetActiveTimerDelegate::CreateSP(this, &SIronHexView::OnAnimationTick));
 	PushBoardHighlights();
@@ -397,6 +399,9 @@ void SIronHexView::ClearAnimations()
 	ActiveFx.Reset();
 	FloatingTexts.Reset();
 	QueuedSounds.Reset();
+	PendingTroops.Reset();
+	PendingGates.Reset();
+	ResetQueuedGateHp();
 	AnimCursor = 0.0;
 	if (AIronBattleBoard3D* ActiveBoard = GetActiveBoard())
 	{
@@ -425,6 +430,13 @@ bool SIronHexView::IsAnimating() const
 
 void SIronHexView::SyncBoard(bool bFinishAnimations)
 {
+	// Every played event is in the rules state now; a fast-forward shows it at once.
+	ResetQueuedGateHp();
+	if (bFinishAnimations)
+	{
+		PendingTroops.Reset();
+		PendingGates.Reset();
+	}
 	AIronBattleBoard3D* ActiveBoard = GetActiveBoard();
 	if (ActiveBoard == nullptr || !Battle.IsValid())
 	{
@@ -488,6 +500,46 @@ void SIronHexView::AddFloat(IronSim::FHex Hex, const FString& Text, const FLinea
 	NewText.Duration = 1.1f;
 	NewText.FontSize = FontSize;
 	FloatingTexts.Add(NewText);
+}
+
+void SIronHexView::AddPendingLoss(int32 UnitId, int32 Loss, double Start)
+{
+	// The 2D board shows the rules state at once.
+	if (!IsValidUnit(UnitId) || Loss <= 0 || !IsBoardMode())
+	{
+		return;
+	}
+	FPendingTroops NewPending;
+	NewPending.Unit = UnitId;
+	NewPending.Delta = -Loss;
+	NewPending.Start = Start;
+	PendingTroops.Add(NewPending);
+}
+
+void SIronHexView::AddPendingGate(IronSim::FHex Hex, int32 ShownHp, double Start)
+{
+	if (!Battle.IsValid() || !Battle->InBounds(Hex) || !IsBoardMode())
+	{
+		return;
+	}
+	FPendingGate NewPending;
+	NewPending.Hex = Hex;
+	NewPending.ShownHp = FMath::Max(0, ShownHp);
+	NewPending.Start = Start;
+	PendingGates.Add(NewPending);
+}
+
+void SIronHexView::ResetQueuedGateHp()
+{
+	QueuedGateHp.Reset();
+	if (!Battle.IsValid())
+	{
+		return;
+	}
+	for (int32 GateIndex = 0; GateIndex < Battle->GateCount(); ++GateIndex)
+	{
+		QueuedGateHp.Add(Battle->GateHpAt(GateIndex));
+	}
 }
 
 void SIronHexView::AddSound(const TCHAR* SfxName, double Start)
@@ -583,6 +635,8 @@ void SIronHexView::PlayEvent(const IronSim::FBattleEvent& Event)
 		{
 			AddFloat(TargetHex, FString::Printf(TEXT("-%d"), Event.Value), DamageColor, HitTime);
 		}
+		// 3D: the plate keeps the troops until the blow lands (Value is the loss the rules took).
+		AddPendingLoss(Event.Target, Event.Value, HitTime);
 		// Unit is the one striking (the defender for a Counter).
 		const bool bArcher = IsValidUnit(Event.Unit) && Battle->Unit(Event.Unit).Setup.Type == IronSim::ETroopType::Archer;
 		AddSound(bArcher ? TEXT("Arrow") : TEXT("Attack"), HitTime);
@@ -596,6 +650,13 @@ void SIronHexView::PlayEvent(const IronSim::FBattleEvent& Event)
 		{
 			AddFloat(Event.To, FString::Printf(TEXT("-%d"), Event.Value), DamageColor, ImpactTime);
 		}
+		// 3D: the bar keeps the hit points from before this blow until it lands (Value is the unclamped damage).
+		const int32 HitGate = GateIndexAt(Event.To);
+		if (bOnBoard && QueuedGateHp.IsValidIndex(HitGate))
+		{
+			AddPendingGate(Event.To, QueuedGateHp[HitGate], ImpactTime);
+			QueuedGateHp[HitGate] = FMath::Max(0, QueuedGateHp[HitGate] - Event.Value);
+		}
 		AddSound(TEXT("GateHit"), ImpactTime);
 		break;
 	}
@@ -604,6 +665,13 @@ void SIronHexView::PlayEvent(const IronSim::FBattleEvent& Event)
 		// 3D: the moment the gatehouse collapses into rubble.
 		AddFx(EFxKind::Hit, Event.To, ImpactTime, 1.0f);
 		AddFloat(Event.To, IronUI::Loc("ui.battle.fx.gateBroken", "The gate is broken!").ToString(), IronStyle::Gold(), ImpactTime, 22.0f);
+		// 3D: an empty bar stays on the gatehouse until it collapses.
+		const int32 BrokenGate = GateIndexAt(Event.To);
+		if (bOnBoard && QueuedGateHp.IsValidIndex(BrokenGate))
+		{
+			AddPendingGate(Event.To, 0, ImpactTime);
+			QueuedGateHp[BrokenGate] = 0;
+		}
 		AddSound(TEXT("GateHit"), ImpactTime);
 		break;
 	}
@@ -617,6 +685,7 @@ void SIronHexView::PlayEvent(const IronSim::FBattleEvent& Event)
 			{
 				AddFloat(TargetHex, FString::Printf(TEXT("-%d"), Event.Value), DamageColor, ImpactTime);
 			}
+			AddPendingLoss(Event.Target, Event.Value, ImpactTime);
 			AddSound(TEXT("Fire"), ImpactTime);
 		}
 		else if (Event.Tactic == static_cast<int32>(IronSim::ETactic::Confuse))
@@ -647,6 +716,7 @@ void SIronHexView::PlayEvent(const IronSim::FBattleEvent& Event)
 		{
 			AddFloat(BurnHex, FString::Printf(TEXT("-%d"), Event.Value), DamageColor, ImpactTime);
 		}
+		AddPendingLoss(Event.Unit, Event.Value, ImpactTime);
 		AddSound(TEXT("Fire"), ImpactTime);
 		break;
 	}
@@ -695,6 +765,8 @@ EActiveTimerReturnType SIronHexView::OnAnimationTick(double /*InCurrentTime*/, f
 	MoveAnims.RemoveAll([Now](const FMoveAnim& Anim) { return Now > Anim.Start + IronHexViewDetail::MoveSeconds; });
 	ActiveFx.RemoveAll([Now](const FHexFx& Effect) { return Now > Effect.Start + Effect.Duration; });
 	FloatingTexts.RemoveAll([Now](const FFloatText& Floating) { return Now > Floating.Start + Floating.Duration; });
+	PendingTroops.RemoveAll([Now](const FPendingTroops& Pending) { return Pending.Start <= Now; });
+	PendingGates.RemoveAll([Now](const FPendingGate& Pending) { return Pending.Start <= Now; });
 	if (IsBoardMode())
 	{
 		// The camera glides and units walk under a still cursor.
@@ -1514,10 +1586,22 @@ int32 SIronHexView::PaintBoardOverlay(const AIronBattleBoard3D& ActiveBoard, FSl
 	for (int32 GateIndex = 0; GateIndex < Battle->GateCount() && Battle->GateMaxHp() > 0; ++GateIndex)
 	{
 		const IronSim::FHex GatePos = Battle->GateHexAt(GateIndex);
-		const int32 GateHitPoints = Battle->GateHpAt(GateIndex);
+		// A blow the board has not landed yet: the bar keeps the earlier hit points (empty until a broken gate falls).
+		int32 GateHitPoints = Battle->GateHpAt(GateIndex);
+		bool bBlowPending = false;
+		double FirstBlowStart = 0.0;
+		for (const FPendingGate& Pending : PendingGates)
+		{
+			if (Pending.Hex == GatePos && Pending.Start > Now && (!bBlowPending || Pending.Start < FirstBlowStart))
+			{
+				GateHitPoints = Pending.ShownHp;
+				FirstBlowStart = Pending.Start;
+				bBlowPending = true;
+			}
+		}
 		FVector GateTopCm = FVector::ZeroVector;
 		FVector2D GatePixel = FVector2D::ZeroVector;
-		if (GateHitPoints <= 0 || !Battle->InBounds(GatePos) || !ActiveBoard.GetGateTopWorldLocation(GatePos, GateTopCm)
+		if ((GateHitPoints <= 0 && !bBlowPending) || !Battle->InBounds(GatePos) || !ActiveBoard.GetGateTopWorldLocation(GatePos, GateTopCm)
 			|| !View.Project(GateTopCm + FVector(0.0, 0.0, static_cast<double>(Detail::BoardGateBarAboveTopM) * IronWorld::CmPerMetre), GatePixel))
 		{
 			continue;
@@ -1543,7 +1627,8 @@ int32 SIronHexView::PaintBoardOverlay(const AIronBattleBoard3D& ActiveBoard, FSl
 	{
 		const IronSim::FBattleUnit& BoardUnit = AllUnits[static_cast<size_t>(UnitIndex)];
 		FVector2D PlatePixel = FVector2D::ZeroVector;
-		if (!BoardUnit.IsActive() || !ActiveBoard.ProjectUnitToViewport(UnitIndex, PlatePixel, Detail::BoardPlateAboveModelM))
+		// Routed and destroyed units keep their plate while the board still shows them (until they have sunk away).
+		if (!ActiveBoard.ProjectUnitToViewport(UnitIndex, PlatePixel, Detail::BoardPlateAboveModelM))
 		{
 			continue;
 		}
@@ -1555,7 +1640,17 @@ int32 SIronHexView::PaintBoardOverlay(const AIronBattleBoard3D& ActiveBoard, FSl
 		// Units that already acted this turn are dimmed, like the greyed figures of the 2D board.
 		const bool bDimmed = BoardUnit.bActed && BoardUnit.Side == Battle->ActiveSide() && !Battle->IsOver();
 		const float PlateAlpha = bDimmed ? 0.55f : 1.0f;
-		const float TroopFraction = BoardUnit.StartTroops > 0 ? static_cast<float>(BoardUnit.Troops) / static_cast<float>(BoardUnit.StartTroops) : 0.0f;
+		// Losses the board has not landed yet are added back until their blows land.
+		int32 ShownTroops = BoardUnit.Troops;
+		for (const FPendingTroops& Pending : PendingTroops)
+		{
+			if (Pending.Unit == UnitIndex && Pending.Start > Now)
+			{
+				ShownTroops -= Pending.Delta;
+			}
+		}
+		ShownTroops = FMath::Clamp(ShownTroops, 0, FMath::Max(BoardUnit.StartTroops, BoardUnit.Troops));
+		const float TroopFraction = BoardUnit.StartTroops > 0 ? static_cast<float>(ShownTroops) / static_cast<float>(BoardUnit.StartTroops) : 0.0f;
 		const FVector2f BarSize(FMath::Max(34.0f, HexSize * 0.42f), FMath::Max(4.0f, 5.0f * PlateScale));
 		const FVector2f Rim(3.0f, 3.0f);
 		DrawRect(OutDrawElements, PlateLayer, Geometry, Anchor - BarSize * 0.5f - Rim, BarSize + Rim * 2.0f, Detail::HexWithAlpha(IronBattleUI::SideColor(BattleSetup, BoardUnit.Side), 0.95f * PlateAlpha));
@@ -1567,7 +1662,7 @@ int32 SIronHexView::PaintBoardOverlay(const AIronBattleBoard3D& ActiveBoard, FSl
 		DrawCenteredText(OutDrawElements, PlateLayer + 3, Geometry, IronUI::ToFString(IronBattleUI::UnitName(Session.Get(), BoardUnit)), NameFont, NameCenter, NameColor);
 		if (CountMeasure.IsValid() && PlateScale >= 0.75f)
 		{
-			const FString CountText = FString::FromInt(BoardUnit.Troops);
+			const FString CountText = FString::FromInt(ShownTroops);
 			const FVector2f CountSize = Detail::HexVec(CountMeasure->Measure(CountText, CountFont));
 			DrawCenteredText(OutDrawElements, PlateLayer + 3, Geometry, CountText, CountFont, Anchor + FVector2f(BarSize.X * 0.5f + Rim.X + 3.0f + CountSize.X * 0.5f, 0.0f), Detail::HexWithAlpha(FLinearColor::White, PlateAlpha));
 		}
@@ -1586,7 +1681,12 @@ int32 SIronHexView::PaintBoardOverlay(const AIronBattleBoard3D& ActiveBoard, FSl
 		{
 			continue;
 		}
-		const float FloatHeightM = FMath::Max(Detail::BoardFloatHeightM, ActiveBoard.GetGateTopHeightM(Floating.Hex) + Detail::BoardFloatAboveGateM);
+		if (Floating.AnchorHeightM < 0.0f)
+		{
+			// Frozen when the text first shows: a gatehouse collapsing mid-flight must not pull the text down.
+			Floating.AnchorHeightM = FMath::Max(Detail::BoardFloatHeightM, ActiveBoard.GetGateTopHeightM(Floating.Hex) + Detail::BoardFloatAboveGateM);
+		}
+		const float FloatHeightM = Floating.AnchorHeightM;
 		FVector2D FloatPixel = FVector2D::ZeroVector;
 		if (!View.Project(ActiveBoard.HexToWorldLocation(Floating.Hex, FloatHeightM), FloatPixel))
 		{

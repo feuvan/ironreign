@@ -1,186 +1,123 @@
-"""Face canon for gongbi_C: classical Chinese figure-painting proportions and feature types.
+"""Face canon of gongbi_C: the classical figure-painting vocabulary as parameters.
 
-All lengths are metres in *face space* for a head of scale 1 (crown to chin 0.232 m): u runs
-across the face (+ = viewer's right in a frontal view), v up, origin at the middle of the eye
-line on the face surface.  The 2D stage wraps these designs round the 3D head (height grid) and
-the camera turns them into a true 3/4 view.
+Faces are designed from the gongbi canon itself (never from any ethnicity morph): heroic
+generals with 卧蚕 / sword brows and wide-open eyes, scholars with long 丹凤 phoenix eyes,
+ladies with willow-leaf brows and bright almond eyes, elders with long white 寿眉 brows.
 
-The canon is the painters' own: 三庭五眼 (three equal courts: hairline-brow, brow-nose base,
-nose base-chin; the face is five eye-widths wide, the gap between the eyes is one eye), and the
-feature types of 人物画 manuals:
-
-* eyes  almond 杏眼 (bright, ladies and young men), phoenix 丹凤眼 (long, lifted outer corner,
-        scholars and heroes), round 环眼 (wide open, fierce warriors), calm 睡凤眼 (heavy lid,
-        elders, monks)
-* brows sword 剑眉, silkworm 卧蚕眉, willow-leaf 柳叶眉, calm arch 平眉, longevity 寿眉
-* beards five-lock 五绺长髯, curly 虬髯, short full 短髯, moustache + goatee 八字须, none
-
-Hard rules (never relaxed by any preset or random variation): eyes are open almonds with a
-drawn upper lid, iris, pupil and highlight (opening >= 0.30 of the eye width, iris >= 0.36);
-no ethnicity presets exist anywhere; skin is warm ivory / peach / ochre with rouge.
+Units: head units (crown-to-chin = 1) in head-local x / z (eye line z = 0); eye shapes are in
+eye widths.  Every preset keeps the eyes clearly OPEN: ``open`` (upper-lid height / eye
+width) >= 0.30, the iris and its highlight always drawn - :func:`check` asserts it.
 """
 
 import copy
-import random
 
-# ---------------------------------------------------------------------------------------------
-# base canon (young adult man) - every key the painter reads
-# ---------------------------------------------------------------------------------------------
-BASE = dict(
-    # eyes
-    eye_in=0.0152, eye_v=0.0, eye_w=0.0290, eye_h=0.36, eye_tilt=0.0012, eye_peak=0.40,
-    eye_low=0.56, eye_up=0.64, eye_k=2.3, lid_fold=0.0022, lid_fold_span=(0.28, 0.92),
-    tail=0.0016, tail_rise=0.0006, iris=0.42, iris_v=0.10, iris_color="#3A2A20",
-    lid_w=1.55, lower_w=0.60, lower_a=0.50, bag=0.0, hood=0.0, white_below=0.0,
-    gaze=(0.0, 0.0), lash=0.0,
-    # brows
-    brow="calm", brow_in=0.0105, brow_v=0.0150, brow_len=0.0450, brow_rise=0.0040,
-    brow_arch=0.0032, brow_w=(0.0030, 0.0036, 0.0011), brow_knit=0.0, brow_color="ink",
-    brow_hairs=28, brow_droop=0.0,
-    # nose
-    nose_len=0.0440, nose_w=0.0160, nose_h=0.0185, nose_bridge=0.0060, nose_tip=0.0058,
-    nose_line=1.0, nose_fade=0.55,
-    # mouth
-    mouth_v=-0.0645, mouth_w=0.0225, lip_up=0.0042, lip_low=0.0058, mouth_curve=0.0,
-    lip_color="#B04A4E", lip_alpha=0.32, bow=0.0010,
-    # washes
-    rouge=0.14, rouge_color="#C25A5E", shade=0.12, eye_shadow=0.0, eye_shadow_color="#C86A6A",
-    three_whites=0.0, huadian=None, beauty_mark=None,
-    # character
-    age=0.0, fierce=0.0, smile=0.0,
-    # hair at the temples drawn in 2D (none when a helmet covers them)
-    hairline=dict(on=True, top=0.075, temple_u=0.060, temple_v=0.028, side_v=-0.020,
-                  color="hair", strands=34, widow=0.0),
-    beard=None,
-    line_color="#4A3024",
+# --------------------------------------------------------------------------------------- eyes
+EYES = {
+    # long phoenix eye: outer corner lifted, long tapering tail, apex towards the inner third
+    "phoenix": dict(w=0.138, open=0.33, lo=0.13, tilt=0.10, peak=-0.12, round=0.85,
+                    tail=0.10, tail_lift=0.04, crease=0.085, crease_a=0.40, iris=0.205,
+                    line=2.0, lower_a=0.45, iris_up=0.03),
+    # bright almond eye
+    "almond": dict(w=0.134, open=0.37, lo=0.15, tilt=0.05, peak=-0.06, round=0.85,
+                   tail=0.07, tail_lift=0.02, crease=0.095, crease_a=0.45, iris=0.215,
+                   line=2.0, lower_a=0.45, iris_up=0.02),
+    # wide-open fierce eye of a general (环眼 tempered): rounder, strong lid, a little sclera
+    "tiger": dict(w=0.136, open=0.38, lo=0.16, tilt=0.05, peak=-0.06, round=1.05,
+                  tail=0.07, tail_lift=0.015, crease=0.085, crease_a=0.5, iris=0.21,
+                  line=2.5, lower_a=0.6, iris_up=0.05),
+    # steady eye of a seasoned man
+    "steady": dict(w=0.132, open=0.35, lo=0.14, tilt=0.04, peak=-0.06, round=0.9,
+                   tail=0.07, tail_lift=0.0, crease=0.09, crease_a=0.45, iris=0.21,
+                   line=2.1, lower_a=0.5, iris_up=0.02),
+    # kindly elder: softened, slightly hooded but clearly open, smile lines
+    "kind": dict(w=0.128, open=0.32, lo=0.13, tilt=0.02, peak=-0.02, round=0.95,
+                 tail=0.06, tail_lift=-0.01, crease=0.075, crease_a=0.55, iris=0.205,
+                 line=1.9, lower_a=0.5, iris_up=0.0, hood=0.5),
+}
+
+# ------------------------------------------------------------------------------------- brows
+#: x0/z0 inner head, x1/z1 tail, peak (fraction, height above the chord), thickness profile
+BROWS = {
+    "silkworm": dict(x0=0.050, z0=0.074, x1=0.262, z1=0.112, peak=(0.58, 0.020), thick=0.048,
+                     shape="silkworm", hairs=1.5, wash=0.80),
+    "sword": dict(x0=0.055, z0=0.078, x1=0.262, z1=0.135, peak=(0.60, 0.010), thick=0.032,
+                  shape="sword", hairs=1.0, wash=0.58),
+    "willow": dict(x0=0.062, z0=0.090, x1=0.250, z1=0.098, peak=(0.42, 0.028), thick=0.017,
+                   shape="willow", hairs=0.55, wash=0.50),
+    "crescent": dict(x0=0.060, z0=0.088, x1=0.245, z1=0.090, peak=(0.48, 0.030), thick=0.020,
+                     shape="willow", hairs=0.7, wash=0.48),
+    "calm": dict(x0=0.058, z0=0.086, x1=0.250, z1=0.100, peak=(0.50, 0.020), thick=0.026,
+                 shape="even", hairs=0.9, wash=0.52),
+    "longevity": dict(x0=0.055, z0=0.090, x1=0.255, z1=0.070, peak=(0.40, 0.018),
+                      thick=0.030, shape="longevity", hairs=1.2, wash=0.35, droop=0.075),
+}
+
+# ------------------------------------------------------------------------------------- noses
+NOSES = {
+    "straight": dict(tip_z=-0.185, tip_w=0.033, ala_w=0.064, top_z=0.035, prot=0.085,
+                     hook=0.0, line=1.0),
+    "strong": dict(tip_z=-0.192, tip_w=0.038, ala_w=0.072, top_z=0.04, prot=0.095,
+                   hook=0.25, line=1.15),
+    "small": dict(tip_z=-0.175, tip_w=0.028, ala_w=0.054, top_z=0.025, prot=0.07,
+                  hook=0.0, line=0.85),
+    "broad": dict(tip_z=-0.19, tip_w=0.040, ala_w=0.078, top_z=0.035, prot=0.085,
+                  hook=0.0, line=1.1),
+}
+
+# ------------------------------------------------------------------------------------ mouths
+MOUTHS = {
+    "firm": dict(z=-0.288, w=0.098, upper=0.022, lower=0.030, corner=-0.004, bow=0.006,
+                 color="#B06A5E", alpha=0.45, line=1.0),
+    "cherry": dict(z=-0.282, w=0.070, upper=0.028, lower=0.036, corner=0.003, bow=0.008,
+                   color="#C0393B", alpha=0.85, line=0.9),
+    "gentle": dict(z=-0.286, w=0.088, upper=0.022, lower=0.030, corner=0.002, bow=0.006,
+                   color="#B87064", alpha=0.45, line=0.95),
+    "elder": dict(z=-0.29, w=0.090, upper=0.016, lower=0.026, corner=0.0, bow=0.004,
+                  color="#B07A6E", alpha=0.35, line=0.9),
+}
+
+FACE_DEFAULT = dict(
+    eye="steady", brow="calm", nose="straight", mouth="gentle",
+    eye_x=0.142, eye_z=0.0,
+    gaze=0.75,                 # 0 = straight ahead in the head frame, 1 = at the viewer
+    gaze_v=0.0,
+    rouge=dict(color="#D98880", alpha=0.14, x=0.175, z=-0.12, r=0.12),
+    eye_rouge=0.0,             # 桃花妆: rouge round the eyes (ladies)
+    whites=0.22,               # 三白: lead-white glaze on forehead, nose bridge and chin
+    socket=0.22,               # 眼窝 shading
+    wrinkles=dict(forehead=0, crow=0, naso=0.0, bags=0.0, knit=0, mouth=0.0),
+    line="skin_line",
+    mark=None,                 # 花钿 forehead mark
 )
 
-#: archetype presets: overrides of BASE (randomised further by :func:`generate`)
-ARCH = {
-    "m_warrior": dict(eye_h=0.40, eye_tilt=0.0026, eye_peak=0.46, eye_low=0.52, iris=0.40,
-                      lid_w=1.75, brow="sword", brow_w=(0.0034, 0.0046, 0.0012),
-                      brow_rise=0.0060, brow_arch=0.0024, brow_knit=0.0016, fierce=0.6,
-                      nose_w=0.0172, nose_h=0.0200, mouth_w=0.0235, mouth_curve=-0.0008,
-                      lip_alpha=0.22, rouge=0.10, shade=0.16, line_color="#3E281E",
-                      beard=dict(kind="short_full")),
-    "m_scholar": dict(eye_h=0.33, eye_tilt=0.0022, eye_peak=0.38, eye_low=0.58, lid_fold=0.0,
-                      tail=0.0032, tail_rise=0.0012, iris=0.42, brow="calm",
-                      brow_w=(0.0026, 0.0030, 0.0009), brow_rise=0.0045, brow_arch=0.0034,
-                      mouth_w=0.0215, lip_alpha=0.26, rouge=0.08,
-                      beard=dict(kind="goatee")),
-    "m_elder": dict(eye_h=0.31, eye_tilt=0.0004, hood=0.7, bag=0.6, iris=0.40, lid_w=1.45,
-                    brow="longevity", brow_color="white", brow_w=(0.0028, 0.0034, 0.0016),
-                    brow_len=0.052, brow_rise=-0.002, brow_arch=0.0030, age=0.9,
-                    nose_len=0.046, mouth_w=0.0215, lip_alpha=0.16, rouge=0.07, shade=0.14,
-                    beard=dict(kind="five_lock", color="white")),
-    "m_monk": dict(eye_h=0.31, eye_tilt=0.0010, hood=0.35, iris=0.40, brow="calm",
-                   brow_w=(0.0024, 0.0030, 0.0010), age=0.3, mouth_curve=0.0006, smile=0.3,
-                   lip_alpha=0.2, beard=None),
-    "m_rogue": dict(eye_h=0.37, eye_tilt=0.0020, eye_peak=0.45, iris=0.40, brow="sword",
-                    brow_w=(0.0032, 0.0042, 0.0010), brow_rise=0.0065, brow_knit=0.0010,
-                    fierce=0.4, mouth_curve=0.0004, smile=0.4, lip_alpha=0.22,
-                    beard=dict(kind="stubble")),
-    "f_warrior": dict(eye_h=0.38, eye_tilt=0.0026, eye_peak=0.40, tail=0.0026, tail_rise=0.0010,
-                      lid_fold=0.0018, iris=0.44, brow="willow", brow_w=(0.0018, 0.0026, 0.0006),
-                      brow_rise=0.0058, brow_arch=0.0030, brow_len=0.044, brow_hairs=18,
-                      nose_len=0.0415, nose_w=0.0140, nose_h=0.0160, mouth_w=0.0185,
-                      lip_up=0.0040, lip_low=0.0056, lip_alpha=0.50, rouge=0.20, nose_line=0.8,
-                      nose_fade=0.75,
-                      eye_shadow=0.12, three_whites=0.15, lash=0.5, line_color="#5A3828"),
-    "f_scholar": dict(eye_h=0.38, eye_tilt=0.0018, eye_peak=0.40, tail=0.0022, tail_rise=0.0008,
-                      lid_fold=0.0019, iris=0.45, brow="willow", brow_w=(0.0016, 0.0024, 0.0005),
-                      brow_rise=0.0036, brow_len=0.0460, brow_hairs=16,
-                      nose_len=0.0410, nose_w=0.0135, nose_h=0.0150, mouth_w=0.0175,
-                      lip_up=0.0042, lip_low=0.0060, lip_alpha=0.58, rouge=0.24, nose_line=0.75,
-                      nose_fade=0.80, brow_arch=0.0048,
-                      eye_shadow=0.16, three_whites=0.25, lash=0.6, line_color="#5A3828"),
-    "f_elder": dict(eye_h=0.32, hood=0.4, bag=0.4, iris=0.40, brow="willow",
-                    brow_color="grey", brow_w=(0.0018, 0.0024, 0.0008), age=0.75,
-                    nose_len=0.043, mouth_w=0.019, lip_alpha=0.26, rouge=0.10, shade=0.13,
-                    line_color="#5A3828"),
-}
 
-#: 3D head / body presets per archetype (b_body parameters)
-HEAD = {
-    "m_warrior": dict(width=1.04, jaw=1.10, chin=1.10, cheek=1.03, face_len=1.0),
-    "m_scholar": dict(width=0.98, jaw=0.96, chin=0.95, face_len=1.03),
-    "m_elder": dict(width=0.98, jaw=0.98, chin=0.96, face_len=1.05, cheek=0.98),
-    "m_monk": dict(width=1.0, jaw=1.0, chin=1.0, crown=1.03),
-    "m_rogue": dict(width=1.02, jaw=1.06, chin=1.02),
-    "f_warrior": dict(scale=0.95, width=0.96, jaw=0.88, chin=0.82, face_len=0.97, cheek=1.0),
-    "f_scholar": dict(scale=0.94, width=0.95, jaw=0.86, chin=0.80, face_len=0.97, cheek=1.01),
-    "f_elder": dict(scale=0.94, width=0.96, jaw=0.92, chin=0.86, face_len=1.0),
-}
-BODY = {
-    "m_warrior": dict(shoulder=1.08, chest=1.05),
-    "m_scholar": dict(shoulder=0.96, slope=1.08),
-    "m_elder": dict(shoulder=0.95, slope=1.15),
-    "m_monk": dict(shoulder=1.0),
-    "m_rogue": dict(shoulder=1.04),
-    "f_warrior": dict(shoulder=0.86, chest=0.92, slope=1.12, neck=0.9, neck_len=1.15),
-    "f_scholar": dict(shoulder=0.84, chest=0.9, slope=1.18, neck=0.88, neck_len=1.2),
-    "f_elder": dict(shoulder=0.86, chest=0.92, slope=1.15, neck=0.92),
-}
-
-#: beard types: zone dicts read by face2d.beard (lengths in metres)
-BEARDS = {
-    "none": None,
-    "stubble": dict(moustache=dict(len=0.010, n=60, droop=0.5, w=0.55),
-                    chin=dict(len=0.012, n=80, spread=1.0, width=0.02),
-                    cheek=dict(len=0.010, n=120, top=-0.030), alpha=0.5, base=0.30),
-    "goatee": dict(moustache=dict(len=0.020, n=70, droop=0.55, w=0.8),
-                   chin=dict(len=0.050, n=100, spread=0.35, width=0.009, converge=0.4), cheek=None, base=0.5),
-    "short_full": dict(moustache=dict(len=0.026, n=110, droop=0.6, w=0.85),
-                       chin=dict(len=0.055, n=180, spread=0.8, width=0.022, converge=0.15),
-                       cheek=dict(len=0.040, n=240, top=-0.022), base=0.55),
-    "five_lock": dict(moustache=dict(len=0.042, n=90, droop=0.85, w=0.85),
-                      chin=dict(len=0.150, n=200, spread=0.4, width=0.015, converge=0.35),
-                      cheek=dict(len=0.115, n=150, top=-0.034, locks=True), base=0.55),
-    "curly": dict(moustache=dict(len=0.028, n=90, droop=0.5, w=0.9),
-                  chin=dict(len=0.065, n=180, spread=1.0, width=0.024, converge=0.1),
-                  cheek=dict(len=0.045, n=220, top=-0.024), curl=0.35, base=0.65),
-}
+def face(spec):
+    """Resolve a spec's ``face`` dict against the presets (deep-merged)."""
+    f = copy.deepcopy(FACE_DEFAULT)
+    src = spec.get("face", {})
+    for k, v in src.items():
+        if isinstance(v, dict) and isinstance(f.get(k), dict):
+            f[k].update(v)
+        else:
+            f[k] = v
+    e = dict(EYES[f["eye"]] if isinstance(f["eye"], str) else f["eye"])
+    e.update(src.get("eye_mod", {}))
+    b = dict(BROWS[f["brow"]] if isinstance(f["brow"], str) else f["brow"])
+    b.update(src.get("brow_mod", {}))
+    n = dict(NOSES[f["nose"]] if isinstance(f["nose"], str) else f["nose"])
+    n.update(src.get("nose_mod", {}))
+    m = dict(MOUTHS[f["mouth"]] if isinstance(f["mouth"], str) else f["mouth"])
+    m.update(src.get("mouth_mod", {}))
+    f.update(eyeP=e, browP=b, noseP=n, mouthP=m)
+    check(f)
+    return f
 
 
-def face(arch, **over):
-    """Canon dict for an archetype with overrides (unknown keys raise)."""
-    d = copy.deepcopy(BASE)
-    d.update(copy.deepcopy(ARCH.get(arch, {})))
-    for k, v in over.items():
-        if k not in d:
-            raise KeyError("unknown face key %r" % k)
-        d[k] = v
-    enforce(d)
-    return d
-
-
-def enforce(d):
-    """The non-negotiable face rules (applied after every override / random variation)."""
-    d["eye_h"] = max(0.30, min(0.50, d["eye_h"]))
-    d["iris"] = max(0.36, min(0.50, d["iris"]))
-    d["eye_w"] = max(0.026, min(0.032, d["eye_w"]))
-    d["lid_w"] = max(1.2, d["lid_w"])
-    return d
-
-
-# ---------------------------------------------------------------------------------------------
-# random variation for the 103-portrait cast
-# ---------------------------------------------------------------------------------------------
-JITTER = dict(eye_w=0.0012, eye_h=0.03, eye_tilt=0.0008, eye_peak=0.04, iris=0.02,
-              brow_v=0.0012, brow_len=0.003, brow_rise=0.0015, brow_arch=0.001,
-              nose_len=0.002, nose_w=0.0012, nose_h=0.0015, mouth_w=0.0015, mouth_v=0.0015,
-              lip_up=0.0006, lip_low=0.0008, mouth_curve=0.0005, rouge=0.03)
-
-HEAD_JITTER = dict(width=0.03, jaw=0.04, chin=0.04, cheek=0.02, face_len=0.03)
-
-
-def vary(d, rng, amount=1.0):
-    for k, s in JITTER.items():
-        d[k] = d[k] + rng.uniform(-s, s) * amount
-    return enforce(d)
-
-
-def generate(name):
-    """Spec for a generated cast member, e.g. 'm_warrior_07' (see wardrobe.generate)."""
-    import wardrobe
-    return wardrobe.generate(name)
+def check(f):
+    """Hard face-design rules (the user's veto): eyes open, iris drawn, no slits."""
+    e = f["eyeP"]
+    assert e["open"] >= 0.30, "eyes must stay clearly open (open >= 0.30)"
+    assert e["open"] <= 0.48, "eyes must not bulge (open <= 0.48)"
+    assert e["iris"] >= 0.18, "iris must read (radius >= 0.18 eye widths)"
+    assert 0.11 <= e["w"] <= 0.15, "eye width within the canon"
+    assert -0.02 <= e["tilt"] <= 0.14, "outer-corner lift within the canon"

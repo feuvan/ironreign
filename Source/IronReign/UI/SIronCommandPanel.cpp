@@ -202,7 +202,7 @@ TSharedRef<SWidget> SIronCommandPanel::BuildTabBar()
 				SNew(STextBlock)
 				.Text(Info.Label)
 				.Font(bActive ? IronStyle::BodyBold(13.0f) : IronStyle::Body(13.0f))
-				.ColorAndOpacity(bActive ? IronStyle::Gold() : IronStyle::TextLight())
+				.ColorAndOpacity(IronStyle::TabText(bActive))
 			]
 		];
 		++Column;

@@ -474,8 +474,9 @@ namespace IronStyleDetail
 			.SetPressedPadding(FMargin(18.0f, 10.0f, 18.0f, 8.0f));
 
 		// Tabs: slate tints cannot brighten, so inactive tabs are dimmed and light up on hover.
-		const FSlateBrush TabBrush = ArtBox(TEXT("Art/UI/Tab.png"), Margins.Tab, IronUI::ColorFromRGB(0x3C2B21));
-		const FSlateBrush TabActiveBrush = ArtBox(TEXT("Art/UI/Tab_Active.png"), Margins.Tab, LacquerColor);
+		// The tab art is light silk with dark labels (TabText), so the fallbacks are light too.
+		const FSlateBrush TabBrush = ArtBox(TEXT("Art/UI/Tab.png"), Margins.Tab, IronStyle::PaperDark());
+		const FSlateBrush TabActiveBrush = ArtBox(TEXT("Art/UI/Tab_Active.png"), Margins.Tab, IronStyle::Paper());
 		const FLinearColor Dim(0.78f, 0.78f, 0.78f, 1.0f);
 		State.TabStyles[0] = FButtonStyle()
 			.SetNormal(Tinted(TabBrush, Dim))
@@ -651,6 +652,7 @@ namespace IronStyle
 	const FSlateBrush* WhiteBrush() { return FIronAssets::Get().White(); }
 	const FButtonStyle& Button() { return IronStyleDetail::ReadyState().ButtonStyle; }
 	const FButtonStyle& Tab(bool bActive) { return IronStyleDetail::ReadyState().TabStyles[bActive ? 1 : 0]; }
+	FLinearColor TabText(bool bActive) { return bActive ? Lacquer() : Ink(); }
 	const FButtonStyle& RowButton() { return IronStyleDetail::ReadyState().RowStyle; }
 	const FTextBlockStyle& BodyText() { return IronStyleDetail::ReadyState().BodyTextStyle; }
 	const FTableRowStyle& TableRow() { return IronStyleDetail::ReadyState().TableRowStyle; }

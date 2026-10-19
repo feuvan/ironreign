@@ -179,7 +179,7 @@ TSharedRef<SWidget> SIronTitleScreen::MakeLanguagePicker()
 					SNew(STextBlock)
 					.Text(FIronSession::CultureDisplayName(CultureName))
 					.Font(IronStyle::FontForCulture(CultureName, IronStyle::EFont::BodyBold, 15.0f))
-					.ColorAndOpacity(IronStyle::TextLight())
+					.ColorAndOpacity(IronStyle::TabText(bActive))
 				]
 			];
 	}

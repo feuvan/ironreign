@@ -1,21 +1,28 @@
 """PanelDark.png (128x128 9-slice, 24 px margins): ink-dark silk with a painted mud-gold (泥金)
-border and mud-gold ruyi cloud heads (如意云头) in the corners.
+border and mud-gold cloud scrolls in the corners.
 
-Cross-section (d = mitred distance from the outer edge, target px; rings depend on d only):
-    0.0-0.9   ink edge
-    0.9-4.0   deep-umber edge silk, 晕染 lighter towards its middle, lengthwise threads
-    4.0-5.1   mud-gold rule (gold powder grain along the rule)
-    5.1-6.3   ink silk
-    6.3-6.8   mud-gold hairline (75 %)
-    6.8-      ink-dark silk field #1E1A16 (Night +-3) with a faint deep-umber glow and silk
-              texture in the 9-slice centre only
-Corners: ruyi heads 12 px, centred 9 px from both edges, pointing into the panel, painted in
-mud-gold with engraved curls; a halo of field colour interrupts the rules behind them.
-Text on it: TextLight / Gold.
+Cross-section (d = mitred distance from the outer edge, target px of the @1x art; the rings are
+functions of d only, so the 9-slice strips stretch cleanly):
+
+    d 0.0-1.0   deep-umber edge (the silk turned over the board), 晕染 into the field
+    d 1.0-2.0   ink silk
+    d 2.0-3.0   mud-gold rule (on the @1x pixel grid)
+    d 3.0-4.0   ink silk with an umber 晕染
+    d 4.0-4.7   mud-gold hairline (80 %)
+    d > 4.7     ink-dark silk field #1E1A16 (Night +-3) with lengthwise silk threads in the
+                strips and a faint deep-umber glow only in the 9-slice centre
+
+Corners: a mud-gold ruyi cloud head (如意云头) on the diagonal pointing into the corner, with
+engraved ink curls, and two tapered cloud tendrils (卷云) that leave its side lobes along the
+edges and end in curls - all within 22 px of the corner.  Text on it: TextLight / Gold.
 """
+
+import math
 
 import numpy as np
 
+from ironart import ui_chrome_gongbi as GB
+from ironart import ui_chrome_ornament as O
 from ironart import ui_chrome_paint as P
 from ironart import ui_chrome_sdf as S
 
@@ -23,37 +30,74 @@ NAME = "PanelDark"
 SPEC = dict(size=(128, 128), ss=4, margins=(24, 24, 24, 24), seed=21)
 W = H = 128
 FIELD = "#1E1A16"
-GLOW = "#2A2119"
-RUYI = dict(c=9.0, size=12.0, rot=315.0)
+EDGE_C = "#33261B"
+GLOW = "#2B2219"
+
+RULE = (2.0, 3.0)    # one @1x pixel
+HAIR = (4.0, 4.7)
+RUYI_C = 9.6       # ruyi centre on the diagonal (px from both edges)
+RUYI_S = 4.8       # ruyi half size
+
+
+def corner_strokes():
+    """Cloud tendrils of the top-left corner (local px): from each side lobe of the ruyi along
+    the edge, ending in an inward curl."""
+    out = []
+    for flip in (False, True):
+        # along +x (top edge); the vertical one is the mirror about the diagonal
+        start = (RUYI_C + 3.9, RUYI_C - 2.6)
+        pts = O.path([(start, (RUYI_C + 6.5, RUYI_C - 4.4), (RUYI_C + 8.5, 5.9),
+                       (RUYI_C + 10.6, 6.0))], 24)
+        curl_c = (RUYI_C + 10.9, 8.3)
+        spiral, _ = O.volute(curl_c[0], curl_c[1], 2.3, 0.45, 1.05, -90.0, cw=True, n=48)
+        pts = np.concatenate([pts, spiral[1:]], 0)
+        rad = O.taper(len(pts), 0.55, 1.0, 0.35)
+        if flip:
+            pts = pts[:, ::-1].copy()
+        out.append((pts.astype(np.float32), rad))
+    return out
 
 
 def paint(G, variant=None, seed=None):
     seed = SPEC["seed"] if seed is None else seed
-    d = S.inset_distance(G, W, H, r=1.5)
+    d = S.inset_distance(G, W, H, r=1.0)
+    axis = GB.strip_axis(G, W, H)
     C = P.Canvas(G)
-    shape = P.aa(-d, G)
+    shape = S.aa_mask(-d, G)
 
-    # ---- field: ink silk with a faint umber glow in the centre ------------------------------
-    cw = P.centre_weight(G, SPEC["margins"], fade=14.0)
-    tex = P.silk_texture(G, seed, weave=0.0, slub=0.0, mottle=0.018, mottle_cell=40.0)
-    u = (G.X - W / 2) / (W / 2 - 24)
-    v = (G.Y - H / 2) / (H / 2 - 24)
-    glow = np.clip(1.0 - (u * u + v * v) / 2.0, 0, 1) ** 1.5 * cw
-    fcol = P.mix(FIELD, GLOW, 0.55 * glow) * (1.0 + (tex - 1.0) * cw)[..., None]
+    # ---- ink silk field ---------------------------------------------------------------------
+    cw = P.centre_weight(G, SPEC["margins"], fade=12.0)
+    glow = P.smoothstep(0.0, 1.0, cw) * (0.55 + 0.45 * P.fbm2(G, 50.0, seed + 1, octaves=2)
+                                         .clip(-1, 1) * 0.5)
+    thr = GB.strip_threads(d, seed + 2, pitch=0.42, amp=0.05, gap=0.4, slow=0.02)
+    thr2 = GB.strip_threads(d + 0.19, seed + 3, pitch=0.42, amp=0.05, gap=0.4, slow=0.02)
+    thr = thr * axis + thr2 * (1.0 - axis)
+    edge = (1.0 - P.smoothstep(0.0, 9.0, d)) ** 1.5
+    # lengthwise threads only show in the umber edge silk (the field must stay even)
+    thr = 1.0 + (thr - 1.0) * (0.25 + 0.75 * edge) * (1.0 - cw)
+    fcol = P.mix(FIELD, GLOW, 0.65 * glow) * thr[..., None]
+    # umber 晕染 from the edge into the field
+    fcol = P.mix(fcol, P.rgb(EDGE_C) * thr[..., None], 0.75 * edge)
     C.over(shape, fcol)
 
-    # ---- border -----------------------------------------------------------------------------
-    t = 1.0 - np.abs(d - 2.45) / 1.55
-    edge = P.mix("#241C15", "#3A2C21", P.smoothstep(0.0, 0.9, t))
-    edge = edge * (1.0 + 0.06 * P.noise1d(d, 0.3, seed + 3, 1))[..., None]
-    C.over(P.band(d, 0.8, 4.0, G), edge)
-    C.over(P.band(d, 4.0, 5.1, G), P.strip_color(d, "gold", seed + 4, amp=0.06, period=0.45))
-    C.over(P.band(d, 6.3, 6.8, G), P.strip_color(d, "gold", seed + 5, amp=0.05), 0.75)
-    C.over(P.band(d, -5, 0.9, G) * shape, "#110E0B")
+    # ---- painted mud-gold rules -------------------------------------------------------------
+    gthr = GB.strip_threads(d, seed + 5, pitch=0.5, amp=0.035, gap=0.15, slow=0.03)
+    gold = GB.mud_gold(G, None, seed + 6, gran=0.0, flecks=0.0) * gthr[..., None]
+    rim_k = 1.0 - 0.14 * (1.0 - P.smoothstep(RULE[0], RULE[0] + 0.35, d)) \
+        - 0.14 * P.smoothstep(RULE[1] - 0.35, RULE[1], d)
+    C.over(GB.band(d, *RULE, G), gold * rim_k[..., None])
+    C.over(GB.band(d, *HAIR, G), gold, 0.8)
+    C.over(GB.band(d, -5.0, 1.0, G) * shape, P.rgb("#251B14") * thr[..., None], 0.9)
 
-    # ---- corners: ruyi cloud heads -----------------------------------------------------------
-    c, size, rot = RUYI["c"], RUYI["size"], RUYI["rot"]
-    for (x, y, r) in ((c, c, rot), (W - c, c, rot + 90), (W - c, H - c, rot + 180),
-                      (c, H - c, rot + 270)):
-        P.paint_ruyi(C, G, x, y, size, r, seed + 7, halo=FIELD, halo_w=0.9, engrave="#2E2318")
+    # ---- corner cloud scrolls ---------------------------------------------------------------
+    # top-left corner on the full grid, mirrored into the other three (exact: symmetric lattice)
+    rot = 135.0                       # ruyi point towards the corner
+    rsd, curls = O.ruyi(G, RUYI_C, RUYI_C, RUYI_S, rot=rot)
+    ten = O.strokes_sd(G, corner_strokes())
+    rsd, curls, ten = GB.mirror4(rsd), GB.mirror4(curls), GB.mirror4(ten)
+    orn = np.minimum(rsd, ten)
+    # a halo of field colour interrupts the hairline behind the ornament
+    C.over(S.aa_mask(orn - 0.75, G) * P.smoothstep(3.0, 3.4, d), P.rgb(FIELD) * thr[..., None])
+    C.over(S.aa_mask(orn, G), GB.mud_gold(G, orn, seed + 7, yun=1.3, pool=0.14, gran=0.04))
+    C.over(S.aa_mask(curls - 0.24, G) * S.aa_mask(rsd + 0.55, G), "#3A2812", 0.85)
     return C.rgba()

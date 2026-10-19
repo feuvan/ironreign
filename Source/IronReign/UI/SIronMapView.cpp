@@ -64,6 +64,11 @@ namespace IronMapViewDetail
 	constexpr double WorldRouteMinStepM = 12.0;
 	constexpr double WorldRouteMaxStepM = 60.0;
 	constexpr float WorldRouteLiftM = 3.0f;
+	/**
+	 * Route samples are drawn only this far in front of the camera (cm of view depth) and within one viewport of the
+	 * screen: a point just in front of the camera plane projects millions of pixels away.
+	 */
+	constexpr float WorldRouteMinDepthCm = 1000.0f;
 	/** A resting cursor re-picks what is under it this often (seconds) while the scene moves. */
 	constexpr float WorldHoverRepickSeconds = 0.1f;
 	/** Samples of the remaining part of the road an army is on (its route follows the road's bends). */
@@ -183,6 +188,9 @@ namespace IronMapViewDetail
 		AddPolyline(Out, Layer, Geo, MoveTemp(Points), Color, Thickness);
 	}
 
+	/** Segments longer than this (local units) are not dashed: no screen is that large. */
+	constexpr float DashMaxSegmentLength = 1.0e5f;
+
 	/** Splits a polyline into dashes and calls Emit for each dash (which may bend around corners). */
 	void EmitDashes(const TArray<FVector2f>& Poly, float Dash, float Gap, TFunctionRef<void(TArray<FVector2f>&)> Emit)
 	{
@@ -196,6 +204,16 @@ namespace IronMapViewDetail
 			FVector2f From = Poly[Index - 1];
 			const FVector2f To = Poly[Index];
 			float SegmentLeft = (To - From).Size();
+			if (!FMath::IsFinite(SegmentLeft) || SegmentLeft > DashMaxSegmentLength)
+			{
+				// A wild point: end the dash there instead of walking millions of units.
+				if (bOn && Current.Num() >= 2)
+				{
+					Emit(Current);
+				}
+				Current.Reset();
+				continue;
+			}
 			if (SegmentLeft <= 0.0001f)
 			{
 				continue;
@@ -205,8 +223,11 @@ namespace IronMapViewDetail
 			{
 				Current.Add(From);
 			}
-			while (SegmentLeft > 0.0f)
+			// Each turn advances to the end of a dash, a gap or the segment: bounded, so float rounding cannot stall it.
+			int32 StepsLeft = 4 + FMath::CeilToInt32(SegmentLeft / FMath::Min(DashLength, GapLength));
+			while (SegmentLeft > 0.0f && StepsLeft > 0)
 			{
+				--StepsLeft;
 				const float Advance = FMath::Min(Remaining, SegmentLeft);
 				const FVector2f Next = From + Direction * Advance;
 				if (bOn)
@@ -1687,6 +1708,8 @@ int32 SIronMapView::PaintWorldRoutes(const AIronWorldMap3D& Map, const FIronView
 		return Layer;
 	}
 	const double StepM = FMath::Clamp(static_cast<double>(Map.GetCameraDistanceM()) * IronMapViewDetail::WorldRouteStepPerDistance, IronMapViewDetail::WorldRouteMinStepM, IronMapViewDetail::WorldRouteMaxStepM);
+	const AIronTerrain* RouteTerrain = Map.GetTerrain();
+	const FVector2D& ViewportPixels = Mapping.ViewportPixels;
 	TArray<FVector2f> MapPath;
 	TArray<FVector2f> Run;
 	for (const IronSim::FArmy& Army : GameState.Armies)
@@ -1718,8 +1741,9 @@ int32 SIronMapView::PaintWorldRoutes(const AIronWorldMap3D& Map, const FIronView
 			}
 		};
 
-		// Draped over the ground: a point every StepM metres, projected one by one. A stretch that cannot be projected
-		// (behind the camera) ends the current run of dashes.
+		// Draped over the ground: a point every StepM metres, projected one by one. A stretch that cannot be drawn (behind
+		// or just in front of the camera, or more than a viewport off screen) ends the current run of dashes; samples are
+		// at most a few hundred pixels apart, so a route leaving the screen still runs off its edge.
 		Run.Reset();
 		bool bTipShown = false;
 		for (int32 Index = 1; Index < MapPath.Num(); ++Index)
@@ -1730,11 +1754,16 @@ int32 SIronMapView::PaintWorldRoutes(const AIronWorldMap3D& Map, const FIronView
 			for (int32 Step = Index == 1 ? 0 : 1; Step <= Steps; ++Step)
 			{
 				const FVector2D RoutePoint = FMath::Lerp(SegmentStart, SegmentEnd, static_cast<double>(Step) / static_cast<double>(Steps));
-				FVector2f RouteLocal(0.0f, 0.0f);
-				bTipShown = ProjectToLocal(Map, View, Mapping, Geo, RoutePoint, IronMapViewDetail::WorldRouteLiftM, RouteLocal);
+				const float SurfaceM = RouteTerrain != nullptr ? RouteTerrain->SampleSurface(RoutePoint) : 0.0f;
+				FVector2D RoutePixel = FVector2D::ZeroVector;
+				float RouteDepthCm = 0.0f;
+				bTipShown = View.Project(IronWorld::MapToWorld(RoutePoint, static_cast<double>(SurfaceM + IronMapViewDetail::WorldRouteLiftM)), RoutePixel, RouteDepthCm)
+					&& RouteDepthCm > IronMapViewDetail::WorldRouteMinDepthCm
+					&& RoutePixel.X > -ViewportPixels.X && RoutePixel.X < 2.0 * ViewportPixels.X
+					&& RoutePixel.Y > -ViewportPixels.Y && RoutePixel.Y < 2.0 * ViewportPixels.Y;
 				if (bTipShown)
 				{
-					Run.Add(RouteLocal);
+					Run.Add(ViewportPixelToLocal(Mapping, Geo, RoutePixel));
 				}
 				else
 				{

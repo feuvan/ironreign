@@ -67,8 +67,9 @@ namespace IronBattleUI
  * plates (name, troop bar), gate bars (on the drawn gatehouse or rubble) and floating numbers, all projected with the
  * board's per-frame FIronViewProjection, plus the day banner and the tooltip. Floating texts, sounds and the banner run
  * on the board's animation clock (AIronBattleBoard3D::GetAnimationClock) at the moments PlayEvent reports
- * (FIronBoardEventTiming), so they stay in sync through frame hitches. Without a board (or when it stops being active)
- * it draws the 2D board on the wall clock.
+ * (FIronBoardEventTiming), so they stay in sync through frame hitches; the plates' troops and the gate bars change at
+ * those moments too (the rules state already holds the result), and a fallen unit keeps its plate while it sinks.
+ * Without a board (or when it stops being active) it draws the 2D board on the wall clock.
  */
 class SIronHexView : public SLeafWidget
 {
@@ -183,6 +184,11 @@ private:
 		double Start = 0.0;
 		float Duration = 1.1f;
 		float FontSize = 18.0f;
+		/**
+		 * 3D: height (metres) the text rises from, frozen when it first shows (a gatehouse collapsing into rubble
+		 * mid-flight must not pull it down); below 0 until then. Filled by the const overlay paint.
+		 */
+		mutable float AnchorHeightM = -1.0f;
 	};
 
 	struct FTipLine
@@ -196,6 +202,25 @@ private:
 	struct FQueuedSound
 	{
 		FString Name;
+		double Start = 0.0;
+	};
+
+	/**
+	 * 3D: a change of a unit's troops (Delta, negative for a loss) the rules made but the board has not shown yet. The
+	 * plate undoes it until Start (timeline seconds), when the blow lands.
+	 */
+	struct FPendingTroops
+	{
+		int32 Unit = -1;
+		int32 Delta = 0;
+		double Start = 0.0;
+	};
+
+	/** 3D: a gate's bar shows ShownHp (its hit points before the blow, 0 before the collapse) until Start. */
+	struct FPendingGate
+	{
+		IronSim::FHex Hex = {-1, -1};
+		int32 ShownHp = 0;
 		double Start = 0.0;
 	};
 
@@ -217,6 +242,12 @@ private:
 
 	void AddFx(EFxKind Kind, IronSim::FHex Hex, double Start, float Duration);
 	void AddFloat(IronSim::FHex Hex, const FString& Text, const FLinearColor& Color, double Start, float FontSize = 18.0f);
+	/** 3D: the unit's plate keeps Loss more troops until Start (timeline seconds), when the blow lands on the board. */
+	void AddPendingLoss(int32 UnitId, int32 Loss, double Start);
+	/** 3D: the gate on Hex shows ShownHp until Start. */
+	void AddPendingGate(IronSim::FHex Hex, int32 ShownHp, double Start);
+	/** QueuedGateHp from the rules state. */
+	void ResetQueuedGateHp();
 	/** Plays SfxName now, or when Start (timeline seconds) is reached if the event's animation is still queued. */
 	void AddSound(const TCHAR* SfxName, double Start);
 	/**
@@ -285,6 +316,14 @@ private:
 	TArray<FHexFx> ActiveFx;
 	TArray<FFloatText> FloatingTexts;
 	TArray<FQueuedSound> QueuedSounds;
+	/** 3D: rules changes the plates and gate bars hold back until their blows land on the board. */
+	TArray<FPendingTroops> PendingTroops;
+	TArray<FPendingGate> PendingGates;
+	/**
+	 * 3D: hit points of each gate (by gate index) once every played event has landed: the rules state at the last
+	 * SyncBoard, less the blows played since. A new blow's bar starts from there.
+	 */
+	TArray<int32> QueuedGateHp;
 	/** Moves play back to back; effects of later events start once earlier moves finished. */
 	double AnimCursor = 0.0;
 	/** The timeline is the board's animation clock (the view was built for a 3D board), and its last known value. */

@@ -151,6 +151,89 @@ def screen_material():
     return GB.finish(mat, b, col, ink=b.math("MULTIPLY", ink, 0.65), form=0.05)
 
 
+def door_material(axis="x", bay=1.6, z0=0.9, z1=7.0):
+    """槅扇 lattice doors along a wall (``axis`` = world axis the wall runs along): lacquered
+    frames, paper panels ruled with a fine lattice in ink, a solid skirt panel (裙板) with a gilt
+    roundel, a gilt band between."""
+    mat, b, created = GB._builder("GB_Court_Doors_" + axis)
+    if not created:
+        return mat
+    x, y, z = b.sep(GB.wpos(b))
+    u = x if axis == "x" else y
+    fu = b.math("FRACT", b.math("DIVIDE", u, bay))
+    hz = b.maprange(z, z0, z1, 0.0, 1.0)
+    edge_u = b.math("ABSOLUTE", b.math("SUBTRACT", fu, 0.5))
+    frame = b.math("MAXIMUM", b.smooth(edge_u, 0.43, 0.45),
+                   b.math("MAXIMUM", b.smooth(hz, 0.03, 0.01), b.smooth(hz, 0.97, 0.99)))
+    rail = b.math("SUBTRACT", b.smooth(hz, 0.30, 0.31), b.smooth(hz, 0.355, 0.365))
+    frame = b.math("MAXIMUM", frame, rail)
+    skirt = b.smooth(hz, 0.31, 0.30)
+    lattice_zone = b.math("MULTIPLY", b.smooth(hz, 0.36, 0.37), b.math("SUBTRACT", 1.0, frame))
+    k = 1.0 / 0.16
+    lh = GB.stripes(b, b.math("MULTIPLY", z, k), 1.0, width=0.12)
+    lv = GB.stripes(b, b.math("MULTIPLY", u, k), 1.0, width=0.12)
+    lat = b.math("MAXIMUM", lh, lv)
+    paper = GB.lin4("#E6D4B0")
+    lacq = GB.lin4("#7E2E22")
+    col = b.mix(paper, GB.lin4("#B8805A"), b.math("MULTIPLY", lat, 0.7))
+    # roundel on the skirt panel
+    du = b.math("MULTIPLY", b.math("SUBTRACT", fu, 0.5), bay)
+    dz = b.math("SUBTRACT", z, z0 + (z1 - z0) * 0.15)
+    rr = b.math("SQRT", b.math("ADD", b.math("MULTIPLY", du, du), b.math("MULTIPLY", dz, dz)))
+    rd = b.math("SUBTRACT", b.smooth(rr, 0.36, 0.33), b.smooth(rr, 0.27, 0.24))
+    sk_col = b.mix(GB.lin4("cinnabar"), GB.lin4("gold"), rd)
+    col = b.mix(col, sk_col, skirt)
+    col = b.mix(col, lacq, frame)
+    gold = b.math("MULTIPLY", rail, 1.0)
+    col = b.mix(col, GB.lin4("gold"), b.math("MULTIPLY", gold, 0.9))
+    ink = b.math("MULTIPLY", b.math("MULTIPLY", lat, lattice_zone), 0.55)
+    ink = b.math("MAXIMUM", ink, b.math("MULTIPLY", b.math("ABSOLUTE", b.math("SUBTRACT", rd, 0.5)), 0.0))
+    return GB.finish(mat, b, col, ink=ink, form=0.0)
+
+
+def dragon_column_material():
+    """Gilt pillar with a coiling dragon (蟠龙金柱): a helical scaly body in deeper gold drawn
+    with ink scale lines, cloud scrolls in the gaps (object coordinates of each column)."""
+    mat, b, created = GB._builder("GB_Court_DragonCol")
+    if not created:
+        return mat
+    tc = b.node("ShaderNodeTexCoord")
+    x, y, z = b.sep(tc.outputs["Object"])
+    ang = b.math("ARCTAN2", y, x)
+    hel = b.math("FRACT", b.math("ADD", b.math("DIVIDE", ang, 2 * math.pi), b.math("DIVIDE", z, 3.2)))
+    band = b.smooth(b.math("ABSOLUTE", b.math("SUBTRACT", hel, 0.5)), 0.2, 0.16)
+    edge = b.math("SUBTRACT", 1.0, b.smooth(b.math("ABSOLUTE", b.math("SUBTRACT", b.math("ABSOLUTE", b.math("SUBTRACT", hel, 0.5)), 0.18)), 0.004, 0.012))
+    scales = GB.stripes(b, b.math("ADD", b.math("MULTIPLY", hel, 22.0), b.math("MULTIPLY", z, 0.0)), 1.0, width=0.1)
+    col = b.mix(GB.lin4("#D8B060"), GB.lin4("gold_d"), band)
+    wv = b.node("ShaderNodeTexWave", wave_type="RINGS", rings_direction="SPHERICAL")
+    wv.inputs["Scale"].default_value = 1.6
+    wv.inputs["Distortion"].default_value = 5.0
+    b.link(tc.outputs["Object"], wv.inputs["Vector"])
+    scroll = b.math("MULTIPLY", b.smooth(wv.outputs["Fac"], 0.88, 0.96), b.math("SUBTRACT", 1.0, band))
+    g = GB.facing(b, 0.4, 0.1, 1.0)
+    col = b.mix(col, b.cmul(col, 0.7), g)
+    ink = b.math("MAXIMUM", b.math("MULTIPLY", edge, 0.9),
+                 b.math("MAXIMUM", b.math("MULTIPLY", b.math("MULTIPLY", scales, band), 0.45), b.math("MULTIPLY", scroll, 0.5)))
+    return GB.finish(mat, b, col, ink=ink, form=0.05)
+
+
+def plaque_material(w=6.0, h=2.0):
+    """Horizontal hall plaque (匾额): azurite field inside a gilt frame of cloud scrolls (no
+    text - the field stays plain); object coordinates centred on the plaque."""
+    mat, b, created = GB._builder("GB_Court_Plaque")
+    if not created:
+        return mat
+    tc = b.node("ShaderNodeTexCoord")
+    x, y, z = b.sep(tc.outputs["Object"])
+    ex = b.math("SUBTRACT", w / 2, b.math("ABSOLUTE", x))
+    ez = b.math("SUBTRACT", h / 2, b.math("ABSOLUTE", z))
+    e = b.math("MINIMUM", ex, ez)
+    field = b.smooth(e, 0.3, 0.34)
+    col = b.mix(GB.lin4("gold"), GB.lin4("#24476A"), field)
+    ink = b.math("SUBTRACT", 1.0, b.smooth(b.math("ABSOLUTE", b.math("SUBTRACT", e, 0.32)), 0.01, 0.03))
+    return GB.finish(mat, b, col, ink=b.math("MULTIPLY", ink, 0.8), form=0.0)
+
+
 # ---------------------------------------------------------------------------------------------
 # figures
 # ---------------------------------------------------------------------------------------------
@@ -159,14 +242,12 @@ def official(rng, robe, hat="official", pose="stand_hands", tablet=True):
     f = MeshBuilder()
     sk = P.figure(f, rng, pose, "official", cloth=robe, cloth2=9, hat=hat, jitter=1.5)
     if tablet:
+        # ivory hu tablet held upright before the chest, both hands at its foot
         hl, hr = sk.arm[1]["hand"], sk.arm[-1]["hand"]
-        c = (hl + hr) * 0.5 + Vector((0, -0.03, 0.02))
-        up = (sk.neck - c).normalized()
-        top = c + up * 0.36 + Vector((0, -0.06, 0))
-        f.box(tuple(c - up * 0.04), (0.075, 0.02, 0.42), "Tablet")
-        s0 = f.n - 8
-        q = Vector((0, -0.18, 1.0)).normalized().to_track_quat("Z", "Y")
-        f.transform(s0, Matrix.Translation(c) @ q.to_matrix().to_4x4() @ Matrix.Translation(-c))
+        c = (hl + hr) * 0.5 + Vector((0, -0.1, 0.0))
+        s0 = f.n
+        f.box((0.0, 0.0, -0.06), (0.09, 0.016, 0.5), "Tablet")
+        f.transform(s0, Matrix.Translation(c) @ Matrix.Rotation(math.radians(-14), 4, "X"))
     return f
 
 
@@ -185,18 +266,26 @@ def build(r):
     mats["Floor"] = floor_material()
     mats["Carpet"] = carpet_material()
     mats["Screen"] = screen_material()
+    mats["DoorsX"] = door_material("x")
+    mats["DoorsY"] = door_material("y")
+    mats["UpperWall"] = GB.wash("GB_Court_UpperWall", "#9C4C36", "#6E3426", grad="none", ao=0.35, ao_dist=2.0)
+    mats["DragonCol"] = dragon_column_material()
+    mats["Plaque"] = plaque_material()
     hall = MeshBuilder()
     # ---- floor, carpet ------------------------------------------------------------------------
     hall.box((0, BACK / 2 - 4, -0.3), (HW * 2 + 2, BACK + 10, 0.3), "Floor", skip=("bottom",))
     hall.box((0, 15.0, 0.0), (3.1, 30.0, 0.03), "Carpet", skip=("bottom",))
-    # ---- walls: side walls with high lattice windows, back wall -------------------------------
+    # ---- walls: a wood dado, tall lattice doors (槅扇), a painted beam band, muted red above ----
     for side in (-1, 1):
         x = side * (HW + 0.5)
-        hall.box((x, BACK / 2 - 4, 0), (1.0, BACK + 8, 4.2), "W_RedWall")
-        hall.box((x, BACK / 2 - 4, 4.2), (0.2, BACK + 8, 0.25), "W_Gold")
-        hall.box((x, BACK / 2 - 4, 4.45), (1.0, BACK + 8, 4.8), "W_Lattice")
-        hall.box((x, BACK / 2 - 4, 9.25), (1.0, BACK + 8, H - 9.25), "W_RedWall")
-    hall.box((0, BACK + 0.5, 0), (HW * 2 + 2, 1.0, H), "W_RedWall")
+        hall.box((x, BACK / 2 - 4, 0), (1.0, BACK + 8, 0.9), "W_WoodDark")
+        hall.box((x, BACK / 2 - 4, 0.9), (1.0, BACK + 8, 6.1), "DoorsY")
+        hall.box((x, BACK / 2 - 4, 7.0), (1.0, BACK + 8, 0.7), "W_BeamPaint")
+        hall.box((x, BACK / 2 - 4, 7.7), (1.0, BACK + 8, H - 7.7), "UpperWall")
+    hall.box((0, BACK + 0.5, 0), (HW * 2 + 2, 1.0, 0.9), "W_WoodDark")
+    hall.box((0, BACK + 0.5, 0.9), (HW * 2 + 2, 1.0, 6.1), "DoorsX")
+    hall.box((0, BACK + 0.5, 7.0), (HW * 2 + 2, 1.0, 0.7), "W_BeamPaint")
+    hall.box((0, BACK + 0.5, 7.7), (HW * 2 + 2, 1.0, H - 7.7), "UpperWall")
     # ---- columns, gilt bands, dougong frieze, beams ------------------------------------------
     for x in (-COL_X[1], -COL_X[0], COL_X[0], COL_X[1]):
         for y in COLS_Y:
@@ -274,6 +363,19 @@ def build(r):
     dais.transform(0, Matrix.Translation((0, DAIS_Y, 0)))
     hall.extend(dais)
     K.emit(hall, "Hall", mats, "arch")
+    # gilt dragon pillars flanking the throne, a plaque over the back wall (separate objects so
+    # their patterns can use object coordinates)
+    for i, (x, y) in enumerate(((-6.0, 33.5), (6.0, 33.5), (-6.0, 41.0), (6.0, 41.0))):
+        dc = MeshBuilder()
+        dc.lathe([(0.66, 0.0), (0.62, COL_H + 0.6)], "DragonCol", 24, smooth=True)
+        for z in (0.0, COL_H - 0.6):
+            dc.cylinder((0, 0, z), (0, 0, z + 0.35), 0.7, 0.7, "W_Gold", 24)
+        o = K.emit(dc, "DragonCol%d" % i, mats, "arch")
+        o.location = (x, y, 0.0)
+    pq = MeshBuilder()
+    pq.box((0, 0, -1.0), (6.0, 0.3, 2.0), "Plaque")
+    o = K.emit(pq, "Plaque", mats, "arch")
+    o.location = (0.0, BACK - 0.1, 10.3)
     # ---- people -----------------------------------------------------------------------------------
     crowd = MeshBuilder()
     rows = [(-2.55, 0), (-3.95, 1), (2.55, 0), (3.95, 1)]
@@ -309,7 +411,7 @@ def build(r):
     P.figure(f, random.Random(77), "kneel_bow", "official", cloth=0, cloth2=9, hat="official", jitter=0)
     crowd.extend(f, Matrix.Translation((0.0, DAIS_Y - 9.4, 0.03)) @ Matrix.Rotation(math.pi, 4, "Z"))
     K.emit(crowd, "Court", mats, "fig")
-    cam = L.camera((0.0, -6.0, 5.6), (0.0, 30.0, 5.6), focal_mm=27.0, shift=(0.0, 0.02))
+    cam = L.camera((0.0, -9.0, 6.4), (0.0, 30.0, 6.4), focal_mm=26.0, shift=(0.0, -0.035))
     look = dict(
         fade=dict(d0=14.0, d1=70.0, color=GB.mixc("silk", "#E8D8C0", 0.5), amount=0.28, cover=0.0),
         ink=1.0, granulation=0.09,

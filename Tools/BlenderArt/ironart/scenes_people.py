@@ -31,7 +31,7 @@ BONES = dict(hip_h=0.93, pelvis_w=0.10, spine=0.50, neck=0.08, head_r=0.105, sho
 POSES = {
     "stand": dict(drop=0.0, bend=2, lean=0, twist=0, armL=(8, 10, 12), armR=(8, 10, 12),
                   legL=(0, 4, 2), legR=(0, 4, 2), head=(4, 0)),
-    "stand_hands": dict(drop=0.0, bend=2, armL=(35, 8, 95), armR=(35, 8, 95),
+    "stand_hands": dict(drop=0.0, bend=2, armL=(22, -4, 80, 44), armR=(22, -4, 80, 44),
                         legL=(0, 4, 2), legR=(0, 4, 2), head=(6, 0)),
     "walk": dict(drop=0.02, bend=6, armL=(-22, 8, 25), armR=(26, 8, 30), legL=(26, 2, 12),
                  legR=(-18, 2, 30), head=(5, 0)),
@@ -121,6 +121,7 @@ class Skeleton:
         self.arm = {}
         for side, key in ((1, "armL"), (-1, "armR")):
             pitch, abd, elbow = p[key][:3]
+            twist = p[key][3] if len(p[key]) > 3 else 0.0
             sh = self.neck + R @ Vector((side * B["shoulder_w"], 0, -0.05 * s))
             # upper arm: hanging down, pitched forward, abducted outwards
             d = Vector((0, 0, -1))
@@ -134,7 +135,11 @@ class Skeleton:
             if axis.length < 1e-4:
                 axis = R @ Vector((1, 0, 0))
             axis.normalize()
-            d2 = (Matrix.Rotation(math.radians(-elbow), 3, axis) @ d).normalized()
+            # elbow flexion swings the forearm forward / up (towards the face)
+            d2 = (Matrix.Rotation(math.radians(elbow), 3, axis) @ d).normalized()
+            if twist:
+                # rotate the forearm about the upper arm: + brings the hand in towards the midline
+                d2 = (Matrix.Rotation(math.radians(side * twist), 3, d) @ d2).normalized()
             wr = el + d2 * B["forearm"]
             hand = wr + d2 * B["hand"] * 0.6
             self.arm[side] = dict(shoulder=sh, elbow=el, wrist=wr, hand=hand, dir=d2)
@@ -183,6 +188,19 @@ def ring(mb, c, ex, ey, rx, ry, n=10, fn=None):
         p = c + ex * (math.cos(a) * rx * k) + ey * (math.sin(a) * ry * k)
         ids.append(mb.v(tuple(p)))
     return ids
+
+
+def fold_attrs(mb, ids, n_lines, phase, t, weight=1.0, a0=0.0):
+    """Drapery-line (衣纹) attributes for one ring of ``ids`` (angle a_k = a0 + tau k / len):
+    unit-circle position (fold_x, fold_y), lines per radian (fold_n), phase (fold_p), position
+    down the garment (fold_t 0..1) and gate (fold_w).  The gongbi cloth material draws ink lines
+    where |sin(fold_n * angle + fold_p)| is small (see scenes_gongbi.cloth)."""
+    m = len(ids)
+    for k, vid in enumerate(ids):
+        a = a0 + TAU * k / m
+        for nm, val in (("fold_x", math.cos(a)), ("fold_y", math.sin(a)), ("fold_n", n_lines),
+                        ("fold_p", phase), ("fold_t", t), ("fold_w", weight)):
+            mb.vattr.setdefault(nm, {})[vid] = val
 
 
 def loft(mb, rings, mat, cap_bottom=False, cap_top=False, smooth=True):
@@ -584,6 +602,7 @@ def _robe(mb, sk, rng, waist, mat, trim, bulk=1.0, length=1.0, ease=(0.035, 0.13
     ex0.z = 0
     ex0.normalize()
     rings.append(ring(mb, waist, ex0, up.cross(ex0) * -1.0, wr_x, wr_y, segs))
+    fold_attrs(mb, rings[-1], nf * 0.5, ph[0], 0.0)
     for i in range(1, rings_n + 1):
         t = i / rings_n
         tl = t * length
@@ -618,6 +637,7 @@ def _robe(mb, sk, rng, waist, mat, trim, bulk=1.0, length=1.0, ease=(0.035, 0.13
                              + 0.35 * math.sin(nf * ang * 1.7 + ph[1]))
             return f
         ids = ring(mb, c, u, v, a, b, segs, fn)
+        fold_attrs(mb, ids, nf * 0.5, ph[0], t)
         if i == rings_n:
             # hem: undulate, keep above the ground, train behind for court robes
             for k, vid in enumerate(ids):
@@ -650,14 +670,30 @@ def _robe(mb, sk, rng, waist, mat, trim, bulk=1.0, length=1.0, ease=(0.035, 0.13
 
 
 def _sleeve(mb, A, mat, lining, s, width=0.12, droop=1.25, n=12):
-    """Wide hanging hanfu sleeve: rings along the arm whose lower half sags into a bag that
-    grows to the cuff; the cuff opening is closed by a dark disc so it never looks hollow."""
+    """Wide hanging hanfu sleeve (袂): a tube along the arm whose underside sags into a pouch
+    that is deepest under the forearm and gathers again to a modest cuff at the wrist, so the
+    opening never reads as a trumpet; the cuff is lined and closed by a dark disc."""
     sh, el, wr = A["shoulder"], A["elbow"], A["wrist"]
-    pts = [sh, (sh + el) * 0.5, el, el + (wr - el) * 0.5, wr + (wr - el).normalized() * 0.04 * s]
+    end = wr + (wr - el).normalized() * 0.05 * s
+    poly = [sh, el, wr, end]
+    seg = [(poly[i + 1] - poly[i]).length for i in range(3)]
+    tot = sum(seg)
+
+    def at(t):
+        d = t * tot
+        for i in range(3):
+            if d <= seg[i] or i == 2:
+                return poly[i] + (poly[i + 1] - poly[i]) * min(1.0, d / max(seg[i], 1e-6))
+            d -= seg[i]
+
+    def sm(e0, e1, x):
+        u = min(1.0, max(0.0, (x - e0) / (e1 - e0)))
+        return u * u * (3 - 2 * u)
+    ts = [0.0, 0.18, 0.36, 0.5, 0.62, 0.74, 0.84, 0.92, 1.0]
+    pts = [at(t) for t in ts]
     down = Vector((0, 0, -1))
     rings = []
-    for i, p in enumerate(pts):
-        t = i / (len(pts) - 1)
+    for i, (t, p) in enumerate(zip(ts, pts)):
         a = pts[max(0, i - 1)]
         b = pts[min(len(pts) - 1, i + 1)]
         d = (b - a).normalized()
@@ -668,105 +704,255 @@ def _sleeve(mb, A, mat, lining, s, width=0.12, droop=1.25, n=12):
         ey = d.cross(ex).normalized()
         if ey.dot(down) < 0:
             ey = -ey
-        r = (0.072 + (width - 0.072) * t ** 1.2) * s
+        r = (0.072 + (width - 0.072) * sm(0.0, 0.7, t) - (width - 0.075) * 0.85 * sm(0.8, 1.0, t)) * s
         hz = 1.0 - min(1.0, abs(d.z) * 1.1)
-        dr = 1.0 + droop * hz * t ** 1.6
-        c = p + ey * r * (dr - 1.0) * 0.75
+        bag = sm(0.25, 0.68, t) * (1.0 - 0.75 * sm(0.78, 1.0, t))
+        dr = 1.0 + droop * (0.35 + 0.65 * hz) * bag * 1.25
+        c = p + ey * r * (dr - 1.0) * 0.8
         rings.append(ring(mb, c, ex, ey, r, r * dr, n))
+        # two or three long folds along the hanging pouch of the sleeve
+        fold_attrs(mb, rings[-1], 1.5, 0.6, 0.15 + 0.85 * t, 0.8)
     loft(mb, rings, mat, smooth=True)
     # cuff band + dark opening
     last = rings[-1]
     ctr = sum((mb.verts[v] for v in last), Vector()) / len(last)
-    inner = [mb.v(tuple(ctr + (mb.verts[v] - ctr) * 0.86)) for v in last]
+    inner = [mb.v(tuple(ctr + (mb.verts[v] - ctr) * 0.9)) for v in last]
     mb.quad_strip(last, inner, lining, True, False)
     mb.face(inner[::-1], "SleeveDark")
     mb.face(inner, "SleeveDark")
 
 
-
 # ---------------------------------------------------------------------------------------------
 # horse
 # ---------------------------------------------------------------------------------------------
+#: leg chains per gait: front legs (shoulder, elbow, knee, fetlock) and hind legs (hip, stifle,
+#: hock, fetlock) swing angles in degrees (+ = towards the head); neck / head raise in degrees;
+#: lift = height of the lowest hoof above the ground (flying gallop)
 HORSE_GAITS = {
-    "stand": dict(legs=[(0, 0), (0, 0), (0, 0), (0, 0)], neck=35, head=60, body_pitch=0),
-    "walk": dict(legs=[(18, 30), (-10, 5), (-14, 10), (16, 40)], neck=32, head=62, body_pitch=0),
-    "gallop": dict(legs=[(55, 80), (35, 30), (-45, 20), (-30, 40)], neck=18, head=40, body_pitch=-4),
-    "rear": dict(legs=[(70, 100), (50, 90), (-10, 30), (5, 10)], neck=55, head=40, body_pitch=-28),
+    "stand": dict(FL=(0, 0, 0, 0), FR=(4, 0, 0, 0), HL=(0, 0, 0, 0), HR=(-4, 0, 0, 0),
+                  neck=0, head=0, tail=0.0, lift=0.0),
+    "walk": dict(FL=(18, 10, -55, -20), FR=(-8, 0, 0, 0), HL=(-14, 0, -10, 0), HR=(12, 0, 8, 5),
+                 neck=-4, head=-4, tail=0.15, lift=0.0),
+    "trot": dict(FL=(24, 15, -70, -30), FR=(-14, 0, 0, 0), HL=(-20, -5, -5, 0), HR=(16, 10, 25, 10),
+                 neck=-6, head=-2, tail=0.35, lift=0.0),
+    # the flying gallop of Chinese horse painting: forelegs reach forward, hind legs stretch back
+    "gallop": dict(FL=(62, 25, -35, 10), FR=(48, 30, -55, 0), HL=(-38, -20, -25, -20),
+                   HR=(-26, -25, -35, -25), neck=-16, head=18, tail=0.9, lift=0.25),
+    "rear": dict(FL=(70, 40, -110, -30), FR=(55, 55, -120, -20), HL=(20, 0, 15, 10),
+                 HR=(10, 5, 20, 5), neck=12, head=-10, tail=0.4, lift=0.0, pitch=28),
 }
+
+#: rest pose of the horse (local: facing -Y, side x = +-, z up; metres, withers ~1.55 m)
+_BODY = [  # (y, z, half-width, half-height) along the spine, tail root -> poll
+    (0.97, 1.31, 0.05, 0.05), (0.93, 1.29, 0.18, 0.21), (0.82, 1.27, 0.26, 0.28),
+    (0.62, 1.26, 0.30, 0.29), (0.34, 1.245, 0.31, 0.28), (0.02, 1.225, 0.32, 0.305),
+    (-0.30, 1.215, 0.31, 0.33), (-0.56, 1.235, 0.28, 0.325), (-0.75, 1.30, 0.24, 0.31),
+    (-0.89, 1.45, 0.20, 0.27), (-1.0, 1.61, 0.165, 0.215), (-1.09, 1.76, 0.135, 0.17),
+    (-1.15, 1.87, 0.115, 0.135), (-1.175, 1.925, 0.05, 0.05)]
+_NECK0 = 8          # first spine ring that belongs to the neck (rotates with "neck")
+_HEAD = [  # forehead -> muzzle (rotates with "head" about the poll)
+    (-1.13, 1.95, 0.05, 0.045), (-1.18, 1.915, 0.105, 0.13), (-1.28, 1.815, 0.115, 0.15),
+    (-1.40, 1.68, 0.093, 0.118), (-1.51, 1.55, 0.078, 0.096), (-1.585, 1.46, 0.074, 0.084),
+    (-1.62, 1.41, 0.04, 0.045)]
+_FRONT = [(-0.60, 1.12), (-0.57, 0.86), (-0.61, 0.50), (-0.61, 0.15), (-0.665, 0.035)]
+_FRONT_R = [0.12, 0.085, 0.054, 0.037, 0.047]
+_HIND = [(0.56, 1.2), (0.42, 0.88), (0.71, 0.52), (0.71, 0.15), (0.665, 0.035)]
+_HIND_R = [0.17, 0.115, 0.06, 0.039, 0.047]
+
+
+def _swing(deg):
+    """Rotation about X that swings a downward vector towards -Y (the head) by ``deg``."""
+    return Matrix.Rotation(math.radians(-deg), 3, "X")
+
+
+def _spine_loft(mb, pts, mat, n=14, caps=True, squash=None):
+    """Loft elliptic rings perpendicular to a YZ spine; pts = [(Vector centre, rx, rz)]."""
+    rings = []
+    m = len(pts)
+    for i, (c, rx, rz) in enumerate(pts):
+        a = pts[max(0, i - 1)][0]
+        b = pts[min(m - 1, i + 1)][0]
+        t = (b - a)
+        t.x = 0.0
+        t.normalize()
+        ex = Vector((1, 0, 0))
+        up = Vector((0, t.z, -t.y))
+        if up.z < 0 and abs(t.z) < 0.95:
+            up = -up
+        fn = squash(i) if squash else None
+        rings.append(ring(mb, c, ex, up, rx, rz, n, fn))
+    loft(mb, rings, mat, caps, caps)
+    return rings
 
 
 def horse(mb, rng, gait="walk", coat="HorseCoat", mane="HorseMane", saddle=None, scale=1.0,
-          barding=None):
-    """Horse (withers ~1.55 m) facing -Y, hooves on z = 0.  Returns the saddle point (rider pelvis)."""
-    g = HORSE_GAITS[gait]
-    s = scale
-    pitch = math.radians(g.get("body_pitch", 0))
-    Rb = Matrix.Rotation(-pitch, 3, "X")
-    bh = 1.25 * s                       # belly-centre height
-    c = Vector((0, 0, bh))
-    # body: lofted barrel along -Y
-    prof = [(0.70, 0.17, 0.20, 0.02), (0.55, 0.26, 0.30, 0.04), (0.25, 0.30, 0.34, 0.04),
-            (-0.10, 0.29, 0.34, 0.02), (-0.45, 0.28, 0.33, 0.04), (-0.68, 0.24, 0.28, 0.08),
-            (-0.80, 0.12, 0.16, 0.10)]
-    rings = []
-    for (y, rx, rz, dz) in prof:
-        p = c + Rb @ Vector((0, -y * s, dz * s))
-        rings.append(ring(mb, p, Vector((1, 0, 0)), Rb @ Vector((0, 0, 1)), rx * s, rz * s, 12))
-    loft(mb, rings, coat, cap_bottom=True, cap_top=True)
-    chest = c + Rb @ Vector((0, -0.62 * s, 0.12 * s))
-    rump = c + Rb @ Vector((0, 0.62 * s, 0.10 * s))
-    # neck + head
-    na = math.radians(g["neck"])
-    n0 = c + Rb @ Vector((0, -0.62 * s, 0.22 * s))
-    n1 = n0 + Rb @ Vector((0, -math.cos(na) * 0.62 * s, math.sin(na) * 0.62 * s))
-    limb(mb, [n0, (n0 + n1) * 0.5, n1], [0.2 * s, 0.15 * s, 0.11 * s], coat, n=10)
-    ha = math.radians(g["head"])
-    h1 = n1 + Rb @ Vector((0, -math.sin(ha) * 0.5 * s, -math.cos(ha) * 0.5 * s))
-    limb(mb, [n1, (n1 + h1) * 0.5, h1], [0.11 * s, 0.085 * s, 0.065 * s], coat, n=9)
-    # ears
+          barding=None, tack="Plume", cloth="Banner0"):
+    """Horse in the manner of court horse painting (withers ~1.55 m) facing -Y, hooves on z = 0:
+    deep round barrel, arched neck, wedge head, fine legs with knees / hocks / fetlocks, flowing
+    mane and tail.  ``saddle`` = saddle material (adds saddle, saddle cloth ``cloth``, breast
+    collar and crupper with ``tack`` tassels, bridle and reins).  Returns the saddle point."""
+    g = dict(HORSE_GAITS["stand"])
+    g.update(HORSE_GAITS.get(gait, {}))
+    s = 1.0                       # built at unit scale, ``scale`` applied at the end
+    start = mb.n
+    piv_n = Vector((0, -0.72, 1.32))
+    Rn = _swing(-g["neck"])           # + neck = raise (rotates the neck back / up)
+    body = []
+    for i, (y, z, rx, rz) in enumerate(_BODY):
+        c = Vector((0, y, z))
+        if i >= _NECK0:
+            w = min(1.0, (i - _NECK0 + 1) / 3.0)
+            R = Matrix.Rotation(math.radians(g["neck"]) * w, 3, "X")
+            c = piv_n + R @ (c - piv_n)
+        body.append((c, rx, rz))
+    poll = body[-2][0]
+    # neck crest is narrower than the throat: squash the top of the neck rings a little
+    _spine_loft(mb, body, coat, 16)
+    Rh = Matrix.Rotation(math.radians(g["neck"] + g["head"]), 3, "X")
+    p0 = Vector((0, _BODY[-2][0], _BODY[-2][1]))
+    head = [(poll + Rh @ (Vector((0, y, z)) - p0), rx, rz) for (y, z, rx, rz) in _HEAD]
+    _spine_loft(mb, head, coat, 12)
+    hdir = (head[-1][0] - head[1][0]).normalized()
+    hup = Vector((0, hdir.z, -hdir.y))
+    if hup.z < 0:
+        hup = -hup
+    # ears, eyes, nostril
     for sd in (1, -1):
-        e0 = n1 + Vector((sd * 0.05 * s, 0.02 * s, 0.06 * s))
-        mb.cylinder(tuple(e0), tuple(e0 + Vector((sd * 0.02, 0.03, 0.12)) * s), 0.025 * s, 0.003, coat, 5)
-    # mane along the neck
-    for k in range(10):
-        t = k / 9
-        p = n0 + (n1 - n0) * t + Vector((0, 0.08 * s, 0.1 * s))
-        mb.tube([tuple(p), tuple(p + Vector((rng.uniform(-0.05, 0.05), 0.12 * s, -0.08 * s)))],
-                0.035 * s, mane, 4, radius_fn=lambda u: 1.0 - 0.7 * u)
-    # tail
-    t0 = rump + Vector((0, 0.12 * s, 0.1 * s))
-    sw = 0.5 if gait == "gallop" else 0.0
-    mb.tube([tuple(t0), tuple(t0 + Vector((0, 0.25 * s, -0.1 * s + sw * 0.2))),
-             tuple(t0 + Vector((0.05, 0.4 * s + sw * 0.3, -0.55 * s + sw * 0.35)))], 0.07 * s, mane, 6,
-            radius_fn=lambda u: 1.0 - 0.3 * u)
-    # legs: (pitch of upper, knee bend) per leg FL, FR, HL, HR
-    hips = [chest + Vector((0.14 * s, 0.08 * s, -0.12 * s)), chest + Vector((-0.14 * s, 0.08 * s, -0.12 * s)),
-            rump + Vector((0.15 * s, -0.05 * s, -0.08 * s)), rump + Vector((-0.15 * s, -0.05 * s, -0.08 * s))]
-    for i, (hp, (a1, a2)) in enumerate(zip(hips, g["legs"])):
-        front = i < 2
-        d1 = Matrix.Rotation(math.radians(a1 * (1 if front else -1) * -1), 3, "X") @ Vector((0, 0, -1))
-        k = hp + d1 * 0.5 * s
-        bend = a2 if front else -a2
-        d2 = Matrix.Rotation(math.radians(-bend * (1 if front else -1)), 3, "X") @ d1
-        f = k + d2 * 0.55 * s
-        limb(mb, [hp, k, f], [0.11 * s, 0.06 * s, 0.045 * s], coat, n=8)
-        ellipsoid(mb, f + Vector((0, -0.02 * s, -0.02 * s)), (0.06 * s, 0.07 * s, 0.05 * s), "Hoof", 7, 5)
-    # drop so that the lowest hoof sits on the ground
+        e0 = head[1][0] + Vector((sd * 0.055, 0, 0)) + hup * 0.06 - hdir * 0.02
+        e1 = e0 + (hup * 0.13 - hdir * 0.05 + Vector((sd * 0.02, 0, 0)))
+        mb.tube([tuple(e0), tuple((e0 + e1) * 0.5 + Vector((sd * 0.008, 0, 0))), tuple(e1)], 0.028, coat, 5,
+                radius_fn=lambda t: 1.0 - 0.85 * t)
+        ellipsoid(mb, head[2][0] + Vector((sd * 0.098, 0, 0)) + hup * 0.04, (0.012, 0.022, 0.016), "Hoof", 6, 4)
+    # legs
+    hooves = []
+    for key, rest, radii, side, front in (("FL", _FRONT, _FRONT_R, 1, True), ("FR", _FRONT, _FRONT_R, -1, True),
+                                          ("HL", _HIND, _HIND_R, 1, False), ("HR", _HIND, _HIND_R, -1, False)):
+        ang = g[key]
+        x = side * (0.15 if front else 0.165)
+        pts = [Vector((x, y, z)) for (y, z) in rest]
+        out = [pts[0]]
+        acc = 0.0
+        for j in range(1, len(pts)):
+            acc += ang[j - 1] if j - 1 < len(ang) else 0.0
+            seg = pts[j] - pts[j - 1]
+            out.append(out[-1] + _swing(acc) @ seg)
+        # knee / hock: a slight bulge; fetlock: a knob
+        rr = [radii[0] * s, radii[1] * s, radii[2] * s, radii[3] * s, radii[3] * 1.05 * s]
+        mid = [out[0], (out[0] + out[1]) * 0.5, out[1], out[1] + (out[2] - out[1]) * 0.55, out[2],
+               out[2] + (out[3] - out[2]) * 0.5, out[3]]
+        mr = [rr[0], (rr[0] + rr[1]) * 0.55, rr[1], rr[1] * 0.75, rr[2], rr[3], rr[3] * 1.28]
+        limb(mb, mid, mr, coat, n=9)
+        # pastern + hoof
+        pd = (out[4] - out[3])
+        limb(mb, [out[3], out[3] + pd * 0.6], [rr[3] * 1.1, rr[3] * 0.95], coat, n=8)
+        hb = out[3] + pd * 0.55
+        hz = (pd.normalized() + Vector((0, 0, -0.6))).normalized()
+        mb.cylinder(tuple(hb), tuple(hb + hz * 0.1 * s), 0.042 * s, 0.058 * s, "Hoof", 9)
+        hooves.append(hb + hz * 0.1 * s)
+    # mane: a crest of tapered locks falling to the off side, forelock
+    n0, n1 = body[_NECK0][0], body[-2][0]
+    for kk in range(18):
+        t = kk / 17.0
+        c = n0 + (n1 - n0) * t
+        up = Vector((0, 0.45, 1.0)).normalized()
+        base = c + up * (0.27 - 0.13 * t) * s + Vector((-0.03, 0.0, 0.0))
+        L = (0.26 - 0.08 * t) * s * rng.uniform(0.85, 1.15)
+        sw = 0.08 + g["tail"] * 0.14
+        tip = base + Vector((-0.11 * s, L * (0.5 + sw), -L * (0.8 - sw)))
+        mb.tube([tuple(base), tuple(base + (tip - base) * 0.5 + Vector((-0.04, 0.02, 0.03))), tuple(tip)],
+                0.05 * s, mane, 6, radius_fn=lambda u: 1.0 - 0.8 * u)
+    fl = head[1][0] + hup * 0.09
+    mb.tube([tuple(fl), tuple(fl - hdir * 0.09 + hup * 0.02), tuple(fl - hdir * 0.18 - hup * 0.03)], 0.04 * s,
+            mane, 5, radius_fn=lambda u: 1.0 - 0.8 * u)
+    # tail: one tapering mass from the root that splits into a few locks towards the end
+    root = body[1][0] + Vector((0, 0.03, 0.1))
+    st = g["tail"]
+    L = 1.0 * s
+    c1 = root + Vector((0, 0.12 + 0.22 * st, 0.03 + 0.12 * st))
+    c2 = root + Vector((0, 0.2 + 0.55 * st, -L * (0.45 - 0.33 * st)))
+    mb.tube([tuple(root), tuple(c1), tuple(c2)], 0.085 * s, mane, 8,
+            radius_fn=lambda u: 0.75 + 0.35 * math.sin(math.pi * min(1.0, u * 0.9 + 0.1)))
+    for kk in range(5):
+        a = (kk - 2) * 0.045
+        p3 = root + Vector((a * 1.4 + rng.uniform(-0.02, 0.02), 0.3 + 0.95 * st + rng.uniform(-0.05, 0.05),
+                            -L * (0.95 - 0.6 * st) * rng.uniform(0.92, 1.05)))
+        pm = (c2 + p3) * 0.5 + Vector((a * 0.5, 0.04 * st, 0.0))
+        mb.tube([tuple(c2 + Vector((a * 0.6, -0.02, 0.05))), tuple(pm), tuple(p3)], 0.06 * s, mane, 6,
+                radius_fn=lambda u: 1.0 - 0.85 * u)
+    # tack
+    saddle_pt = Vector((0, -0.2, 1.56))
     if saddle:
-        sp = c + Rb @ Vector((0, -0.12 * s, 0.32 * s))
-        ellipsoid(mb, sp, (0.3 * s, 0.32 * s, 0.07 * s), saddle, 10, 6)
+        sp = saddle_pt
+        # saddle cloth (障泥) hanging on both flanks
+        for sd in (1, -1):
+            def fp(u, v, sd=sd):
+                yy = -0.42 + 0.5 * u
+                ang = math.radians(15 + 70 * v)
+                return (sd * (0.33 * math.sin(ang) + 0.015), yy, 1.36 + 0.24 * math.cos(ang) - 0.18 * v)
+            mb.grid(fp, 6, 4, cloth, smooth=True, flip=sd < 0)
+            mb.grid(fp, 6, 4, cloth, smooth=True, flip=sd > 0)
+        # saddle seat with raised pommel and cantle
+        prof = []
+        for i in range(7):
+            u = i / 6
+            yy = -0.42 + 0.48 * u
+            lift = 0.11 * (math.exp(-((u - 0.0) / 0.16) ** 2) + math.exp(-((u - 1.0) / 0.16) ** 2))
+            prof.append((Vector((0, yy, 1.5 + lift)), 0.2, 0.08 + lift * 0.4))
+        _spine_loft(mb, prof, saddle, 10)
+        # breast collar + crupper bands, with tassels
+        for (y0, z0, rx_, rz_, n_t, back) in ((-0.62, 1.2, 0.29, 0.33, 3, False), (0.72, 1.24, 0.3, 0.31, 3, True)):
+            cc = Vector((0, y0, z0))
+            rr = []
+            for kk in range(13):
+                a = math.pi * (kk / 12.0) - math.pi / 2
+                rr.append(cc + Vector((math.sin(a) * rx_ * 1.03, 0, math.cos(a) * rz_ * 1.0)) +
+                          Vector((0, (0.05 if back else -0.05) * math.cos(a), 0)))
+            mb.tube([tuple(p) for p in rr], 0.014 * s, saddle, 5)
+            for kk in range(n_t):
+                a = -0.9 + 1.8 * kk / max(1, n_t - 1)
+                tp = cc + Vector((math.sin(a) * rx_ * 1.05, (0.08 if back else -0.08), math.cos(a) * rz_ * 0.98 - 0.02))
+                if abs(math.sin(a)) < 0.2 and not back:
+                    tp.z -= 0.15
+                mb.cylinder(tuple(tp), tuple(tp + Vector((0, 0, -0.16 * s))), 0.012 * s, 0.045 * s, tack, 7)
+        # bridle: noseband, cheek straps, reins to the saddle
+        nb_c = head[4][0]
+        mb.tube([tuple(nb_c + Vector((sd * 0.072, 0, 0)) + hup * k_) for sd, k_ in
+                 ((1, -0.06), (1, 0.06), (-1, 0.06), (-1, -0.06))], 0.009 * s, saddle, 4, caps=False)
+        for sd in (1, -1):
+            mb.tube([tuple(head[1][0] + Vector((sd * 0.09, 0, 0)) + hup * 0.05),
+                     tuple(head[3][0] + Vector((sd * 0.085, 0, 0))),
+                     tuple(nb_c + Vector((sd * 0.07, 0, 0)))], 0.008 * s, saddle, 4)
+            mb.tube([tuple(nb_c + Vector((sd * 0.07, 0, 0)) - hup * 0.03),
+                     tuple((nb_c + sp) * 0.5 + Vector((sd * 0.13, 0, -0.12))),
+                     tuple(sp + Vector((sd * 0.12, -0.3, 0.1)))], 0.008 * s, "Rope", 4)
+        # stirrups
+        for sd in (1, -1):
+            top = Vector((sd * 0.3, -0.2, 1.45))
+            bot = Vector((sd * 0.36, -0.22, 0.95))
+            mb.cylinder(tuple(top), tuple(bot), 0.008, 0.008, "Leather", 4)
     if barding:
-        rr = [ring(mb, c + Rb @ Vector((0, y * s, 0.02 * s)), Vector((1, 0, 0)), Vector((0, 0, 1)), 0.33 * s, 0.37 * s, 14,
-                   lambda a: 1.0 if math.sin(a) > -0.2 else 0.98) for y in (-0.55, 0.0, 0.5)]
+        rr = [ring(mb, Vector((0, y, 1.25)), Vector((1, 0, 0)), Vector((0, 0, 1)), 0.335, 0.34, 14)
+              for y in (-0.6, 0.0, 0.6)]
         loft(mb, rr, barding)
-    return c + Rb @ Vector((0, -0.12 * s, 0.42 * s))
+    # pitch the whole horse (rearing) about the hind hooves, put the hooves on the ground, scale
+    pitch = g.get("pitch", 0.0)
+    M = Matrix.Identity(4)
+    if pitch:
+        pv = max(hooves[2:], key=lambda h: h.y)
+        M = Matrix.Translation(pv) @ Matrix.Rotation(math.radians(-pitch), 4, "X") @ Matrix.Translation(-pv)
+    low = min((M @ h).z for h in hooves)
+    M = Matrix.Scale(scale, 4) @ Matrix.Translation((0, 0, g.get("lift", 0.0) - low)) @ M
+    mb.transform(start, M)
+    return M @ saddle_pt
 
 
 def rider(mb, rng, gait="gallop", pose="ride_spear", outfit="armored", weapon="spear", hat="helmet",
-          cloth=0, cloth2=1, coat="HorseCoat", banner=None, barding=None, cape=False):
+          cloth=0, cloth2=1, coat="HorseCoat", banner=None, barding=None, cape=False,
+          saddle="Saddle", saddle_cloth=None):
     """Horse + mounted figure (one MeshBuilder)."""
     from .geometry import MeshBuilder
-    sp = horse(mb, rng, gait, coat=coat, saddle="Leather", barding=barding)
+    sc = saddle_cloth or ("Banner%d" % rng.randrange(6))
+    sp = horse(mb, rng, gait, coat=coat, saddle=saddle, barding=barding, cloth=sc)
     fm = MeshBuilder()
     sk = figure(fm, rng, pose, outfit, cloth, cloth2, weapon=weapon, hat=hat, banner=banner,
                 cape=cape, jitter=3)

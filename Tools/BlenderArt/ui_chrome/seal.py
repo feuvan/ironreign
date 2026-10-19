@@ -1,32 +1,32 @@
-"""Seal.png (128x128, transparent): a cinnabar seal impression 铁血 (baiwen 白文: the characters
+"""Seal.png (128x128, transparent): a cinnabar seal impression 铁血 (白文 baiwen: the characters
 are cut into the stone, so they print as bare paper - transparent here).
 
-    block     a 104 px square impression rotated -3 deg, centred; its edge wanders by ~0.8 px
-              and has a few chips; a slightly lighter, drier corner where the stone met less
-              pressure
-    glyphs    铁 (right column) and 血 (left column), read top-to-bottom, right-to-left.
-              Seal-script look from Brush.ttf: each glyph is skeletonised, its spurs pruned,
-              stretched to fill its column and re-stroked with an even, round-ended line
-              (the uniform weight of 篆书), then the cut edges are roughened like carved stone
+    block     a 106 px square impression rotated -2 deg, centred; the stone's edge wanders by
+              ~0.6 px, its corners are worn round and a few chips are missing
+    glyphs    铁 (right column) and 血 (left column), read top-to-bottom, right-to-left, in
+              the studio brush hand (Brush.ttf): each glyph is thickened (FreeType stroker),
+              stretched to fill its column like a seal's 2-character layout, and its cut
+              edges are softened and roughened like carved stone
     ink pad   印泥 texture: cinnabar #B5382A, deeper where the paste lies thick, more orange
-              where thin; fine specks of bare paper and a granular coverage
+              and broken where it is thin (a drier corner), fine specks of bare paper, paste
+              squeezed darker along every edge, the silk weave faintly printing through
 Also used by Title_Logo (:func:`impression`).
 """
 
 import math
-import os
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFilter, ImageFont
+from PIL import Image, ImageDraw, ImageFont
 
+from ironart import ui_chrome_gongbi as GB
 from ironart import ui_chrome_paint as P
 from ironart import ui_chrome_sdf as S
 
 NAME = "Seal"
 SPEC = dict(size=(128, 128), ss=4, seed=71)
 W = H = 128
-SIDE = 104.0
-ROT = -3.0
+SIDE = 106.0
+ROT = -2.0
 CHARS = (("铁", 1), ("血", 0))          # (char, column 1 = right)
 
 
@@ -35,99 +35,23 @@ def _font():
     return font("Brush.ttf")
 
 
-def zhang_suen(img):
-    """Binary thinning (Zhang-Suen) - vectorised numpy."""
-    a = img.astype(np.uint8).copy()
-    changed = True
-    while changed:
-        changed = False
-        for step in (0, 1):
-            p = np.pad(a, 1)
-            P2, P3, P4 = p[:-2, 1:-1], p[:-2, 2:], p[1:-1, 2:]
-            P5, P6, P7 = p[2:, 2:], p[2:, 1:-1], p[2:, :-2]
-            P8, P9 = p[1:-1, :-2], p[:-2, :-2]
-            nb = [P2, P3, P4, P5, P6, P7, P8, P9]
-            B = sum(n.astype(np.int32) for n in nb)
-            seq = nb + [P2]
-            A = sum(((seq[i] == 0) & (seq[i + 1] == 1)).astype(np.int32) for i in range(8))
-            if step == 0:
-                c = (P2 * P4 * P6 == 0) & (P4 * P6 * P8 == 0)
-            else:
-                c = (P2 * P4 * P8 == 0) & (P2 * P6 * P8 == 0)
-            rm = (a == 1) & (B >= 2) & (B <= 6) & (A == 1) & c
-            if rm.any():
-                a[rm] = 0
-                changed = True
-    return a
-
-
-def _neighbours(a):
-    p = np.pad(a, 1).astype(np.int32)
-    return sum(p[1 + dy:p.shape[0] - 1 + dy, 1 + dx:p.shape[1] - 1 + dx]
-               for dy in (-1, 0, 1) for dx in (-1, 0, 1) if (dy, dx) != (0, 0))
-
-
-def prune(sk, n):
-    """Remove spurs shorter than ~n px, then regrow the surviving branches to full length."""
-    a = sk.copy()
-    for _ in range(n):
-        ends = (a == 1) & (_neighbours(a) == 1)
-        a[ends] = 0
-    for _ in range(n):
-        grow = (sk == 1) & (a == 0) & (_neighbours(a) >= 1)
-        a = a.copy()
-        a[grow] = 1
-    return a
-
-
-def glyph_skeleton(ch, px=360):
-    """Skeleton (binary array) of a Brush.ttf glyph rendered ``px`` high, cropped to its box."""
+def glyph_box(ch, w, h, stroke=0.0, px=480):
+    """Coverage (0..1, h x w samples) of a Brush.ttf glyph thickened by ``stroke`` (fraction
+    of the glyph height) and stretched to fill a w x h box."""
     f = ImageFont.truetype(_font(), px)
+    sw = int(round(stroke * px))
     im = Image.new("L", (px * 2, px * 2), 0)
-    ImageDraw.Draw(im).text((px // 2, px // 2), ch, font=f, fill=255)
+    ImageDraw.Draw(im).text((px // 2, px // 2), ch, font=f, fill=255, stroke_width=sw,
+                            stroke_fill=255)
     im = im.crop(im.getbbox())
-    b = (np.asarray(im, np.float32) > 127).astype(np.uint8)
-    b = np.pad(b, 4)
-    return prune(zhang_suen(b), int(px * 0.05))
+    im = im.resize((max(1, int(round(w))), max(1, int(round(h)))), Image.LANCZOS)
+    return np.asarray(im, np.float32) / 255.0
 
 
-def stroke_mask(sk, box, out_shape, width, ss, max_stretch=None):
-    """Stretch skeleton ``sk`` into ``box`` (x0, y0, x1, y1 in output samples) and re-stroke
-    it with an even round-ended line ``width`` samples wide.  Returns coverage (float)."""
-    x0, y0, x1, y1 = box
-    ys, xs = np.nonzero(sk)
-    h, w = sk.shape
-    pad = width * 0.5
-    sx = (x1 - x0 - 2 * pad) / max(1, xs.max() - xs.min())
-    sy = (y1 - y0 - 2 * pad) / max(1, ys.max() - ys.min())
-    if max_stretch is not None and sy > sx * max_stretch:
-        sy_new = sx * max_stretch
-        y0 = y0 + 0.5 * (sy - sy_new) * (ys.max() - ys.min())
-        sy = sy_new
-    im = Image.new("L", (out_shape[1], out_shape[0]), 0)
-    dr = ImageDraw.Draw(im)
-    r = width * 0.5
-    # connect skeleton neighbours with line segments in the stretched space (keeps strokes
-    # continuous under anisotropic scaling), dots at every pixel for round joints
-    pts = {(int(y), int(x)) for y, x in zip(ys, xs)}
-    for (y, x) in pts:
-        X = x0 + pad + (x - xs.min()) * sx
-        Y = y0 + pad + (y - ys.min()) * sy
-        for dy, dx in ((0, 1), (1, 0), (1, 1), (1, -1)):
-            if (y + dy, x + dx) in pts:
-                X2 = x0 + pad + (x + dx - xs.min()) * sx
-                Y2 = y0 + pad + (y + dy - ys.min()) * sy
-                dr.line([(X, Y), (X2, Y2)], fill=255, width=max(1, int(round(width))))
-        dr.ellipse([X - r, Y - r, X + r, Y + r], fill=255)
-    a = np.asarray(im.filter(ImageFilter.GaussianBlur(ss * 0.35)), np.float32) / 255.0
-    return a
-
-
-def impression(G, cx, cy, side, rot, seed, chars=CHARS, width=5.0, stretch=2.2, gap=4.0,
-               margin=6.5):
-    """Seal impression on grid G: returns (alpha, colour field)."""
+def impression(G, cx, cy, side, rot, seed, chars=CHARS, margin=8.5, gap=5.5, stroke=0.022,
+               dry_dir=(1.0, -1.0), base="#B5382A"):
+    """Seal impression on grid G centred at (cx, cy): returns (alpha, colour field)."""
     ss = G.ss
-    # local coordinates of the (rotated) seal square
     a = math.radians(rot)
     ca, sa = math.cos(a), math.sin(a)
     X, Y = G.X - cx, G.Y - cy
@@ -135,36 +59,37 @@ def impression(G, cx, cy, side, rot, seed, chars=CHARS, width=5.0, stretch=2.2, 
     v = -sa * X + ca * Y
     half = side / 2.0
     rng = np.random.default_rng(seed)
-    # ---- block edge: wandering, chipped ------------------------------------------------------
-    sq = np.maximum(np.abs(u), np.abs(v)) - half + 1.2
-    sq = sq - 1.2                                  # sharp corners slightly rounded below
-    wob = 0.75 * P.fbm2(G, 6.0, seed + 1, octaves=3) + 0.35 * P.fbm2(G, 1.6, seed + 2, octaves=2)
-    corner = np.hypot(np.maximum(np.abs(u) - half + 3.0, 0), np.maximum(np.abs(v) - half + 3.0, 0))
-    block = sq + 0.45 * wob + 0.25 * corner
+
+    # ---- the stone's face: square, worn corners, wandering edge, chips -----------------------
+    rc = 3.2
+    q = np.maximum(np.abs(u), np.abs(v))
+    corner = np.hypot(np.maximum(np.abs(u) - half + rc, 0), np.maximum(np.abs(v) - half + rc, 0))
+    block = np.where((np.abs(u) > half - rc) & (np.abs(v) > half - rc), corner - rc, q - half)
+    wob = 0.55 * P.fbm2(G, 7.0, seed + 1, octaves=3) + 0.30 * P.fbm2(G, 1.4, seed + 2, octaves=2)
+    block = block + wob
     chips = G.empty()
-    for _ in range(9):
-        side_i = rng.integers(4)
-        t = rng.uniform(-0.9, 0.9) * half
-        r = rng.uniform(0.6, 1.6)
-        px_, py_ = [(t, -half), (half, t), (t, half), (-half, t)][side_i]
-        wx = cx + ca * px_ - sa * py_
-        wy = cy + sa * px_ + ca * py_
-        S.sd_circle(G, wx, wy, r, out=chips)
+    for _ in range(11):
+        k = rng.integers(4)
+        t = rng.uniform(-0.92, 0.92) * half
+        r = rng.uniform(0.5, 1.5)
+        px_, py_ = [(t, -half), (half, t), (t, half), (-half, t)][k]
+        S.sd_circle(G, cx + ca * px_ - sa * py_, cy + sa * px_ + ca * py_, r, out=chips)
     block = np.maximum(block, -chips)
-    cover = P.aa(block, G)
-    # ---- glyphs (cut away) ---------------------------------------------------------------------
+    cover = S.aa_mask(block, G)
+
+    # ---- the cut characters -----------------------------------------------------------------
     inner = half - margin
-    colw = (2 * inner - gap) / 2.0
-    cut = np.zeros(G.shape, np.float32)
-    # glyphs are drawn axis-aligned on a local canvas then rotated with the block
+    colw = (2.0 * inner - gap) / 2.0
     n = int(round(side * ss)) + 8 * ss
     loc = np.zeros((n, n), np.float32)
     o = n / 2.0
     for ch, col in chars:
-        sk = glyph_skeleton(ch)
-        gx0 = o + (-inner + col * (colw + gap)) * ss
-        box = (gx0, o - inner * ss, gx0 + colw * ss, o + inner * ss)
-        loc = np.maximum(loc, stroke_mask(sk, box, (n, n), width * ss, ss, stretch))
+        gw, gh = colw * ss, 2.0 * inner * ss
+        g = glyph_box(ch, gw, gh, stroke)
+        x0 = int(round(o + (-inner + col * (colw + gap)) * ss))
+        y0 = int(round(o - inner * ss))
+        loc[y0:y0 + g.shape[0], x0:x0 + g.shape[1]] = np.maximum(
+            loc[y0:y0 + g.shape[0], x0:x0 + g.shape[1]], g)
     im = Image.fromarray(loc, "F").rotate(-rot, Image.BICUBIC, center=(o, o))
     big = np.zeros(G.shape, np.float32)
     ox, oy = int(round(cx * ss - o)), int(round(cy * ss - o))
@@ -172,20 +97,32 @@ def impression(G, cx, cy, side, rot, seed, chars=CHARS, width=5.0, stretch=2.2, 
     ys0, xs0 = max(0, oy), max(0, ox)
     ys1, xs1 = min(G.ny, oy + n), min(G.nx, ox + n)
     big[ys0:ys1, xs0:xs1] = arr[ys0 - oy:ys1 - oy, xs0 - ox:xs1 - ox]
-    # carved edges: roughen the cut with fine noise
-    rough = 0.10 * P.fbm2(G, 1.2, seed + 3, octaves=2)
-    cut = P.smoothstep(0.38, 0.62, big + rough)
-    # ---- ink pad texture -----------------------------------------------------------------------
-    grain = P.fine_grain(G, seed + 4, 0.45)
-    blot = P.fbm2(G, 14.0, seed + 5, octaves=3)
-    dry = P.smoothstep(0.3, 1.6, blot + 0.03 * (u - v))       # a drier corner (top-right)
-    clump = P.fbm2(G, 3.0, seed + 6, octaves=2)
-    specks = P.smoothstep(2.3, 2.9, grain + 0.9 * dry + 0.5 * clump)
-    alpha = cover * (1.0 - cut) * (1.0 - 0.92 * specks) * (1.0 - 0.18 * dry)
-    thick = P.smoothstep(-0.5, 1.2, -blot)
-    col = P.mix("#C4462F", "#A52E23", 0.35 + 0.45 * thick)
-    col = col * (1.0 + 0.05 * grain)[..., None]
-    return np.clip(alpha, 0, 1), col
+    # carved edges: soften the font's hairline tapers, roughen the cut like stone
+    big = S.blur(big, 0.35 * ss)
+    rough = 0.16 * P.fbm2(G, 1.1, seed + 3, octaves=2) + 0.08 * P.fbm2(G, 4.0, seed + 4)
+    cut = P.smoothstep(0.40, 0.60, big + rough)
+
+    # ---- ink pad (印泥) -----------------------------------------------------------------------
+    paste = cover * (1.0 - cut)
+    grain = GB.grain(G, seed + 5, 0.42)
+    blot = P.fbm2(G, 16.0, seed + 6, octaves=3)
+    dx, dy = dry_dir
+    ramp = (dx * u + dy * v) / (side * 0.7)
+    dry = np.clip(P.smoothstep(-0.2, 1.4, 0.55 * blot + 0.9 * ramp), 0, 1)
+    clump = P.fbm2(G, 2.6, seed + 7, octaves=2)
+    weave = GB.silk_weave(G, seed + 8, pitch=0.55, slub=0.6)
+    specks = P.smoothstep(2.1, 2.7, grain + 1.25 * dry + 0.45 * clump)
+    # paste squeezed out along every edge of the printed area prints darker
+    edge = 1.0 - P.smoothstep(0.0, 1.0, S.blur(paste, 0.9 * ss) * 1.0 - 0.0)
+    edge = np.clip((paste - S.blur(paste, 0.9 * ss)) * 2.5, 0, 1)
+    alpha = paste * (1.0 - 0.95 * specks) * (1.0 - 0.22 * dry) * (1.0 + 0.04 * weave)
+    alpha = alpha * (0.93 + 0.07 * (1.0 - dry))
+    thick = P.smoothstep(-0.6, 1.2, -blot)
+    col = P.mix(P.mix(base, "#C9503A", 0.55), P.mix(base, "#962A20", 0.5), 0.25 + 0.55 * thick)
+    col = P.mix(col, P.rgb("#C85A42"), 0.35 * dry)
+    col = col * (1.0 + 0.05 * grain + 0.02 * weave)[..., None]
+    col = P.mix(col, P.rgb("#8A2219"), 0.45 * edge)
+    return np.clip(alpha, 0, 1).astype(np.float32), np.clip(col, 0, 1).astype(np.float32)
 
 
 def paint(G, variant=None, seed=None):

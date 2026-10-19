@@ -62,10 +62,11 @@ RECIPE = dict(
     # composite
     silk=dict(fibre=0.035, slub=0.03, mottle=0.045, stain=0.03, edge=0.13, edge_px=0.18,
               pitch=0.85),
-    granulation=0.10, pooling=0.22, pooling_px=1.1, streak=0.035,
+    granulation=0.10, pooling=0.22, pooling_px=1.1, streak=0.035, mottle=0.16,
     ink_bleed=0.35, ink_dry=0.18, ink_strength=0.94,
     shader_ink=0.85,
     age=dict(yellow=0.035, desat=0.06),
+    rim=0.55, rim_px=2.6,         # 分染: colour deepening along the outlines (image-space ink)
 )
 
 #: Freestyle ink per collection kind: thickness in GAME (1x) px (scaled by the render px per game
@@ -139,6 +140,17 @@ def lin(c):
 
 def lin4(c):
     return lin(c) + (1.0,)
+
+
+def deepen(col, s, ref=None):
+    """Layer more of the same pigment: col_rel ** (1 + s) relative to the silk (darker and
+    richer, never grey).  ``s`` H x W (0..1) or scalar."""
+    ref = np.array(srgb(ref or SILK_REF), np.float32)
+    rel = np.clip(col / ref[None, None, :], 1e-4, 1.5)
+    s = np.asarray(s, np.float32)
+    if s.ndim == 2:
+        s = s[..., None]
+    return (ref[None, None, :] * rel ** (1.0 + s)).astype(np.float32)
 
 
 def mixc(a, b, t):
@@ -368,10 +380,38 @@ CLOTH = ["cinnabar", "azurite", "malachite", "#3A3530", "ochre", "#E2D6BC", "rou
 BANNERS = ["cinnabar", "gold", "#2E2A28", "azurite", "white", "malachite"]
 
 
-def cloth(name, color, deep=None, form=None, ink=0.0):
+def cloth(name, color, deep=None, form=None, ink=0.0, folds=0.75, fold_w=0.13):
+    """Garment wash: 分染 towards the silhouette plus 衣纹 drapery lines and a deeper tone along
+    each fold, read from the ``fold_*`` attributes the people kit writes on robes and sleeves
+    (meshes without them get no lines)."""
     c = srgb(color)
     d = deep if deep is not None else tuple(x * 0.66 for x in c)
-    return wash(name, c, d, grad="facing", blend=0.42, lo=0.08, hi=1.0, form=form, ink=ink)
+    mat, b, created = _builder(name)
+    if not created:
+        return mat
+    lc, dc = lin(c), lin(d)
+    g = facing(b, 0.42, 0.08, 1.0)
+    col = b.mix(lc + (1.0,), dc + (1.0,), g)
+    fx = b.attr("fold_x").outputs["Fac"]
+    fy = b.attr("fold_y").outputs["Fac"]
+    fn = b.attr("fold_n").outputs["Fac"]
+    fp = b.attr("fold_p").outputs["Fac"]
+    ft = b.attr("fold_t").outputs["Fac"]
+    fw = b.attr("fold_w").outputs["Fac"]
+    ang = b.math("ARCTAN2", fy, fx)
+    sv = b.math("ABSOLUTE", b.math("SINE", b.math("ADD", b.math("MULTIPLY", ang, fn), fp)))
+    line = b.smooth(sv, fold_w, fold_w * 0.35)
+    # lines start below the waist / shoulder and thin out just above the hem
+    gate = b.math("MULTIPLY", b.math("MULTIPLY", fw, b.smooth(ft, 0.1, 0.32)), b.smooth(ft, 1.02, 0.9))
+    ink_l = b.math("MULTIPLY", b.math("MULTIPLY", line, gate), folds)
+    # 分染 along the folds: the cloth deepens towards each fold line
+    fold_shade = b.math("MULTIPLY", b.math("MULTIPLY", b.smooth(sv, 0.55, 0.05), gate), 0.45)
+    col = b.mix(col, dc + (1.0,), fold_shade)
+    if isinstance(ink, (int, float)) and ink == 0:
+        ink_s = ink_l
+    else:
+        ink_s = b.math("MAXIMUM", ink_l, ink)
+    return finish(mat, b, col, ink=ink_s, form=form)
 
 
 def lamellar(name="GB_Armor", color="#5A5852", lace="cinnabar", scale=(0.05, 0.075)):
@@ -392,7 +432,7 @@ def lamellar(name="GB_Armor", color="#5A5852", lace="cinnabar", scale=(0.05, 0.0
 
 
 def people_materials(cloth_colors=None, banner_colors=None, skin=None, armor="#6A665E",
-                     horse=("#8A6A4A", "#C8B898", "#4A3A2E", "#B08A5A")):
+                     horse=("#EDE4D2", "#9A5A34", "#3E3632", "#B89468", "#C8C2B4")):
     """Every slot :func:`ironart.scenes_people.figure` / ``horse`` / ``rider`` use, gongbi style."""
     cc = cloth_colors or CLOTH
     bc = banner_colors or BANNERS
@@ -402,8 +442,9 @@ def people_materials(cloth_colors=None, banner_colors=None, skin=None, armor="#6
     for i, c in enumerate(bc):
         m["Banner%d" % i] = cloth("GB_Banner%d_%s" % (i, str(c).strip("#")), c,
                                   deep=tuple(x * 0.8 for x in srgb(c)))
-    sk = skin or PAL["skin"]
-    m["Skin"] = wash("GB_Skin", sk, PAL["skin_d"], blend=0.3, lo=0.35, hi=1.0, form=0.04)
+    # flesh: lead white warmed with a touch of rouge, deepening to a rosy ochre at the outline
+    sk = skin or "#F2E2CE"
+    m["Skin"] = wash("GB_Skin_" + sk.strip("#"), sk, "#D8A88E", blend=0.3, lo=0.3, hi=1.0, form=0.03)
     m["Hair"] = flat("GB_Hair", "#2A2420", form=0.0)
     m["Armor"] = lamellar("GB_Armor", armor)
     m["ArmorDark"] = wash("GB_ArmorDark", "#4A4640", "#2E2A26")
@@ -422,7 +463,10 @@ def people_materials(cloth_colors=None, banner_colors=None, skin=None, armor="#6
     m["Hoof"] = flat("GB_Hoof", "#3A322A")
     m["SleeveDark"] = wash("GB_SleeveDark", "#E8DCC4", "#C8B898")
     for i, c in enumerate(horse):
-        m["HorseCoat%d" % i] = wash("GB_Horse%d" % i, c, tuple(x * 0.7 for x in srgb(c)), blend=0.4)
+        # white / grey coats deepen to a cool ink grey, the others to a deeper same-hue
+        d = mixc(c, "#8C8478", 0.55) if sum(srgb(c)) > 2.0 else tuple(x * 0.68 for x in srgb(c))
+        m["HorseCoat%d" % i] = wash("GB_Horse%d_%s" % (i, c.strip("#")), c, d, blend=0.42, lo=0.1, hi=1.0)
+    m["Saddle"] = wash("GB_Saddle", "cinnabar", "cinnabar_d", blend=0.4)
     m["HorseCoat"] = m["HorseCoat0"]
     m["HorseMane"] = flat("GB_Mane", "#2E2824")
     m["Flame"] = flame()
@@ -549,6 +593,10 @@ def setup(w, h, ss=None, spp=None, preview=False, seed=0):
     sc.render.dither_intensity = 0.0
     vl = sc.view_layers[0]
     vl.use_pass_z = True
+    # image-space ink (scenes_gongbi_ink) reads these sample-0 passes
+    vl.use_pass_object_index = True
+    vl.use_pass_material_index = True
+    vl.use_pass_normal = True
     for nm, t in AOVS:
         if nm not in [a.name for a in vl.aovs]:
             a = vl.aovs.add()
@@ -722,7 +770,8 @@ def passes(out_dir):
     fo.format.exr_codec = "ZIP"
     fo.format.color_mode = "RGBA"
     fo.file_slots.clear()
-    names = [("color", "Image"), ("depth", "Depth")]
+    names = [("color", "Image"), ("depth", "Depth"), ("index_ob", "IndexOB"),
+             ("index_ma", "IndexMA"), ("normal", "Normal")]
     if sc.render.use_freestyle:
         names.append(("line", "Freestyle"))
     names += [(n, n) for n, _ in AOVS]
@@ -743,6 +792,8 @@ def render(out_dir):
     for f in os.listdir(out_dir):
         if f.endswith(".exr"):
             os.remove(os.path.join(out_dir, f))
+    from . import scenes_gongbi_ink as GI
+    GI.tag_objects()
     names = passes(out_dir)
     sc = bpy.context.scene
     sc.render.filepath = os.path.join(out_dir, "beauty.png")
@@ -1057,6 +1108,17 @@ def composite(ps, look, seed=0, overlays=None, master_size=None, k=4, m=2):
     nomist = np.clip(ps["gb_nomist"][..., 0] * inv[..., 0], 0, 1) if "gb_nomist" in ps else 0.0
     sink = np.clip(ps["gb_ink"][..., 0], 0, 1) if "gb_ink" in ps else np.zeros((H, W), np.float32)
     silk_ref = np.array(srgb(SILK_REF), np.float32)
+    # ---- image-space ink (no Freestyle pass): lines + the 分染 band along them ------------------
+    edge_ink = None
+    if "line" not in ps and "index_ob" in ps:
+        from . import scenes_gongbi_ink as GI
+        tab = GI.kind_table(look.get("kinds"))
+        la_e, lc_e, E, code = GI.ink(ps, tab, k, seed)
+        edge_ink = (la_e, lc_e)
+        rk = look.get("rim", RECIPE["rim"])
+        if rk > 0:
+            band = GI.rim(E, code, tab, A, k, look.get("rim_px", RECIPE["rim_px"]))
+            col = deepen(col, band * rk)
     # ---- distance: paler, thinner washes ------------------------------------------------------
     fd = look.get("fade")
     fade = np.zeros((H, W), np.float32)
@@ -1096,6 +1158,10 @@ def composite(ps, look, seed=0, overlays=None, master_size=None, k=4, m=2):
         la = np.clip(L[..., 3], 0, 1)
         lcol = to_srgb(np.clip(L[..., :3] / np.maximum(la, 1e-4)[..., None], 0, None))
         lc = np.where(la[..., None] > 1e-4, lcol, lc)
+    elif edge_ink is not None:
+        la, lc = edge_ink
+        # distant lines fade with the washes
+        la = la * (1.0 - fade * look.get("fade_ink", 0.6))
     if look.get("shore"):
         la = np.maximum(la, shore_line(P, A, look["shore"], k, seed) * (1 - fade * 0.8))
     shader_k = look.get("shader_ink", 1.0) * RECIPE["shader_ink"]
@@ -1140,6 +1206,15 @@ def finish_silk(img, ink_a, look, seed=0, m=2.0):
         bd = blur(dens, RECIPE["pooling_px"] * m)
         pool = np.clip(dens - bd, 0, 1) * pk * 3.0
         img = img * (1.0 - pool[..., None] * (1 - ink_a[..., None]))
+    # uneven washes: the pigment was laid in several thin coats, so its density drifts softly
+    # across every painted area (deeper / paler, never greyer)
+    mk = look.get("mottle", RECIPE["mottle"])
+    if mk > 0:
+        n1 = value_noise(h, w, 22 * m, seed + 61, 3, 0.55) - 0.5
+        n2 = value_noise(h, w, 7 * m, seed + 63, 2, 0.5) - 0.5
+        var = (n1 * 1.0 + n2 * 0.45) * mk * 2.0 * np.clip(dens * 3.0, 0, 1)
+        rel = np.clip(img / ref[None, None, :], 1e-4, 1.5)
+        img = ref[None, None, :] * rel ** (1.0 + var[..., None])
     # granulation: pigment particles settle in the silk (only where there is pigment)
     gk = look.get("granulation", RECIPE["granulation"])
     if gk > 0:

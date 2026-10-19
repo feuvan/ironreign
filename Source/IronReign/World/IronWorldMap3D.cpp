@@ -1555,9 +1555,19 @@ void AIronWorldMap3D::Zoom(float WheelDelta, const FVector2D& CursorViewportPixe
 	{
 		return;
 	}
-	FVector2D CursorMapPoint = FVector2D::ZeroVector;
-	const bool bHasCursorPoint = PickMapPoint(CursorViewportPixel, CursorMapPoint);
-	CameraRig->Zoom(WheelDelta, CursorMapPoint, bHasCursorPoint);
+	// The rig keeps the ground point under the cursor in place exactly (pitch and ground height change with the zoom)
+	// from the cursor's clip position; it picks that point from the pose the camera is heading to.
+	const FIronViewProjection& View = GetViewProjection();
+	const FIntRect& ViewRect = View.GetViewRect();
+	if (!bMapActive || !View.IsValid() || ViewRect.Width() <= 0 || ViewRect.Height() <= 0)
+	{
+		CameraRig->Zoom(WheelDelta, FVector2D::ZeroVector, false);
+		return;
+	}
+	const FVector2D CursorClip(
+		2.0 * (CursorViewportPixel.X - static_cast<double>(ViewRect.Min.X)) / static_cast<double>(ViewRect.Width()) - 1.0,
+		1.0 - 2.0 * (CursorViewportPixel.Y - static_cast<double>(ViewRect.Min.Y)) / static_cast<double>(ViewRect.Height()));
+	CameraRig->ZoomTowardCursor(WheelDelta, CursorClip);
 }
 
 void AIronWorldMap3D::Rotate(float DeltaDegrees)

@@ -1,20 +1,24 @@
-"""Divider.png (512x16, transparent): a fine gongbi ink line with a painted ruyi cloud knot.
+"""Divider.png (512x16, plain image, stretched by Slate to the column width and drawn 8-12 px
+high): a fine calligraphic ink rule between two mud-gold hairlines, knotted in the middle by a
+painted ruyi cloud knot - a cinnabar lozenge jewel set in mud-gold, flanked by mud-gold cloud
+volutes (卷云) that draw a ruyi (如意) heart in outline on each side.
 
-    knot      a cinnabar ruyi head (如意, tip down) at x 256, 晕染 deepening to its rim, mud-gold
-              engraved curls and a fine ink outline; flanked by two mud-gold cloud curls
-              (卷云) that spring from its side lobes and turn back towards it
-    line      one ink stroke each way, pressed where it leaves the cloud curl (1.5 px) and
-              lifting off to a hair at the ends (x 12 / 500); a mud-gold hairline runs beside
-              it (y +2.1) the whole way, so the rule reads on light silk and on ink-dark panels
-The UI stretches the image to the width of its column and 8-16 px high: the knot is kept
-compact (x 228-284) so a 0.6-1.8x horizontal stretch still reads.
+    ink rule      y 8 (centre), 2 px thick beside the knot, tapering to a hair by x 12 / 500
+                  and fading out (calligraphic entry and exit, slight loading variation)
+    gold lines    y 5.3 and 10.7, 0.95 px, tapering out sooner (x 40 / 472) - they carry the
+                  divider on dark panels, where the ink line disappears
+    knot          x 233-279, y 1-15: a cinnabar lozenge 11.6 x 13.2 px at the centre, set in
+                  mud-gold, between two pairs of cloud volutes (a ruyi heart in outline) and
+                  two smaller outer curl pairs
+The art keeps clear of the outer 1 px ring (alpha 0) so bilinear stretching never smears it.
 """
 
 import math
 
 import numpy as np
 
-from ironart import ui_chrome_motifs as MO
+from ironart import ui_chrome_gongbi as GB
+from ironart import ui_chrome_ornament as O
 from ironart import ui_chrome_paint as P
 from ironart import ui_chrome_sdf as S
 
@@ -24,76 +28,75 @@ W, H = 512, 16
 CX, CY = 256.0, 8.0
 
 
-def curls():
-    """Mud-gold cloud curls on both sides of the knot: [(pts, radii)]."""
-    out = []
-    for side in (1, -1):
-        r0 = 3.1
-        cx, cy = CX + side * 13.6, CY - 0.6
-        # spiral starting at its bottom, turning up and back towards the knot
-        a0 = 90.0
-        pts = S.spiral(cx, cy, r0, r0 * 0.24, 1.1, a0, cw=(side < 0), n=70)
-        # lead-in from the ruyi's side lobe
-        lead = S.bezier((CX + side * 6.4, CY + 1.4), (CX + side * 8.5, CY + 3.4),
-                        (cx - side * 1.5, cy + r0 + 0.2), (cx, cy + r0), n=18)
-        path = np.concatenate([lead, pts[1:]])
-        rad = P.brush_radii(len(path), 1.05, start=0.55, end=0.42, press=1.12)
-        out.append((path, rad))
-    return out
-
-
-def line_strokes():
-    out = []
-    for side in (1, -1):
-        x0, x1 = CX + side * 15.0, CX + side * 244.0
-        n = 260
-        xs = np.linspace(x0, x1, n)
-        ys = CY + 2.45 + 0.0 * xs
-        # the line leaves the curl's base tangentially and settles on y = 8 + 0.4
-        ys = CY + 0.4 + 2.05 * np.exp(-np.abs(xs - x0) / 6.0)
-        pts = np.stack([xs, ys], 1).astype(np.float32)
-        t = np.linspace(0, 1, n)
-        rad = 0.75 * (1.0 - 0.82 * P.smoothstep(0.05, 1.0, t) ** 0.8) * \
-            (0.85 + 0.15 * P.smoothstep(0.0, 0.05, t))
-        out.append((pts, rad.astype(np.float32)))
-    return out
-
-
-def gold_under():
-    """A mud-gold hairline beside the ink line along its whole length: the double rule reads
-    as ink on light silk and as gold on the ink-dark panels."""
-    out = []
-    for side in (1, -1):
-        xs = np.linspace(CX + side * 19.0, CX + side * 236.0, 260)
-        ys = np.full_like(xs, CY + 2.55)
-        t = np.linspace(0, 1, len(xs))
-        rad = 0.42 * (1.0 - 0.8 * P.smoothstep(0.05, 1.0, t) ** 0.8) * P.smoothstep(0.0, 0.04, t)
-        out.append((np.stack([xs, ys], 1).astype(np.float32), rad.astype(np.float32)))
-    return out
+def line_profile(x, x_end, w_max, w_min, power=1.6):
+    """Half-width of a calligraphic rule along x: full beside the knot, tapering to a hair."""
+    t = np.clip((np.abs(x - CX) - 20.0) / (x_end - 20.0), 0.0, 1.0)
+    return (w_min + (w_max - w_min) * (1.0 - t) ** power) * 0.5
 
 
 def paint(G, variant=None, seed=None):
     seed = SPEC["seed"] if seed is None else seed
     C = P.Canvas(G)
-    gold = P.gold_field(G, seed, flecks=0.0)
+    X, Y = G.X, G.Y
+    # ---- ink rule ---------------------------------------------------------------------------
+    hw = line_profile(X, CX - 12.0, 2.0, 0.3, 1.1)
+    fade = P.smoothstep(12.0, 46.0, np.minimum(X, W - X))
+    wob = 0.05 * P.noise1d(G.xs, 40.0, seed, octaves=2)[None, :]
+    ink_sd = np.abs(Y - CY - wob) - hw
+    ink = GB.ink_density(G, seed + 1, "#1E1A16", var=0.25, cell=30.0)
+    C.over(S.aa_mask(ink_sd, G) * fade, ink, 0.95)
+    # ---- gold hairlines ---------------------------------------------------------------------
+    ghw = line_profile(X, CX - 40.0, 0.95, 0.3, 1.0)
+    gfade = P.smoothstep(40.0, 110.0, np.minimum(X, W - X))
+    gold = GB.mud_gold(G, None, seed + 2, base="#D0AA55", gran=0.03, flecks=0.0)
+    for gy in (CY - 2.7, CY + 2.7):
+        g = S.aa_mask(np.abs(Y - gy) - ghw, G) * gfade * (np.abs(X - CX) > 15.5)
+        C.over(g, gold, 0.95)
 
-    # ---- line + under-line --------------------------------------------------------------------
-    C.over(P.aa(P.strokes_sd(G, gold_under()), G), gold, 0.95)
-    C.over(P.aa(P.strokes_sd(G, line_strokes()), G), "ink")
-
-    # ---- cloud curls (ink-outlined mud-gold strokes) ---------------------------------------------
-    sd_c = P.strokes_sd(G, curls())
-    C.over(P.aa(sd_c - 0.42, G), "ink")
-    C.over(P.aa(sd_c, G), gold)
-
-    # ---- ruyi knot ------------------------------------------------------------------------------
-    shape, eng = MO.ruyi(G, CX, CY - 0.4, 8.0, 0.0)
-    C.over(P.aa(shape - 0.45, G), "ink")
-    sh = P.smoothstep(0.0, 1.8, -shape)
-    C.over(P.aa(shape, G), P.mix("#7E2219", "cinnabar", sh))
-    C.over(P.aa(eng - 0.24, G) * P.aa(shape + 0.35, G), gold)
-    # a lead-white highlight dot in the top lobe (the jewel of the ruyi)
-    dot = G.empty()
-    S.sd_circle(G, CX, CY - 3.0, 0.7, out=dot)
-    C.over(P.aa(dot, G), "gold_light", 0.9)
+    # ---- knot: cinnabar jewel between two pairs of cloud volutes ------------------------------
+    strokes = []
+    for sx in (-1.0, 1.0):
+        for sy in (-1.0, 1.0):
+            # a branch leaves the jewel's side tip, sweeps out and away from the rule, and
+            # curls back inwards (a cloud volute) - the pair reads as a ruyi heart in outline
+            c = (CX + sx * 12.4, CY + sy * 2.55)
+            r0 = 2.35
+            a0 = -90.0 * sy if sx > 0 else -90.0 * sy
+            spiral, _ = O.volute(c[0], c[1], r0, 0.35, 1.0, a0, cw=(sx * sy > 0), n=50)
+            p0 = (CX + sx * 5.6, CY)
+            lead = O.path([(p0, (CX + sx * 8.0, CY + sy * 0.2), (spiral[0][0] - sx * 2.0,
+                            spiral[0][1]), tuple(spiral[0]))], 16)
+            st = np.concatenate([lead[:-1], spiral], 0)
+            strokes.append((st.astype(np.float32), O.taper(len(st), 1.5, 1.25, 0.45)))
+        # small outer curl pair continuing the rhythm along the rule
+        for sy in (-1.0, 1.0):
+            c = (CX + sx * 19.6, CY + sy * 2.2)
+            spiral, _ = O.volute(c[0], c[1], 1.5, 0.3, 0.9, 90.0 * sy, cw=(sx * sy < 0), n=36)
+            p0 = (CX + sx * 15.2, CY)
+            lead = O.path([(p0, (CX + sx * 16.6, CY + sy * 0.1), (spiral[0][0] - sx * 1.2,
+                            spiral[0][1]), tuple(spiral[0]))], 12)
+            st = np.concatenate([lead[:-1], spiral], 0)
+            strokes.append((st.astype(np.float32), O.taper(len(st), 1.0, 0.85, 0.35)))
+    heads = O.strokes_sd(G, strokes, pad=1.5)
+    loz = np.array([[CX - 5.8, CY], [CX, CY - 6.6], [CX + 5.8, CY], [CX, CY + 6.6]], np.float32)
+    jewel = G.empty()
+    S.sd_polygon(G, loz, out=jewel)
+    knot = np.minimum(heads, jewel)
+    # ink contour around the whole knot, then gold, then the cinnabar jewel
+    C.over(S.aa_mask(knot - 0.6, G), "#1E1A16", 0.95)
+    C.over(S.aa_mask(knot, G), GB.mud_gold(G, knot, seed + 3, base="#CFA855", yun=0.0,
+                                           pool=0.12, gran=0.03))
+    inner = jewel + 1.15
+    C.over(S.aa_mask(inner + 0.0, G), "#3A1A10", 0.9)
+    C.over(S.aa_mask(inner + 0.45, G), GB.mineral(G, inner + 0.45, "#C0402E", "#7E2318",
+                                                   light="#D45A3E", seed=seed + 4, yun=2.0,
+                                                   gran=0.03, pool=0.0))
+    # a lead-white highlight stroke (提白) on the jewel's upper left facet
+    hl = np.array([[CX - 2.5, CY - 0.5], [CX - 0.5, CY - 3.2]], np.float32)
+    hsd = G.empty()
+    S.sd_polyline(G, hl, np.array([0.33, 0.14], np.float32), out=hsd)
+    C.over(S.aa_mask(hsd, G), "#F0E2C8", 0.5)
+    # keep the outer ring clear
+    ring = (X > 1.0) & (X < W - 1.0) & (Y > 1.0) & (Y < H - 1.0)
+    C.erase(1.0 - ring.astype(np.float32))
     return C.rgba()

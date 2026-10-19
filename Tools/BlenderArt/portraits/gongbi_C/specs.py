@@ -2,147 +2,159 @@
 
 A spec is a dict:
 
-    pose      yaw (camera, deg; + turns the face to the image left), pitch, head_yaw/pitch/roll,
-              x_frac (head centre across the frame)
-    head      3D head shape (b_body.head_params): scale, width, jaw, chin, cheek, face_len ...
-    body      torso (b_body.body_params): shoulder, chest, slope, neck, bulk
-    skin      looks.SKIN key
-    face      2D face canon (canon.face(...)): eyes, brows, nose, mouth, beard, age, makeup
-    hair      dict(style=..., color=...)
-    headgear  dict(kind=...)
-    costume   dict(robe=..., collar=..., armour=..., cloak=..., shawl=...)
+    name, seed
+    pose      body_yaw / head_yaw / head_pitch / cam_pitch (deg)
+    frame     eye_frac / head_frac / x_frac
+    skin      key of palette.SKIN
+    head      geo.HEAD_DEFAULT overrides (3D skull / jaw / chin shape)
+    neck      geo.neck_loft overrides
+    torso     geo.TORSO_DEFAULT overrides
+    face      canon.FACE parameters for the 2D features (see canon.py)
+    hair      hair masses (gear.py) + 2D hair strands
+    beard     2D beard (canon.py)
+    headgear  helmet / hat (gear.py)
+    costume   robe, collar layers, armour, cloak (bust.py, gear.py)
 """
 
 import copy
+import json
+import os
 
-import canon
-
-SPECS = {}
-
-
-def reg(name, spec):
-    SPECS[name] = spec
-    return spec
+HEROES = {}
 
 
-#: portrait keys of the scenario officers that use a hand-tuned spec
-ALIASES = {"m_warrior_01": "hero_warlord", "f_scholar_04": "hero_scholar", "m_elder_07": "hero_elder"}
+def load(name):
+    if os.path.exists(name):
+        with open(name) as f:
+            return json.load(f)
+    if name in HEROES:
+        return copy.deepcopy(HEROES[name])
+    import cast
+    return cast.spec_for(name)
 
 
-def get(name):
-    name = ALIASES.get(name, name)
-    if name in SPECS:
-        return copy.deepcopy(SPECS[name])
-    return canon.generate(name)
-
-
-def robe_folds(k=1.0, side=1):
-    """Fold lines (alpha, z) of a robe seen in a bust: from the collar crossing towards the far
-    armpit, and the drapes falling from the shoulders."""
-    return [
-        dict(pts=[(0.62, -0.215), (0.40, -0.262), (0.22, -0.32)], amp=0.004 * k, width=0.016, side=1),
-        dict(pts=[(1.10, -0.205), (0.95, -0.255), (0.86, -0.32)], amp=0.005 * k, width=0.018, side=-1),
-        dict(pts=[(1.38, -0.215), (1.30, -0.27), (1.26, -0.33)], amp=0.004 * k, width=0.016, side=-1, weight=0.8),
-        dict(pts=[(-0.62, -0.240), (-0.78, -0.285), (-0.86, -0.33)], amp=0.004 * k, width=0.016, side=-1),
-        dict(pts=[(-1.12, -0.205), (-1.02, -0.26), (-0.98, -0.33)], amp=0.005 * k, width=0.018, side=1),
-        dict(pts=[(-1.40, -0.215), (-1.34, -0.27), (-1.30, -0.33)], amp=0.004 * k, width=0.016, side=1, weight=0.8),
-    ]
-
-
-def collar(layers, **kw):
-    d = dict(layers=layers, neck_x=0.034, neck_z=-0.144, cross_x=-0.018, cross_z=-0.208,
-             step_x=0.011, step_z=0.020, armpit=(-0.20, -0.40))
-    d.update(kw)
-    return d
-
-
-reg("test_body", dict(
-    seed=1,
-    pose=dict(yaw=22.0, pitch=-2.0, head_yaw=4.0, head_pitch=-2.0),
-    head=dict(),
-    body=dict(),
+HEROES["test"] = dict(
+    name="test", seed=1,
+    pose=dict(body_yaw=-28.0, head_yaw=6.0, cam_pitch=-2.0),
     skin="warm",
-    face=canon.face("m_scholar"),
     costume=dict(
-        robe=dict(color="azurite", folds=robe_folds()),
-        collar=collar([dict(color="white", band_w=0.013), dict(color="cinnabar", band_w=0.012),
-                       dict(color="indigo_d", band_w=0.03, brocade=dict(kind="lozenge", period=0.02))]),
+        robe=dict(color="azurite"),
+        collar=dict(layers=[dict(color="white", w=0.05), dict(color="cinnabar", w=0.06),
+                            dict(color="indigo", w=0.10)]),
     ),
-))
+)
 
-# ---------------------------------------------------------------------------------------------
-# the three heroes
-# ---------------------------------------------------------------------------------------------
-reg("hero_warlord", dict(
-    # Yan Tieshan 燕铁山, "the Iron Mountain": grizzled northern warlord in his fifties
-    seed=11,
-    pose=dict(yaw=24.0, pitch=-3.0, head_yaw=3.0, head_pitch=-2.0, head_roll=-1.0),
-    head=dict(canon.HEAD["m_warrior"], width=1.06, jaw=1.16, chin=1.14, cheek=1.05),
-    body=dict(canon.BODY["m_warrior"], shoulder=1.10, neck=1.12),
+
+# =============================================================================================
+# heroes (hand-tuned; the cast generator in cast.py builds the other officers)
+# =============================================================================================
+HEROES["hero_warlord"] = dict(
+    name="hero_warlord", seed=101,
+    # Yan Tieshan, the Iron Mountain: grizzled northern warlord in his fifties
+    pose=dict(body_yaw=-30.0, head_yaw=8.0, head_pitch=-1.0, cam_pitch=-3.0),
+    frame=dict(head_frac=0.47),
     skin="weathered",
-    face=canon.face("m_warrior", brow="sword", brow_w=(0.0056, 0.0072, 0.0022), brow_rise=0.0062,
-                    brow_knit=0.0030, brow_color="grizzled", brow_hairs=40, eye_h=0.44, eye_w=0.0300,
-                    brow_v=0.0128, iris=0.38, iris_v=0.18, fierce=0.9, age=0.70, bag=0.35, lid_w=2.0, mouth_curve=-0.0014, lip_alpha=0.18,
-                    nose_w=0.0178, nose_h=0.0215, rouge=0.12, shade=0.17,
-                    hairline=dict(on=False),
-                    beard=dict(kind="short_full", length=1.25, density=1.2,
-                               color=[("#1C1816", 0.24), ("#45403A", 0.22), ("#8A847C", 0.26),
-                                      ("#ECE8E0", 0.28)])),
-    hair=dict(style="none"),
-    headgear=dict(kind="helmet", plume="cinnabar"),
+    head=dict(cheek_w=0.338, jaw_w=0.290, chin_w=0.13, jaw_sq=2.6, temple_w=0.322,
+              skull_w=0.338, flat=2.55, chin_d=0.385),
+    neck=dict(w=0.285, d=0.23),
+    torso=dict(shoulder_w=1.1, bulk=1.05, slope=0.3, neck_w=0.30),
+    face=dict(eye="tiger", brow="silkworm", nose="strong", mouth="firm", knit=0.7,
+              brow_color="ink", gaze=0.85,
+              brow_dz=-0.008,
+              mouth_mod=dict(corner=-0.008, w=0.10),
+              rouge=dict(color="#C2735E", alpha=0.13, r=0.13),
+              whites=0.10, socket=0.32,
+              wrinkles=dict(forehead=2, crow=2, naso=0.9, bags=0.55, knit=2, mouth=0.5)),
+    beard=dict(color="grizzled", width=1.0,
+               moustache=dict(len=0.12, droop=0.07, angle=26, density=1.1, thick=1.2),
+               chin=dict(len=0.40, width=0.15, shape="full", density=1.1),
+               cheeks=dict(density=1.1, len=0.10, top=-0.10, depth=0.06),
+               tuft=dict(len=0.05), stubble=0.10),
+    hair=dict(kind="topknot", color="#3E3A36", line_z=0.27, buns=[]),
+    headgear=dict(kind="helmet", color="steel", brim_z=0.17, lift=0.035, peak=0.11,
+                  tassel_color="cinnabar", tassel_len=0.17, guard_drop=0.50, guard_flare=0.38,
+                  open_t=1.05),
     costume=dict(
-        robe=dict(color="cinnabar", folds=[]),
-        collar=collar([dict(color="white", band_w=0.012), dict(color="cinnabar", band_w=0.014)],
-                      neck_x=0.030, cross_z=-0.200),
-        armour=dict(color="#5E7488", deep="#26323E", lace="#B03A2C"),
-        cloak=dict(color="cinnabar", collar="gold"),
+        robe=dict(color="cinnabar"),
+        collar=dict(neck_z=-0.74, cross_z=-1.0, x_neck=0.16,
+                    layers=[dict(color="white", w=0.04), dict(color="cinnabar_d", w=0.05)]),
+        armour=dict(color="steel", light="steel_l", lace="cinnabar", collar_color="cinnabar",
+                    collar_pattern=dict(kind="brocade", motif="dots", color="gold", period=0.05),
+                    mirror_z=-1.30, mirror_x=0.38, mirror_r=0.14, top_z=-0.84, strap=False),
+        cloak=dict(color="cinnabar_d"),
     ),
-))
+)
 
-reg("hero_scholar", dict(
-    # Su Wanqing 苏婉卿: young poet-queen and strategist
-    seed=23,
-    pose=dict(yaw=-21.0, pitch=-1.0, head_yaw=-3.0, head_pitch=3.0, head_roll=2.5),
-    head=dict(canon.HEAD["f_scholar"], chin=0.9, jaw=0.88, face_len=0.96),
-    body=dict(canon.BODY["f_scholar"], neck_len=0.70, slope=0.95, neck=0.86, shoulder=0.88),
+HEROES["hero_scholar"] = dict(
+    name="hero_scholar", seed=202,
+    # Su Wanqing, the Lotus Poet: young poet-queen and strategist
+    pose=dict(body_yaw=-27.0, head_yaw=6.0, head_pitch=1.0, head_roll=-2.0, cam_pitch=-2.0),
+    frame=dict(head_frac=0.45, min_head=0.78),
     skin="ivory",
-    face=canon.face("f_scholar", huadian="#C0362C", lip_color="#B8323E", lip_alpha=0.62, mouth_curve=0.0004,
-                    eye_w=0.0315, eye_h=0.40, iris=0.46, eye_shadow=0.22, eye_in=0.0148,
-                    gaze=(0.0008, 0.0),
-                    hairline=dict(on=True, top=0.074, temple_u=0.058, temple_v=0.030, side_v=-0.012,
-                                  color="hair", strands=34, widow=0.0)),
-    hair=dict(style="lady_high", color="hair", part=0.0015, crown=0.004, thick=0.0045,
-              ornaments=dict(comb=True, pins=[(-1, 0.7), (1, 0.55), (1, -0.35)], buyao=True,
-                             peony=True, peony_color="rouge", flower_color="cinnabar")),
-    earrings=dict(kind="pearl"),
+    head=dict(cheek_w=0.306, jaw_w=0.228, chin_w=0.098, jaw_sq=1.95, temple_w=0.306,
+              skull_w=0.322, cheek_full=0.012, flat=2.35, chin_d=0.37, chin_z=-0.485),
+    neck=dict(w=0.205, d=0.18),
+    torso=dict(shoulder_w=0.86, slope=0.85, chest_d=0.38, neck_w=0.23),
+    ear=dict(h=0.25, w=0.115),
+    face=dict(eye="almond", brow="willow", nose="small", mouth="cherry", gaze=0.8,
+              eye_mod=dict(tilt=0.075, tail=0.09, open=0.36),
+              rouge=dict(color="#E08A88", alpha=0.30, r=0.13, x=0.17, z=-0.12),
+              eye_rouge=0.10, whites=0.30, socket=0.16,
+              mark=dict(kind="petals", color="cinnabar")),
+    hair=dict(kind="lady", color="hair", line_z=0.285, temple_z=0.22, side_z=-0.02,
+              side_puff=0.05, volume=0.035, top_volume=0.05, over_ear_z=0.02,
+              knot_at=(0.0, 0.08, 0.62),
+              buns=[dict(kind="ellipsoid", c=(0.0, 0.10, 0.60), r=(0.17, 0.15, 0.13)),
+                    dict(kind="ellipsoid", c=(0.0, 0.05, 0.76), r=(0.10, 0.09, 0.10)),
+                    dict(kind="loop", c=(-0.02, 0.03, 0.84), R=0.085, r=0.032, yaw=-20, tilt=5,
+                         a0=-0.1, a1=1.1)],
+              ornaments=[dict(kind="pin", a=(0.10, 0.10, 0.62), b=(0.28, 0.02, 0.80),
+                              r=0.007, head=0.022, head_color="gold", dangles=3,
+                              dangle_len=0.12, dangle_color="cinnabar"),
+                         dict(kind="pin", a=(-0.08, 0.12, 0.64), b=(-0.26, 0.04, 0.76),
+                              r=0.006, head=0.016, head_color="malachite"),
+                         dict(kind="flower", c=(-0.15, -0.06, 0.60), r=0.05, color="lotus",
+                              petals=6),
+                         dict(kind="comb", c=(0.0, -0.06, 0.66), w=0.10, h=0.045,
+                              color="gold", tilt=-25)]),
     costume=dict(
-        robe=dict(color="#8E2E3E", deep="#5A1828", folds=robe_folds(0.8),
-                  roundels=dict(color="#D8B060", alpha=0.45, period=0.07)),
-        collar=collar([dict(color="white", band_w=0.010), dict(color="malachite", band_w=0.012),
-                       dict(color="#22304A", band_w=0.026,
-                            brocade=dict(kind="cloud", period=0.022, motif="gold", edge="gold"))],
-                      neck_x=0.030, neck_z=-0.140, cross_z=-0.200, step_x=0.010),
-        shawl=dict(color="#A8CDB4", motif="#F6F2E8", width=0.075),
+        robe=dict(color="azurite", pattern=dict(kind="roundels", period=0.17, size=0.30,
+                                                color="gold", color2="gold_l", alpha=0.55)),
+        collar=dict(neck_z=-0.72, cross_z=-1.06, x_neck=0.13,
+                    layers=[dict(color="white", w=0.035), dict(color="lotus_l", w=0.04),
+                            dict(color="cinnabar", w=0.085,
+                                 pattern=dict(kind="brocade", motif="lozenge", color="gold",
+                                              period=0.05))]),
+        shawl=dict(color="malachite_l", w=0.20),
     ),
-))
+)
 
-reg("hero_elder", dict(
-    # an old white-bearded sage
-    seed=37,
-    pose=dict(yaw=18.0, pitch=-2.0, head_yaw=2.0, head_pitch=4.0, head_roll=-1.5),
-    head=dict(canon.HEAD["m_elder"]),
-    body=dict(canon.BODY["m_elder"]),
+HEROES["hero_elder"] = dict(
+    name="hero_elder", seed=303,
+    # an old white-bearded sage in a 东坡 scholar's hat
+    pose=dict(body_yaw=-26.0, head_yaw=6.0, head_pitch=2.5, cam_pitch=-2.0),
+    frame=dict(head_frac=0.45, min_head=0.8),
     skin="elder",
-    face=canon.face("m_elder", smile=0.25, mouth_curve=0.0006, brow_droop=0.006,
-                    hairline=dict(on=True, top=0.070, temple_u=0.060, temple_v=0.026, side_v=0.002,
-                                  color="white", strands=30),
-                    beard=dict(kind="five_lock", color="white", length=1.0, density=1.1)),
-    hair=dict(style="elder_bun", color="white", thick=0.004, crown=0.0, back=0.004),
-    headgear=dict(kind="dongpo", color="#33302E"),
+    head=dict(cheek_w=0.312, jaw_w=0.252, chin_w=0.11, flat=2.4, cheek_full=-0.008,
+              chin_d=0.375),
+    neck=dict(w=0.24, d=0.2),
+    torso=dict(shoulder_w=0.95, slope=0.6),
+    ear=dict(h=0.29, w=0.13),
+    face=dict(eye="kind", brow="longevity", nose="strong", mouth="elder", gaze=0.7,
+              brow_color="white",
+              rouge=dict(color="#D08A7E", alpha=0.10), whites=0.14, socket=0.26,
+              wrinkles=dict(forehead=3, crow=3, naso=0.9, bags=0.8, mouth=0.6)),
+    beard=dict(color="white", width=1.0,
+               moustache=dict(len=0.13, droop=0.10, angle=40, density=1.0, reach=1.0),
+               chin=dict(len=0.78, width=0.15, shape="pointed", density=1.15, lean=0.02),
+               cheeks=dict(density=0.75, len=0.16, top=-0.10, depth=0.05),
+               tuft=dict(len=0.06)),
+    hair=dict(kind="elder", color="white_hair", strand="#8E8880", line_z=0.25, temple_z=0.17,
+              buns=[]),
+    headgear=dict(kind="dongpo", color="ink", base_z=0.215, h=0.40, h_out=0.27),
     costume=dict(
-        robe=dict(color="#5E7468", deep="#34463E", folds=robe_folds(1.0)),
-        collar=collar([dict(color="white", band_w=0.012),
-                       dict(color="#2A2420", band_w=0.032)],
-                      neck_x=0.032, cross_z=-0.205),
+        robe=dict(color="#6F8F86"),
+        collar=dict(neck_z=-0.72, cross_z=-1.04, x_neck=0.15,
+                    layers=[dict(color="white", w=0.04), dict(color="#2A2622", w=0.11)]),
     ),
-))
+)

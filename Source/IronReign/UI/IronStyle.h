@@ -60,6 +60,8 @@ namespace IronStyle
 	IRONREIGN_API const FSlateBrush* WhiteBrush();
 	IRONREIGN_API const FButtonStyle& Button();
 	IRONREIGN_API const FButtonStyle& Tab(bool bActive);
+	/** Label colour on a Tab() button. Tabs are light silk, so labels are ink, and cinnabar lacquer when active. */
+	IRONREIGN_API FLinearColor TabText(bool bActive);
 	/** Transparent button that highlights on hover, for clickable list rows. */
 	IRONREIGN_API const FButtonStyle& RowButton();
 	IRONREIGN_API const FTextBlockStyle& BodyText();

@@ -37,8 +37,18 @@ public:
 
 	/** Drag: the map follows the cursor. ScreenDeltaPx in viewport pixels, ViewportSizePx the viewport size. */
 	void Pan(const FVector2D& ScreenDeltaPx, const FVector2D& ViewportSizePx);
-	/** Wheel: positive = zoom in, one notch = 1. Zooms toward CursorMapPointM when bHasCursorPoint. */
+	/**
+	 * Wheel: positive = zoom in, one notch = 1. Zooms toward CursorMapPointM when bHasCursorPoint (approximately: the
+	 * pitch changes with the distance); prefer ZoomTowardCursor.
+	 */
 	void Zoom(float WheelDelta, const FVector2D& CursorMapPointM, bool bHasCursorPoint = true);
+	/**
+	 * Wheel at a screen point: positive = zoom in, one notch = 1. CursorClip is the cursor in clip space of the game
+	 * viewport (-1..1, +Y up). The ground point under it, as seen from the pose the camera is heading to (so quick
+	 * notches agree while the camera still glides), stays under it once the camera settles at the new distance, pitch
+	 * and ground height. The target stays put when the cursor points above the horizon.
+	 */
+	void ZoomTowardCursor(float WheelDelta, const FVector2D& CursorClip);
 	/** Adds to the yaw offset (degrees, clamped to +-45). */
 	void Rotate(float DeltaDegrees);
 	/** Back to looking north. */
@@ -80,10 +90,16 @@ public:
 private:
 	void CancelFlight();
 	FVector2D ClampToMap(const FVector2D& MapPointM) const;
-	double GroundUnderTarget(const FVector2D& MapPointM) const;
+	/** Ground height (m) the focus settles on at a map point, for the camera at DistanceM. */
+	double GroundUnderTarget(const FVector2D& MapPointM, double DistanceM) const;
 	double SurfaceAt(const FVector2D& MapPointM) const;
 	static double PitchForDistance(double DistanceM);
 	FVector2D GetViewportSizePx() const;
+	/**
+	 * Direction (world, not normalised) of the ray through clip position Clip for the camera settled at DistanceM with
+	 * the goal yaw: UpdatePose's axes and fields of view.
+	 */
+	FVector GoalPoseRay(double DistanceM, const FVector2D& Clip) const;
 	void UpdatePose();
 
 	UPROPERTY(VisibleAnywhere, Category = "Iron Reign")

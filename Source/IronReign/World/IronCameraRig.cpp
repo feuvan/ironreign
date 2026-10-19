@@ -17,6 +17,9 @@ namespace IronCameraRigDetail
 	constexpr double GroundSmoothTime = 0.35;
 	/** Distance multiplier per wheel notch. */
 	constexpr double ZoomStepFactor = 0.82;
+	/** Secant steps solving the zoom target's ground height, and the mismatch (cm) that ends them. */
+	constexpr int32 ZoomSolveSteps = 8;
+	constexpr double ZoomSolveToleranceCm = 1.0;
 	/** The camera never gets closer than this to the terrain below it (metres). */
 	constexpr double MinClearanceM = 40.0;
 	constexpr double MaxFlightLiftM = 900.0;
@@ -75,10 +78,10 @@ double AIronCameraRig::SurfaceAt(const FVector2D& MapPointM) const
 	return TerrainActor != nullptr ? static_cast<double>(TerrainActor->SampleSurface(MapPointM)) : 0.0;
 }
 
-double AIronCameraRig::GroundUnderTarget(const FVector2D& MapPointM) const
+double AIronCameraRig::GroundUnderTarget(const FVector2D& MapPointM, double DistanceM) const
 {
 	// Averaged over a footprint that grows with the zoom, so the focus glides over ridges instead of bouncing.
-	const double Radius = FMath::Clamp(CurrentDistanceM * 0.06, 10.0, 150.0);
+	const double Radius = FMath::Clamp(DistanceM * 0.06, 10.0, 150.0);
 	double Sum = 2.0 * SurfaceAt(MapPointM);
 	Sum += SurfaceAt(MapPointM + FVector2D(Radius, 0.0));
 	Sum += SurfaceAt(MapPointM + FVector2D(-Radius, 0.0));
@@ -127,7 +130,7 @@ void AIronCameraRig::Tick(float DeltaSeconds)
 	CurrentScreenOffset.X = IronWorld::SmoothDamp(CurrentScreenOffset.X, GoalScreenOffset.X, ScreenOffsetVelocity.X, IronCameraRigDetail::FramingSmoothTime, StepSeconds);
 	CurrentScreenOffset.Y = IronWorld::SmoothDamp(CurrentScreenOffset.Y, GoalScreenOffset.Y, ScreenOffsetVelocity.Y, IronCameraRigDetail::FramingSmoothTime, StepSeconds);
 
-	const double Ground = GroundUnderTarget(CurrentTarget);
+	const double Ground = GroundUnderTarget(CurrentTarget, CurrentDistanceM);
 	if (!bGroundInitialized)
 	{
 		GroundZM = Ground;
@@ -156,6 +159,15 @@ FVector2D AIronCameraRig::GetViewportSizePx() const
 		}
 	}
 	return Size;
+}
+
+FVector AIronCameraRig::GoalPoseRay(double DistanceM, const FVector2D& Clip) const
+{
+	const FVector2D ViewportSize = GetViewportSizePx();
+	const double TanHalfH = FMath::Tan(FMath::DegreesToRadians(static_cast<double>(GetFieldOfView()) * 0.5));
+	const double TanHalfV = TanHalfH * ViewportSize.Y / FMath::Max(1.0, ViewportSize.X);
+	const FRotationMatrix Axes(FRotator(-PitchForDistance(FMath::Min(DistanceM, IronWorld::CameraMaxDistanceM)), IronWorld::NorthYawDegrees + GoalYawOffset, 0.0));
+	return Axes.GetScaledAxis(EAxis::X) + Axes.GetScaledAxis(EAxis::Y) * (Clip.X * TanHalfH) + Axes.GetScaledAxis(EAxis::Z) * (Clip.Y * TanHalfV);
 }
 
 void AIronCameraRig::UpdatePose()
@@ -280,6 +292,89 @@ void AIronCameraRig::Zoom(float WheelDelta, const FVector2D& CursorMapPointM, bo
 	GoalDistanceM = NewDistanceM;
 }
 
+void AIronCameraRig::ZoomTowardCursor(float WheelDelta, const FVector2D& CursorClip)
+{
+	if (FMath::IsNearlyZero(WheelDelta))
+	{
+		return;
+	}
+	CancelFlight();
+	const double OldDistanceM = FMath::Max(1.0, GoalDistanceM);
+	const double NewDistanceM = FMath::Clamp(GoalDistanceM * FMath::Pow(IronCameraRigDetail::ZoomStepFactor, static_cast<double>(WheelDelta)), IronWorld::CameraMinDistanceM, IronWorld::CameraMaxDistanceM);
+	GoalDistanceM = NewDistanceM;
+
+	// The point under the cursor in the goal pose as UpdatePose draws it once settled (UpdatePose: camera = focus -
+	// distance * the ray through the framing centre; the clearance rise over mountains is left out).
+	const FVector OldCursorRay = GoalPoseRay(OldDistanceM, CursorClip);
+	const FVector OldFocus = IronWorld::MapToWorld(GoalTarget, GroundUnderTarget(GoalTarget, OldDistanceM));
+	const FVector OldCamera = OldFocus - GoalPoseRay(OldDistanceM, GoalScreenOffset) * (OldDistanceM * IronWorld::CmPerMetre);
+	const AIronTerrain* TerrainActor = Terrain.Get();
+	FVector CursorHit = FVector::ZeroVector;
+	if (TerrainActor == nullptr || !TerrainActor->TraceSurface(OldCamera, OldCursorRay, CursorHit))
+	{
+		// No heightmap yet (or the ray misses it): the level of the focus.
+		if (OldCursorRay.Z > -1.0e-3)
+		{
+			return;
+		}
+		CursorHit = OldCamera + OldCursorRay * ((OldFocus.Z - OldCamera.Z) / OldCursorRay.Z);
+	}
+	const FVector NewCursorRay = GoalPoseRay(NewDistanceM, CursorClip);
+	if (NewCursorRay.Z > -1.0e-3)
+	{
+		return;
+	}
+
+	// The new focus F must put the camera F - D * NewCentreRay on the line through CursorHit along NewCursorRay, so
+	// F.XY = FocusBase + F.Z * FocusSlope; and F.Z is the ground under F. Solve that one unknown with secant steps.
+	const FVector NewCentreRay = GoalPoseRay(NewDistanceM, GoalScreenOffset);
+	const double NewDistanceCm = NewDistanceM * IronWorld::CmPerMetre;
+	const FVector2D CursorRayXY(NewCursorRay.X, NewCursorRay.Y);
+	const FVector2D FocusBase = FVector2D(CursorHit.X, CursorHit.Y) + FVector2D(NewCentreRay.X, NewCentreRay.Y) * NewDistanceCm - CursorRayXY * ((CursorHit.Z + NewDistanceCm * NewCentreRay.Z) / NewCursorRay.Z);
+	const FVector2D FocusSlope = CursorRayXY / NewCursorRay.Z;
+	const auto FocusMapPointAt = [&FocusBase, &FocusSlope](double FocusZCm)
+	{
+		return IronWorld::WorldToMap(FVector(FocusBase + FocusSlope * FocusZCm, 0.0));
+	};
+	const auto Mismatch = [this, &FocusMapPointAt, NewDistanceM](double FocusZCm)
+	{
+		return FocusZCm - GroundUnderTarget(FocusMapPointAt(FocusZCm), NewDistanceM) * IronWorld::CmPerMetre;
+	};
+	// The ground lies within the terrain's elevation range: keep the steps there.
+	double LowestCm = OldFocus.Z;
+	double HighestCm = OldFocus.Z;
+	if (TerrainActor != nullptr)
+	{
+		const FIronTerrainInfo& TerrainInfo = TerrainActor->GetInfo();
+		LowestCm = FMath::Min(LowestCm, FMath::Min(TerrainInfo.MinElevationM, TerrainInfo.SeaLevelM) * IronWorld::CmPerMetre);
+		HighestCm = FMath::Max(HighestCm, FMath::Max(TerrainInfo.MaxElevationM, TerrainInfo.SeaLevelM) * IronWorld::CmPerMetre);
+	}
+	double PreviousZ = OldFocus.Z;
+	double PreviousMismatch = Mismatch(PreviousZ);
+	double BestZ = PreviousZ;
+	double BestMismatch = FMath::Abs(PreviousMismatch);
+	double FocusZ = FMath::Clamp(PreviousZ - PreviousMismatch, LowestCm, HighestCm);
+	for (int32 SolveStep = 0; SolveStep < IronCameraRigDetail::ZoomSolveSteps && BestMismatch > IronCameraRigDetail::ZoomSolveToleranceCm; ++SolveStep)
+	{
+		const double FocusMismatch = Mismatch(FocusZ);
+		if (FMath::Abs(FocusMismatch) < BestMismatch)
+		{
+			BestZ = FocusZ;
+			BestMismatch = FMath::Abs(FocusMismatch);
+		}
+		const double MismatchChange = FocusMismatch - PreviousMismatch;
+		if (FMath::Abs(MismatchChange) < 1.0e-9)
+		{
+			break;
+		}
+		const double NextZ = FMath::Clamp(FocusZ - FocusMismatch * (FocusZ - PreviousZ) / MismatchChange, LowestCm, HighestCm);
+		PreviousZ = FocusZ;
+		PreviousMismatch = FocusMismatch;
+		FocusZ = NextZ;
+	}
+	GoalTarget = ClampToMap(FocusMapPointAt(BestZ));
+}
+
 void AIronCameraRig::Rotate(float DeltaDegrees)
 {
 	GoalYawOffset = FMath::Clamp(GoalYawOffset + static_cast<double>(DeltaDegrees), -IronWorld::CameraMaxYawOffsetDegrees, IronWorld::CameraMaxYawOffsetDegrees);
@@ -323,7 +418,7 @@ void AIronCameraRig::SnapTo(const FVector2D& MapPointM, float DistanceM)
 	DistanceVelocity = 0.0;
 	CurrentScreenOffset = GoalScreenOffset;
 	ScreenOffsetVelocity = FVector2D::ZeroVector;
-	GroundZM = GroundUnderTarget(CurrentTarget);
+	GroundZM = GroundUnderTarget(CurrentTarget, CurrentDistanceM);
 	GroundVelocity = 0.0;
 	bGroundInitialized = true;
 	UpdatePose();
@@ -331,7 +426,7 @@ void AIronCameraRig::SnapTo(const FVector2D& MapPointM, float DistanceM)
 
 void AIronCameraRig::ResnapGround()
 {
-	GroundZM = GroundUnderTarget(CurrentTarget);
+	GroundZM = GroundUnderTarget(CurrentTarget, CurrentDistanceM);
 	GroundVelocity = 0.0;
 	bGroundInitialized = true;
 	UpdatePose();
