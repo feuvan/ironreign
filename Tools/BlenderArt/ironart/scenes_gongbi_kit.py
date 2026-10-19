@@ -29,8 +29,51 @@ def materials(arch=None, cloth=None, banners=None, flora=None, skin=None, armor=
     return m
 
 
-def emit(mb, name, mats, kind="arch"):
-    """Build ``mb`` into an object linked to the ink collection ``kind``."""
+def split(mb, names):
+    """Split a MeshBuilder by material: returns (rest, part with the faces whose slot is in
+    ``names``).  Vertices are shared (unused ones are harmless)."""
+    a, b = MeshBuilder(), MeshBuilder()
+    for o in (a, b):
+        o.verts = mb.verts
+        o.vattr = mb.vattr
+    for f, mi, sm, uv in zip(mb.faces, mb.face_mat, mb.face_smooth, mb.face_uv):
+        nm = mb.mat_names[mi]
+        o = b if nm in names else a
+        o.faces.append(f)
+        o.face_mat.append(o.mat(nm))
+        o.face_smooth.append(sm)
+        o.face_uv.append(uv)
+    return a, b
+
+
+def rename(mb, mapping):
+    """Rename material slots in place (e.g. {'Armor': 'ArmorBlue'})."""
+    mb.mat_names = [mapping.get(n, n) for n in mb.mat_names]
+    return mb
+
+
+#: thin props (spear shafts, bows, ropes, blades) get the light 'fine' ink instead of the
+#: figure outline, so a 2 cm shaft does not become a heavy black bar
+THIN = ("Wood", "Rope", "Metal", "Blade")
+
+
+def emit(mb, name, mats, kind="arch", thin=None):
+    """Build ``mb`` into an object linked to the ink collection ``kind`` (faces whose slot is in
+    ``thin`` go to a second object in the 'fine' collection)."""
+    if thin:
+        rest, part = split(mb, thin)
+        if part.faces:
+            emit(part, name + "_thin", mats, "fine")
+        mb = rest
+        if not mb.faces:
+            return None
+    if kind == "fig" and "Skin" in mb.mat_names:
+        rest, skin = split(mb, ("Skin",))
+        if skin.faces:
+            emit(skin, name + "_skin", mats, "skin")
+        mb = rest
+        if not mb.faces:
+            return None
     m = dict(mats)
     for nm in mb.mat_names:
         if nm not in m and "~" in nm:
@@ -167,3 +210,34 @@ class ScreenMap:
             x, y, z = self.at(sx, sy, d)
             out.append((x, y, z, r, shape))
         return out
+
+    def ground(self, sx, sy, z=0.0):
+        """World point where the view ray through (sx, sy) meets the plane at height ``z``
+        (None above the horizon)."""
+        ax = math.atan((sx - 0.5) / self.fn)
+        beta = self.pitch + math.atan(((0.5 - sy) / self.aspect + self.shift_y) / self.fn)
+        dz = z - self.loc.z
+        if beta >= 0 or dz >= 0:
+            return None
+        d = dz / math.tan(beta) * math.cos(ax)
+        a = self.yaw + ax
+        return (self.loc.x + d * math.sin(a), self.loc.y + d * math.cos(a), z)
+
+
+def cottage(mb, at=(0, 0, 0), rz=0.0, w=7.0, d=4.6, h=2.8, thatch=True, wall="W_PlasterWarm"):
+    """Rural house (world kit house) with a thatched (``Thatch`` slot, no tile rows) or tiled
+    gable roof."""
+    from . import world_kit as WK
+    hs = WK.HouseSpec(w=w, d=d, h=h, wall="W_Earth" if thatch else "W_Brick", upper=wall)
+    if thatch:
+        hs.roof.tiles = False
+        hs.roof.mat = "Thatch"
+        hs.roof.ridge_mat = "Thatch"
+        hs.roof.ridge_ends = "plain"
+        hs.roof.lift = 0.05
+        hs.roof.flare = 0.0
+        hs.roof.thick = 0.35
+        hs.roof.overhang = 0.9
+    s0 = mb.n
+    WK.house(mb, (0, 0, 0), hs)
+    mb.transform(s0, Matrix.Translation(Vector(at)) @ Matrix.Rotation(rz, 4, "Z"))

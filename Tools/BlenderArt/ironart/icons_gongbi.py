@@ -13,7 +13,7 @@ way the coloured object plates of a Ming encyclopedia (三才图会 / 天工开�
              sun); texture strokes (wood grain, weave, tile rows) are painted into the ``ic_ink``
              AOV by the materials
 * ink        Freestyle as a separate pass: a bold tapered outer contour and finer inner lines
-             (creases, borders, material boundaries) with a calligraphic, pressure-varied brush;
+             (creases, borders, material boundaries) with a tapered, calligraphic brush;
              one line set per ink collection (``ink`` warm black, ``soft`` ink grey, ``red`` deep
              cinnabar for flames, ``none``); thicknesses are in 64 px icon pixels
 * passes     EXR: colour (premultiplied), Freestyle, object / material index, ``ic_ink``
@@ -64,28 +64,28 @@ RECIPE = dict(
     camera=dict(elevation=28.0, azimuth=-24.0, distance=30.0),
     # keyline box at 64 px (left, top, right, bottom) the subject's geometry fills; the ink and
     # the halo grow ~3.5 px beyond it, the outer 1 px ring stays clear
-    keyline=(6.0, 6.0, 58.0, 58.0),
+    keyline=(5.0, 5.0, 59.0, 59.0),
     # painter's light (screen angle CCW from right, elevation towards the viewer)
     light=dict(angle=135.0, elev=40.0),
     form=0.20,                       # wash value change between lit and turned-away planes
     facing=dict(blend=0.30, lo=0.08, hi=0.92, amount=0.55),
     # Freestyle ink (64 px units): outer contour, inner lines; brush feel
     ink=dict(
-        ink=dict(color="#1E1A16", alpha=1.0, outer=1.55, inner=0.85, taper=0.30, calli=0.35,
-                 noise=0.14, smooth=1.0, crease=134.0),
+        ink=dict(color="#1E1A16", alpha=1.0, outer=1.6, inner=0.85, taper=0.30, calli=0.35,
+                 smooth=3.5, crease=134.0),
         soft=dict(color="#5E564C", alpha=0.95, outer=1.15, inner=0.6, taper=0.4, calli=0.3,
-                  noise=0.15, smooth=1.2, crease=150.0),
-        red=dict(color="#7A2418", alpha=1.0, outer=1.3, inner=0.75, taper=0.45, calli=0.35,
-                 noise=0.18, smooth=1.4, crease=150.0),
+                  smooth=3.5, crease=150.0),
+        red=dict(color="#7A2418", alpha=1.0, outer=1.35, inner=0.75, taper=0.45, calli=0.35,
+                 smooth=3.5, crease=150.0),
     ),
     # 2D 分染: each colour region deepens towards its outline over `px` (64 px units); `dir` adds
     # more on the side away from the light; `amount` = max darkening (linear multiply)
-    fenran=dict(px=2.4, amount=0.30, dir=0.55, power=1.6),
-    granulation=0.035,
+    fenran=dict(px=4.5, amount=0.5, dir=0.6, power=1.2),
+    granulation=0.06,
     shader_ink=0.9,                  # strength of the material texture strokes (ic_ink AOV)
-    ink_dry=0.10, ink_bleed=0.25,
+    ink_dry=0.06, ink_bleed=0.25,
     # silk-tone wash halo (64 px units): blur sigma, gain (how far it carries), max alpha
-    halo=dict(color="#E6D6B0", edge="#D8C39A", sigma=1.35, gain=2.6, alpha=0.62, mottle=0.18),
+    halo=dict(color="#EADDBE", edge="#DCC9A2", sigma=1.1, gain=4.5, alpha=0.8, mottle=0.13),
     unsharp={64: (0.6, 0.30), 128: (0.8, 0.22)},
     # review backgrounds: DESIGN.md tokens and the measured UI chrome fields
     backgrounds=dict(parchment="#E9DCC0", panel="#EBDEC2", lacquer="#1B1712",
@@ -328,7 +328,8 @@ def form(b):
     return b.math("SUBTRACT", 1.0, fg.outputs["Light"])
 
 
-def pigment(name, light, deep=None, fen=None, formk=None, grad=None, ink=None, hi=None):
+def pigment(name, light, deep=None, fen=None, formk=None, grad=None, ink=None, hi=None,
+            image=None, image_color=None, image_ink=0.0, image_box=None, image_plane="XZ"):
     """A mineral wash: ``light`` deepening to ``deep`` (default light x 0.62).
 
     fen     amount of the facing 分染 (default RECIPE facing amount)
@@ -336,6 +337,10 @@ def pigment(name, light, deep=None, fen=None, formk=None, grad=None, ink=None, h
     grad    callable(b) -> 0..1 socket: extra deepening (e.g. along a blade, up a flame)
     ink     callable(b) -> 0..1 socket: texture strokes painted into the ``ic_ink`` AOV
     hi      (colour, width): a lighter tone (提白 / 罩染) where the surface faces the viewer
+    image   a bpy image (UV mapped) whose alpha lays ``image_color`` (or its own colour) over the
+            wash - glyphs, seal impressions, painted motifs; ``image_ink`` also writes it into
+            the ic_ink AOV (so it gets the ink treatment); ``image_box`` = (x0, z0, x1, z1)
+            maps the image onto the object's local XZ plane instead of the UVs
     """
     mat, b, created = new_material(name)
     if not created:
@@ -363,12 +368,37 @@ def pigment(name, light, deep=None, fen=None, formk=None, grad=None, ink=None, h
         lw.inputs["Blend"].default_value = 0.3
         t = b.smooth(lw.outputs["Facing"], 0.0, hw, 1.0, 0.0)
         col = b.mix(col, lin(hc) + (1.0,), t)
+    ia = None
+    if image is not None:
+        tx = b.node("ShaderNodeTexImage")
+        tx.image = image
+        tx.interpolation = "Cubic"
+        tx.extension = "CLIP"
+        if image_box is not None:
+            x0, z0, x1, z1 = image_box
+            co = b.sep(obj_coord(b))
+            ax = {"XZ": (0, 2), "XY": (0, 1)}[image_plane]
+            u = b.maprange(co[ax[0]], x0, x1, 0.0, 1.0, clamp=False)
+            v = b.maprange(co[ax[1]], z0, z1, 0.0, 1.0, clamp=False)
+            b.link(b.comb(u, v, 0.0), tx.inputs["Vector"])
+        else:
+            uv = b.node("ShaderNodeUVMap")
+            b.link(uv.outputs["UV"], tx.inputs["Vector"])
+        ia = tx.outputs["Alpha"]
+        ic = (lin(image_color) + (1.0,)) if image_color is not None else tx.outputs["Color"]
+        col = b.mix(col, ic, ia)
     em = b.node("ShaderNodeEmission")
     b.set(em.inputs["Color"], col)
     em.inputs["Strength"].default_value = 1.0
     b.output(em.outputs[0])
+    inks = []
     if ink is not None:
-        _aov(b, "ic_ink", ink(b))
+        inks.append(ink(b))
+    if ia is not None and image_ink > 0:
+        inks.append(b.math("MULTIPLY", ia, image_ink))
+    if inks:
+        v = inks[0] if len(inks) == 1 else b.math("MAXIMUM", inks[0], inks[1])
+        _aov(b, "ic_ink", v)
     return mat
 
 
@@ -439,7 +469,7 @@ def _style(name, spec, px, which, seed):
     st.color = lin(spec["color"])
     st.alpha = spec["alpha"]
     t = spec[which] * px * FREESTYLE_SCALE
-    st.thickness = t * (1.0 - spec["noise"] * 0.5)
+    st.thickness = t
     st.thickness_position = "CENTER"
     st.use_chaining = True
     st.chaining = "PLAIN"
@@ -449,7 +479,9 @@ def _style(name, spec, px, which, seed):
     st.length_min = (2.0 if which == "outer" else 1.6) * px
     g = st.geometry_modifiers.new("Smooth", "BEZIER_CURVE")
     g.error = spec["smooth"] * px * 0.5
-    tp = spec["taper"]
+    # the outer contour is mostly one closed chain whose start point Freestyle picks per run
+    # (memory order, not bit-reproducible): a softer taper there keeps that seam invisible
+    tp = spec["taper"] * (0.55 if which == "outer" else 1.0)
     m = st.thickness_modifiers.new("Taper", "ALONG_STROKE")
     m.blend = "MULTIPLY"
     m.mapping = "CURVE"
@@ -466,11 +498,7 @@ def _style(name, spec, px, which, seed):
     m.orientation = math.radians(50.0)
     m.thickness_min = 1.0 - spec["calli"] * 0.6
     m.thickness_max = 1.0 + spec["calli"] * 0.25
-    m = st.thickness_modifiers.new("Pressure", "NOISE")
-    m.blend = "ADD"
-    m.amplitude = spec["noise"] * t
-    m.period = 9.0 * px
-    m.seed = seed % 512
+    # (no NOISE thickness modifier: in this build it breaks the line into ragged blobs)
     return st
 
 

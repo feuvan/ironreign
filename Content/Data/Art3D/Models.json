@@ -1,0 +1,32 @@
+{
+  "frontYaw": 0,
+  "models": {
+    "Tree_Pine": {
+      "scale": 1.0
+    },
+    "Tree_Broad": {
+      "scale": 1.0
+    },
+    "Tree_Bamboo": {
+      "scale": 1.0
+    },
+    "City_1": {
+      "scale": 1.0
+    },
+    "City_2": {
+      "scale": 1.0
+    },
+    "City_3": {
+      "scale": 1.0
+    },
+    "Banner": {
+      "scale": 1.0
+    },
+    "Flag": {
+      "scale": 1.0
+    },
+    "Sect": {
+      "scale": 1.0
+    }
+  }
+}

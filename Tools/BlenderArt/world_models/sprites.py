@@ -35,8 +35,10 @@ import common  # noqa: E402
 
 import bpy  # noqa: E402
 import numpy as np  # noqa: E402
+from mathutils import Vector  # noqa: E402
 
 from ironart import cameras, ink, lights, materials as M, post, recipes, scene, world_bake as WB  # noqa: E402
+from ironart import world_gongbi_render as GR  # noqa: E402
 from ironart import REPO_DIR  # noqa: E402
 
 #: jiehua sprite recipe (registered at runtime; ironart/recipes.py is not modified): the studio
@@ -44,7 +46,7 @@ from ironart import REPO_DIR  # noqa: E402
 JIEHUA = recipes.get("sprite")
 JIEHUA.update(spp=16, rig=None, kuwahara=None, grade=None, unsharp=None, shadow=None, paper=0.0,
               margins=(3, 3, 4, 5),
-              ink=dict(thickness_px=0.95, alpha=0.95, inner_scale=0.45, inner_alpha=0.8, crease_angle=118.0,
+              ink=dict(thickness_px=0.95, alpha=0.95, inner_scale=0.0, crease_angle=118.0,
                        calligraphy=0.0, pressure_noise=0.0, taper=False, smooth=False),
               notes="World Models 2D fallbacks as gongbi jiehua: emission washes of the baked gongbi albedo "
                     "(0.80 + 0.13 key + 0.07 up), ruled Freestyle ink 0.95 px outer / 0.43 px inner, leaf "
@@ -52,7 +54,7 @@ JIEHUA.update(spp=16, rig=None, kuwahara=None, grade=None, unsharp=None, shadow=
 recipes.RECIPES["world_jiehua"] = JIEHUA
 JIEHUA_TINT = recipes.get("tint_plate")
 JIEHUA_TINT.update(spp=16, rig=None, kuwahara=None, grade=None, unsharp=None, shadow=None, paper=0.0,
-                   ink=dict(thickness_px=0.85, alpha=0.95, inner_scale=0.5, inner_alpha=0.75, crease_angle=118.0,
+                   ink=dict(thickness_px=0.9, alpha=0.95, inner_scale=0.0, crease_angle=118.0,
                             calligraphy=0.0, pressure_noise=0.0, taper=False, smooth=False),
                    notes="Banner / Flag jiehua tint plates: neutral white cloth (TintMask), ink outlines, no halo")
 recipes.RECIPES["world_jiehua_tint"] = JIEHUA_TINT
@@ -66,14 +68,20 @@ SPRITES = {
     "Banner": ("Art/Map/Banner.png", (64, 96), "world_jiehua_tint", (0.24, 0.93)),
     "Flag": ("Art/Map/Flag.png", (32, 48), "world_jiehua_tint", (0.16, 0.89)),
 }
+#: per-sprite ink overrides: the 32x48 pennant's pole is ~1 px wide, a heavier contour keeps it an
+#: ink stroke (the UI multiplies the whole Flag.png by the owner colour)
+INK_OVERRIDE = {"Flag": dict(thickness_px=1.2)}
 #: SIronMapView draws Flag.png over this box of the 96 px city canvas
 PENNANT_KEEPOUT = (56, 0, 83, 23)
 INK = "#1E1A16"
 LEAF_INK = (0.11, 0.20, 0.16)
 HALO = "#F4EEDF"
 #: plane separation of the wash shader: base + key * max(0, N.L) + up * max(0, N.z)
-SHADE = (0.80, 0.13, 0.07)
+SHADE = (0.86, 0.10, 0.06)
 LEAF_AOV = "LeafMask"
+#: inner ruled lines (depth / normal edges, drawn in post): graded ink, opacity
+INNER_INK = "#2E2620"
+INNER_ALPHA = 0.8
 
 
 def largest_rect(mask):
@@ -210,8 +218,9 @@ def paint_scene(obj, key_dir):
     me.update()
 
 
-def ruled_ink(family):
+def ruled_ink(family, **over):
     r = dict(recipes.get(family)["ink"])
+    r.update(over)
     inner_sil = bool(r.pop("inner_silhouette", True))
     sets = ink.enable(color=INK, border=False, crease=True, wobble=0.0, as_pass=False,
                       outer_select="external_contour", **r)
@@ -244,7 +253,26 @@ def compositor(raw_dir, name, tint):
     if tint:
         socks["tint_%s" % name] = rl.outputs[M.TINT_AOV]
     post.comp_outputs(raw_dir, socks)
+    # float depth + normal for the inner ruled lines (drawn in post, like Unreal's ink pass)
+    fo = nt.nodes.new("CompositorNodeOutputFile")
+    fo.base_path = raw_dir
+    fo.format.file_format = "OPEN_EXR"
+    fo.format.color_depth = "32"
+    fo.format.color_mode = "RGBA"
+    fo.file_slots.clear()
+    for slot, sock in (("depth_%s" % name, rl.outputs["Depth"]), ("normal_%s" % name, rl.outputs["Normal"])):
+        fo.file_slots.new(slot)
+        nt.links.new(sock, fo.inputs[slot])
     return rl
+
+
+def inner_lines(depth, normal, alpha, leaf, px_m, view_dir=None):
+    """Inner ruled contours + sharp creases from the depth / normal buffers (render scale), the
+    same rule as the 3D review renders (world_gongbi_render.edge_lines)."""
+    valid = alpha > 0.5
+    solid = valid & (leaf < 0.5)
+    contour, crease = GR.edge_lines(depth, normal, solid, valid, px_m, thr_px=2.5, thr_min=0.3, view_dir=view_dir)
+    return contour | crease
 
 
 def _blur(a, s):
@@ -318,6 +346,8 @@ def render_sprite(name, out_dir, ss=None, spp=None):
         a.name = LEAF_AOV
         a.type = "VALUE"
     r = recipes.setup(family, W, H, ss=ss, spp=spp)
+    vl.use_pass_z = True
+    vl.use_pass_normal = True
     sc.cycles.use_adaptive_sampling = False
     sc.cycles.max_bounces = 0
     sc.cycles.transparent_max_bounces = 24
@@ -333,7 +363,7 @@ def render_sprite(name, out_dir, ss=None, spp=None):
         recipes.frame(family, cam, [obj])
     key = lights.screen_dir(cam, 135.0, 50.0)
     paint_scene(obj, key)
-    ruled_ink(family)
+    ruled_ink(family, **INK_OVERRIDE.get(name, {}))
     raw_dir = common.out("sprites", "raw")
     compositor(raw_dir, name, tint)
     raw = os.path.join(raw_dir, "%s_raw_%dx.png" % (name, r["ss"]))
@@ -341,6 +371,14 @@ def render_sprite(name, out_dir, ss=None, spp=None):
     times["render"] = scene.render(raw)
     img = post.load(raw)
     leaf = post.load(post.pass_path(raw_dir, "leaf_%s" % name))[..., 0]
+    depth = GR.exr_pixels(os.path.join(raw_dir, "depth_%s0001.exr" % name))[..., 0]
+    normal = GR.exr_pixels(os.path.join(raw_dir, "normal_%s0001.exr" % name))
+    px_m = cam.data.ortho_scale / float(max(sc.render.resolution_x, sc.render.resolution_y))
+    fwd = cam.matrix_world.to_3x3() @ Vector((0.0, 0.0, -1.0))
+    e = inner_lines(depth, normal, img[..., 3], leaf, px_m, tuple(fwd)).astype(np.float32)
+    e = np.clip(_blur(e, 0.55) * 1.7, 0, 1)[..., None] * INNER_ALPHA
+    ic = np.array([int(INNER_INK[k:k + 2], 16) / 255.0 for k in (1, 3, 5)], np.float32)
+    img[..., :3] = img[..., :3] * (1 - e) + ic * e
     img = leaf_outline(img, leaf, r["ss"])
     mask = None
     if tint:
@@ -357,7 +395,16 @@ def render_sprite(name, out_dir, ss=None, spp=None):
     if tint:
         m8 = post.resize(np.dstack([mask] * 3 + [np.ones_like(mask)]), (W, H))[..., 0]
         img = post.neutralize(img, (m8 > 0.5).astype(np.float32))
+        # the whole plate is multiplied by the faction colour at runtime: light, low-saturation
+        # paint outside the cloth (stone foot, anti-aliased gold piping) is laid neutral too, so
+        # check_art.py's mask-free heuristic (bright + unsaturated => cloth) holds as well
+        rgb = img[..., :3]
+        mx = rgb.max(-1)
+        sat = (mx - rgb.min(-1)) / np.maximum(mx, 1e-6)
+        light = (img[..., 3] > 0.5) & (mx > 0.4) & (sat < 0.34)
+        img = post.neutralize(img, light.astype(np.float32))
         mean, p99 = post.neutral_check(img, m8)
+        qa.max("plate neutral p99 (check_art heuristic)", post.neutral_check(img)[1], 4.0)
         qa.max("tint neutral mean", mean, 1.0)
         qa.max("tint neutral p99", p99, 4.0)
         extra["neutral"] = (round(mean, 2), round(p99, 2))
@@ -438,12 +485,13 @@ def preview_sheet(name, img):
     post.save(sheet, os.path.join(common.out("sprites"), "%s_sheet.png" % name))
 
 
-def context_sheet(out_path):
-    """All six sprites at UI sizes on a blue-green silk map patch (the in-game composition)."""
+def context_sheet(out_path, on_map=True):
+    """All six sprites at UI sizes, placed as SIronMapView places them, on the current
+    WorldMap.png (``on_map``) or on a blue-green silk patch (the gongbi map ground)."""
     from PIL import Image
     base = Image.new("RGBA", (520, 300))
     g = silk_ground(520, 300, seed=11, green=0.5)
-    mc = map_crop(520, 300)
+    mc = map_crop(520, 300) if on_map else None
     bg = Image.fromarray((np.clip(g if mc is None else mc, 0, 1) * 255).astype(np.uint8), "RGBA")
     base.alpha_composite(bg)
     p = lambda n: Image.open(os.path.join(REPO_DIR, "Content", "Data", "Art", "Map", n + ".png")).convert("RGBA")
@@ -483,7 +531,8 @@ def main():
         rep.add(n + ".png", **render_sprite(n, common.out("sprites")))
     rep.save()
     if all(os.path.isfile(os.path.join(REPO_DIR, "Content", "Data", "Art", "Map", n + ".png")) for n in SPRITES):
-        print("[ironart] context sheet", context_sheet(os.path.join(common.out("sprites"), "Sprites_in_context.png")))
+        print("[ironart] context sheets", context_sheet(os.path.join(common.out("sprites"), "Sprites_in_context.png")),
+              context_sheet(os.path.join(common.out("sprites"), "Sprites_on_silk.png"), on_map=False))
 
 
 if __name__ == "__main__":

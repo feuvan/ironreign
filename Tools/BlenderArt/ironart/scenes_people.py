@@ -337,9 +337,10 @@ def figure(mb, rng, pose="stand", outfit="soldier", cloth=0, cloth2=1, height=1.
     hfwd = Rh @ Vector((0, -1, 0))
     crown = sk.head + hup * hr * 0.25 - hfwd * hr * 0.05
     if hat not in ("helmet", "helmet_plume", "hood"):
-        # hair cap (back of the head)
-        ellipsoid(mb, sk.head + hup * hr * 0.12 - hfwd * hr * 0.12,
-                  (hr * 0.9, hr * 0.92, hr * 1.06), "Hair", 12, 8, rot=Rh)
+        # hair cap (top and back of the head): kept above the temples so its outline frames the
+        # forehead instead of running down the cheeks
+        ellipsoid(mb, sk.head + hup * hr * 0.3 - hfwd * hr * 0.16,
+                  (hr * 0.9, hr * 0.9, hr * 0.92), "Hair", 12, 8, rot=Rh)
     if hat in (None, "topknot", "band", "guan", "crown"):
         ellipsoid(mb, sk.head + hup * hr * 1.08 - hfwd * hr * 0.1, (hr * 0.38, hr * 0.38, hr * 0.42),
                   "Hair", 8, 6, rot=Rh)

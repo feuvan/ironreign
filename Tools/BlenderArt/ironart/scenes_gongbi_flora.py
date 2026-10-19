@@ -92,7 +92,7 @@ def materials(**over):
         "LeafDark": foliage("GB_LeafDark", "#2E6A5A", "#1E4A3E"),
         "LeafLight": foliage("GB_LeafLight", "malachite_l", "malachite"),
         "LeafAutumn": foliage("GB_LeafAutumn", "#C08A3A", "vermilion"),
-        "Willow": GB.wash("GB_Willow", "malachite_l", "malachite", blend=0.3),
+        "Willow": GB.wash("GB_Willow", "#9CC49A", "#5E9A72", blend=0.3, form=0.0),
         "Bamboo": GB.wash("GB_Bamboo", "#6FA07A", "#3E7A58", blend=0.4),
         "BambooLeaf": GB.wash("GB_BambooLeaf", "#4E8E66", "#2A5E44", blend=0.3, form=0.05),
         "Blossom": GB.wash("GB_Blossom", "white", "#E8C8C0", blend=0.3, form=0.0, nomist=0.5),
@@ -149,14 +149,19 @@ def view_axes(cam_dir):
 # trees
 # =============================================================================================
 def pine(mb, rng, height=12.0, lean=0.15, limbs=5, pad=None, cam_dir=(0, 1, 0), at=(0, 0, 0),
-         trunk_r=None, flat=0.32, seg=7, pad_seg=(14, 8), crown=1.0):
-    """Gnarled Chinese pine (松): crooked trunk, near-horizontal limbs, flat needle pads."""
+         trunk_r=None, flat=0.32, seg=7, pad_seg=(14, 8), crown=1.0, reach=None):
+    """Gnarled Chinese pine (松): crooked trunk, near-horizontal limbs, flat needle pads.
+    ``reach`` = (x, y) horizontal direction the tree leans and stretches its limbs towards
+    (a cliff pine reaching over the drop)."""
     right, up = view_axes(cam_dir)
     o = Vector(at)
     H = height
     tr = trunk_r or H * 0.035
-    d0 = Vector((rng.uniform(-lean, lean), rng.uniform(-lean, lean), 1.0))
-    trunk = _path(o, d0, H * 0.92, 6, rng, bend=0.22, up=0.15)
+    if reach is not None:
+        d0 = Vector((reach[0] * lean, reach[1] * lean, 1.0))
+    else:
+        d0 = Vector((rng.uniform(-lean, lean), rng.uniform(-lean, lean), 1.0))
+    trunk = _path(o, d0, H * 0.92, 6, rng, bend=0.22, up=0.15 if reach is None else 0.0)
     _tube(mb, trunk, tr, tr * 0.35, "PineBark", seg)
     pr = pad or H * 0.17
     pads = []
@@ -164,7 +169,9 @@ def pine(mb, rng, height=12.0, lean=0.15, limbs=5, pad=None, cam_dir=(0, 1, 0), 
         t = 0.45 + 0.5 * i / max(1, limbs - 1) + rng.uniform(-0.04, 0.04)
         k = min(len(trunk) - 2, int(t * (len(trunk) - 1)))
         base = trunk[k].lerp(trunk[k + 1], (t * (len(trunk) - 1)) % 1.0)
-        ang = rng.uniform(0, math.tau) if i else rng.uniform(0, math.tau)
+        ang = rng.uniform(0, math.tau)
+        if reach is not None:
+            ang = math.atan2(reach[1], reach[0]) + rng.uniform(-1.0, 1.0)
         side = Vector((math.cos(ang), math.sin(ang), rng.uniform(-0.15, 0.25)))
         L = H * (0.42 - 0.25 * t) * crown * rng.uniform(0.8, 1.2)
         limb = _path(base, side, L, 3, rng, bend=0.25, up=0.05)
@@ -217,7 +224,7 @@ def broadleaf(mb, rng, height=10.0, crown=0.42, masses=7, at=(0, 0, 0), leaf="Le
     return cc
 
 
-def willow(mb, rng, height=9.0, at=(0, 0, 0), strands=26, length=0.55):
+def willow(mb, rng, height=9.0, at=(0, 0, 0), strands=60, length=0.55):
     o = Vector(at)
     H = height
     tr = H * 0.035
@@ -235,7 +242,13 @@ def willow(mb, rng, height=9.0, at=(0, 0, 0), strands=26, length=0.55):
         L = H * length * rng.uniform(0.6, 1.1)
         pts = [p, p + Vector((rng.uniform(-0.3, 0.3), 0, 0.15)), p + Vector((rng.uniform(-0.4, 0.4), rng.uniform(-0.2, 0.2), -L * 0.5)),
                p + Vector((rng.uniform(-0.5, 0.5), rng.uniform(-0.2, 0.2), -L))]
-        mb.tube([tuple(q) for q in pts], 0.045 * H / 9, "Willow", 4, radius_fn=lambda t: 1.0 - 0.6 * t)
+        mb.tube([tuple(q) for q in pts], 0.03 * H / 9, "Willow", 4, radius_fn=lambda t: 1.0 - 0.6 * t)
+        # leaves along the strand: small pale blades
+        for j in range(5):
+            t = (j + 1) / 6.0
+            q = pts[2] + (pts[3] - pts[2]) * t if t > 0.5 else pts[1] + (pts[2] - pts[1]) * (t * 2)
+            d = Vector((rng.uniform(-1, 1), rng.uniform(-1, 1), -1.6))
+            blade(mb, q, d, H * 0.035, H * 0.008, "Willow", rng, droop=0.1, n=2)
 
 
 def bamboo(mb, rng, height=8.0, stems=7, at=(0, 0, 0), radius=1.0, cam_dir=(0, 1, 0), leaves=6,

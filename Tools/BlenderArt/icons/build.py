@@ -222,8 +222,8 @@ def sheets(out):
 
 if __name__ == "__main__":
     try:
-        import bpy  # noqa: F401
-        from ironart import scene
-        main(scene.args())
+        from ironart import scene         # needs bpy: inside Blender
     except ImportError:
         main(sys.argv[1:])
+    else:
+        main(scene.args())

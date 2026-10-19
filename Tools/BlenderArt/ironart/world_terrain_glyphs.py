@@ -41,8 +41,8 @@ KIND_MOUNTAIN, KIND_HILL, KIND_TREE = 0, 1, 2
 
 #: glyph design numbers (metres in plan; heights in *page* metres = pixels of WorldMap.png)
 GLYPH = {
-    "mountain": dict(rows=((-0.45, 1.0), (-0.1, 0.9), (0.25, 0.78), (0.55, 0.55)), spacing=0.5,
-                     rx=(0.4, 0.68), ry_frac=0.5, page_per_m=0.62, min_page=26.0, max_page=118.0,
+    "mountain": dict(rows=((-0.45, 1.0), (-0.08, 0.88), (0.3, 0.74), (0.62, 0.5)), spacing=0.55,
+                     rx=(0.5, 0.85), ry_frac=0.5, page_per_m=0.82, min_page=30.0, max_page=150.0,
                      folds=(4, 7), fold_amp=0.12, lean=0.18, shoulder=(1, 2), waist=(0.36, 0.5)),
     "hill": dict(rows=((-0.25, 1.0), (0.3, 0.75)), spacing=0.7, rx=(0.55, 0.85), ry_frac=0.5,
                  page_per_m=0.55, min_page=12.0, max_page=34.0, folds=(3, 5), fold_amp=0.06,
@@ -109,6 +109,9 @@ def layout(world, seed=4242):
                     end = min(u, L - u) / max(1.0, 0.9 * w)
                     page *= 0.55 + 0.45 * min(1.0, end)
                     rx = rng.uniform(*g["rx"]) * w * (0.75 + 0.25 * hf)
+                    # the whole glyph stays on the page (no peak cut by the map's top edge)
+                    ry_est = rx * g["ry_frac"] * 1.15
+                    page = min(page, (float(c[1]) - ry_est - 8.0) / 1.18)
                     if page >= g["min_page"] * (0.8 if ri == len(g["rows"]) - 1 else 1.0):
                         page = min(page, g["max_page"])
                         peaks.append(dict(kind=kind, x=float(c[0]), y=float(c[1]), rx=float(rx),
@@ -125,6 +128,25 @@ def layout(world, seed=4242):
                                           **_archetype(kind, rng),
                                           row=ri, stroke=si, seed=int(rng.integers(1 << 30))))
                     u += step * rng.uniform(0.8, 1.2)
+    # islands: a small blue-green peak (or two) rising from each island
+    g = GLYPH["mountain"]
+    for poly in world.m["land"][1:]:
+        xs_ = [q[0] for q in poly]
+        ys_ = [q[1] for q in poly]
+        cx, cy = float(np.mean(xs_)), float(np.mean(ys_))
+        rad = 0.5 * max(np.ptp(xs_), np.ptp(ys_))
+        n_pk = 1 if rad < 55 else 2
+        for k in range(n_pk):
+            ox = (k - 0.5 * (n_pk - 1)) * 0.6 * rad
+            rx = rad * (0.42 if n_pk == 1 else 0.36) * rng.uniform(0.9, 1.1)
+            peaks.append(dict(kind="mountain", x=cx + ox, y=cy + 0.15 * rad, rx=float(rx),
+                              ry=float(rx * 0.55), H=float(rad * rng.uniform(0.7, 0.9) * (1.0 - 0.25 * k)),
+                              lean=float(rng.uniform(-1, 1) * g["lean"]),
+                              folds=int(rng.integers(g["folds"][0], g["folds"][1] + 1)),
+                              phase=float(rng.uniform(0, 2 * np.pi)), twist=float(rng.uniform(-0.8, 0.8)),
+                              shoulders=[(float(rng.uniform(0.3, 0.6)) * rng.choice([-1, 1]), 0.6)],
+                              waist=float(rng.uniform(*g["waist"])), **_archetype("mountain", rng),
+                              row=0, stroke=-1, seed=int(rng.integers(1 << 30))))
     # keep the cities clear: shrink (or drop) a glyph whose page footprint covers a city
     kept = []
     for p in peaks:
@@ -258,10 +280,16 @@ def peak_height(p, dx, dy):
     return np.maximum(z, 0.0) * zt, th, rho, psi, fold_w
 
 
-def rasterize(peaks, cell=1.0, pad=2):
+RASTER_MARGIN = 80.0       # the glyph raster reaches past the map edge: feet cut by the
+                           # frame stay closed surfaces (no outline along the page border)
+
+
+def rasterize(peaks, cell=1.0, pad=2, margin=RASTER_MARGIN):
     """Max-composite of all glyph surfaces on a plan grid (``cell`` m): height (true m), glyph
-    index, its normalised height, theta, rho.  Returns a dict of arrays + the grid origin."""
-    Hn, Wn = int(F.MAP_H / cell) + 1, int(F.MAP_W / cell) + 1
+    index, its normalised height, theta, rho.  Grid point (j, i) is map point
+    (i * cell - margin, j * cell - margin).  Returns a dict of arrays (+ ``origin``)."""
+    M = float(margin)
+    Hn, Wn = int((F.MAP_H + 2 * M) / cell) + 1, int((F.MAP_W + 2 * M) / cell) + 1
     z = np.zeros((Hn, Wn), np.float32)
     idx = np.full((Hn, Wn), -1, np.int32)
     hn = np.zeros((Hn, Wn), np.float32)
@@ -271,11 +299,11 @@ def rasterize(peaks, cell=1.0, pad=2):
     fw = np.zeros((Hn, Wn), np.float32)
     for k, p in enumerate(peaks):
         R = 1.2 * max(p["rx"], p["ry"]) + pad
-        x0, x1 = max(0, int((p["x"] - R) / cell)), min(Wn, int((p["x"] + R) / cell) + 1)
-        y0, y1 = max(0, int((p["y"] - R) / cell)), min(Hn, int((p["y"] + R) / cell) + 1)
+        x0, x1 = max(0, int((p["x"] + M - R) / cell)), min(Wn, int((p["x"] + M + R) / cell) + 1)
+        y0, y1 = max(0, int((p["y"] + M - R) / cell)), min(Hn, int((p["y"] + M + R) / cell) + 1)
         if x1 <= x0 or y1 <= y0:
             continue
-        ys, xs = np.mgrid[y0:y1, x0:x1].astype(np.float32) * cell
+        ys, xs = np.mgrid[y0:y1, x0:x1].astype(np.float32) * cell - M
         zz, tt, rr, ff, ww = peak_height(p, xs - p["x"], ys - p["y"])
         sub = z[y0:y1, x0:x1]
         m = zz > sub
@@ -287,7 +315,16 @@ def rasterize(peaks, cell=1.0, pad=2):
         fo[y0:y1, x0:x1][m] = ff[m]
         fw[y0:y1, x0:x1][m] = ww[m]
     return {"z": z, "idx": idx, "hn": hn, "theta": th, "rho": rh, "psi": fo, "fold_w": fw,
-            "cell": cell}
+            "cell": cell, "origin": -M}
+
+
+def raster_z(r, x, y):
+    """Glyph surface height (true m) at map point (x, y) (nearest raster cell)."""
+    j = int(round((y - r["origin"]) / r["cell"]))
+    i = int(round((x - r["origin"]) / r["cell"]))
+    if 0 <= j < r["z"].shape[0] and 0 <= i < r["z"].shape[1]:
+        return float(r["z"][j, i])
+    return 0.0
 
 
 # ---------------------------------------------------------------------------------------------
@@ -382,10 +419,12 @@ def build_relief_glyphs(r, peaks, mat, name="Glyphs", box=None):
     ring[:, :-1] |= on[:, 1:]
     if box is not None:
         x0, y0, x1, y1 = box
+        o = r.get("origin", 0.0)
         m = np.zeros_like(ring)
-        m[max(0, int(y0 / cell)):max(0, int(y1 / cell) + 1), max(0, int(x0 / cell)):max(0, int(x1 / cell) + 1)] = True
+        m[max(0, int((y0 - o) / cell)):max(0, int((y1 - o) / cell) + 1),
+          max(0, int((x0 - o) / cell)):max(0, int((x1 - o) / cell) + 1)] = True
         ring &= m
-    ys, xs = np.mgrid[0:z.shape[0], 0:z.shape[1]].astype(np.float32) * cell
+    ys, xs = np.mgrid[0:z.shape[0], 0:z.shape[1]].astype(np.float32) * cell + r.get("origin", 0.0)
     # the foot ring dips below the ground: the holdout ground plane (:func:`ground_plane`)
     # hides it, so a glyph meets the ground without an outline (its foot dissolves in mist)
     X, Y, Z = shear(xs, ys, np.where(on, z, -3.0))
@@ -406,7 +445,7 @@ def build_relief_glyphs(r, peaks, mat, name="Glyphs", box=None):
     return _mesh_from_grid(name, X, Y, Z, ring, attrs, mat)
 
 
-def ground_plane(margin=50.0):
+def ground_plane(margin=RASTER_MARGIN + 60.0):
     """The map ground at z = 0 as a holdout occluder (transparent in the render, but it hides
     what lies below the ground, Freestyle included)."""
     import bpy
@@ -717,3 +756,31 @@ def instance_trees(trees, protos, collection, ground=None, seed=5):
         mod.node_group = ng
         objs.append(ob)
     return objs
+
+
+def map_trees(world, trees, seed=91):
+    """The trees the painting shows: every tree of the scenario woods, a third of the copses, the
+    hill groves and some of the riverside trees - a painted map keeps its open land open.  The
+    page scale ``ps`` makes them read at 1 px per metre."""
+    rng = np.random.default_rng(seed)
+    woods = [(f["x"], f["y"], f["r"] * 1.55) for f in world.m["forests"]]
+    copses = list(getattr(world, "copses", []))
+    keep_copse = [bool(rng.random() < 0.38) for _ in copses]
+    out = []
+    for t in trees:
+        cat = t.get("_cat", "forest")
+        x, y = t["x"], t["y"]
+        if cat in ("mountain", "lone"):
+            continue
+        in_wood = any((x - a) ** 2 + (y - b) ** 2 < r * r for (a, b, r) in woods)
+        on_island = any(F._point_in_poly((x, y), poly) for poly in world.m["land"][1:])
+        if cat in ("forest", "grove") and not in_wood and not on_island:
+            near = [i for i, (a, b, r) in enumerate(copses) if (x - a) ** 2 + (y - b) ** 2 < (2.4 * r) ** 2]
+            if near and not keep_copse[near[0]]:
+                continue
+            if not near and rng.random() < 0.6:
+                continue
+        if cat == "riparian" and rng.random() < 0.55:
+            continue
+        out.append(dict(t, ps=round(float(t["s"]) * 1.3, 3)))
+    return out

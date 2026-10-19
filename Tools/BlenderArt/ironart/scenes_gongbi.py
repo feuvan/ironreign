@@ -84,13 +84,17 @@ INK = {
     "tree": dict(t=1.15, a=0.9, taper=0.3, calli=0.35, noise=0.3, wobble=0.15, smooth=True,
                  edges=("silhouette", "border", "external_contour"), lmin=2.0,
                  dist=(20.0, 1500.0, 0.4, 0.35), color="ink"),
-    "fine": dict(t=0.7, a=0.6, taper=0.2, calli=0.0, noise=0.1, wobble=0.0, smooth=False,
+    "fine": dict(t=0.6, a=0.5, taper=0.2, calli=0.0, noise=0.1, wobble=0.0, smooth=False,
                  edges=("silhouette", "crease", "border", "external_contour"), lmin=2.0,
                  dist=(20.0, 400.0, 0.5, 0.4), color="ink"),
     # interior folds of the land (ridges / suggestive contours): off unless a scene enables it
     "land_fold": dict(t=1.0, a=0.6, taper=0.4, calli=0.5, noise=0.4, wobble=0.3, smooth=True,
                       edges=("suggestive", "ridge"), lmin=10.0, dist=(40.0, 2500.0, 0.35, 0.2),
                       color="ink", col="land", off=True),
+    # faces and hands: fine reddish-brown line (赭线), the classical way flesh is outlined
+    "skin": dict(t=0.55, a=0.75, taper=0.3, calli=0.0, noise=0.0, wobble=0.0, smooth=True,
+                 edges=("silhouette", "external_contour"), lmin=0.5, dist=(5.0, 120.0, 0.6, 0.6),
+                 color="#8A5A40"),
     "cloud": dict(t=1.0, a=0.55, taper=0.4, calli=0.3, noise=0.25, wobble=0.2, smooth=True,
                   edges=("silhouette", "external_contour"), lmin=4.0,
                   dist=(40.0, 3000.0, 0.5, 0.4), color="ink_grey"),
@@ -399,7 +403,7 @@ def people_materials(cloth_colors=None, banner_colors=None, skin=None, armor="#6
         m["Banner%d" % i] = cloth("GB_Banner%d_%s" % (i, str(c).strip("#")), c,
                                   deep=tuple(x * 0.8 for x in srgb(c)))
     sk = skin or PAL["skin"]
-    m["Skin"] = wash("GB_Skin", sk, PAL["skin_d"], blend=0.3, lo=0.2, hi=1.0, form=0.05)
+    m["Skin"] = wash("GB_Skin", sk, PAL["skin_d"], blend=0.3, lo=0.35, hi=1.0, form=0.04)
     m["Hair"] = flat("GB_Hair", "#2A2420", form=0.0)
     m["Armor"] = lamellar("GB_Armor", armor)
     m["ArmorDark"] = wash("GB_ArmorDark", "#4A4640", "#2E2A26")
@@ -407,7 +411,7 @@ def people_materials(cloth_colors=None, banner_colors=None, skin=None, armor="#6
     m["Blade"] = wash("GB_Blade", "#C8CCC8", "#8A908C", form=0.0)
     m["Bronze"] = wash("GB_Bronze", "#9A7A44", "#5E4A2A")
     m["Gold"] = wash("GB_Gold", PAL["gold"], PAL["gold_d"])
-    m["Wood"] = wash("GB_Wood", PAL["wood"], PAL["wood_d"])
+    m["Wood"] = wash("GB_Wood", "#9A7A58", "#7A5A40")
     m["Leather"] = wash("GB_Leather", "#6A4A32", "#3E2A1C")
     m["Straw"] = wash("GB_Straw", PAL["straw"], "#9A7A48")
     m["HatBlack"] = flat("GB_HatBlack", "#2A2622", form=0.0)
@@ -907,6 +911,7 @@ def mist_field(P, A, Z, h, w, bands, seed, k):
     from the origin of ``dist_from``, y_range=(y0, y1) screen limits, amount, noise_px, aniso,
     holes=0..1 (breaks inside the band)).  Screen band: dict(y=(y0, y1), soft, x=(x0, x1))."""
     m = np.zeros((h, w), np.float32)
+    outline = np.zeros((h, w), np.float32)
     yy = np.linspace(0, 1, h, dtype=np.float32)[:, None]
     xx = np.linspace(0, 1, w, dtype=np.float32)[None, :]
     for i, b in enumerate(bands):
@@ -933,6 +938,43 @@ def mist_field(P, A, Z, h, w, bands, seed, k):
                 y0, y1 = b["y_range"]
                 f = f * (smoothstep(y0 - 0.05, y0 + 0.05, yy) * (1 - smoothstep(y1 - 0.05, y1 + 0.05, yy)))
             f = f * (A > 0.001)
+        elif b.get("scallop"):
+            # 祥云 band: the top edge is a row of round cloud heads (arcs), outlined in ink
+            y0, y1 = b["y"]
+            rng = np.random.default_rng(seed + 97 * i)
+            rpx = b["scallop"] * k                       # head radius in render px
+            x0b, x1b = b.get("x", (-0.1, 1.1))
+            edge = np.full(w, np.inf, np.float32)
+            xs = np.arange(w, dtype=np.float32)
+            cx = x0b * w
+            while cx < x1b * w:
+                rr = rpx * rng.uniform(0.6, 1.3)
+                lift = rng.uniform(-0.6, 0.4) * rpx
+                inside = np.abs(xs - cx) < rr
+                arc = y0 * h + lift - np.sqrt(np.clip(rr * rr - (xs - cx) ** 2, 0, None))
+                edge = np.where(inside, np.minimum(edge, arc), edge)
+                cx += rr * rng.uniform(1.1, 1.6)
+            edge = np.where(np.isinf(edge), y0 * h, edge)
+            pix = np.arange(h, dtype=np.float32)[:, None]
+            sharp = max(1.0, 0.6 * k)
+            top = smoothstep(edge[None, :] - sharp, edge[None, :] + sharp, pix)
+            bottom = 1 - smoothstep(y1 * h - b.get("soft", 0.05) * h, y1 * h + b.get("soft", 0.05) * h, pix)
+            f = top * bottom
+            if "x" in b:
+                x0, x1 = b["x"]
+                sx = b.get("soft_x", 0.04)
+                f = f * smoothstep(x0 - sx, x0 + sx, xx) * (1 - smoothstep(x1 - sx, x1 + sx, xx))
+            if "dist_min" in b:
+                dm = b["dist_min"]
+                f = f * np.maximum(smoothstep(dm * 0.92, dm * 1.08, Z), 1.0 - (A > 0.01))
+            lw = b.get("line_px", 0.9) * k * 0.5
+            ln = 1 - smoothstep(lw * 0.5, lw * 1.5, np.abs(pix - edge[None, :]))
+            ln = ln * (bottom > 0.5) * b.get("line", 0.5)
+            if "x" in b:
+                ln = ln * smoothstep(x0 - sx, x0 + sx, xx) * (1 - smoothstep(x1 - sx, x1 + sx, xx))
+            outline = np.maximum(outline, ln * b.get("amount", 1.0))
+            m = np.maximum(m, np.clip(f * b.get("amount", 1.0), 0, 1))
+            continue
         else:
             y0, y1 = b["y"]
             soft = b.get("soft", 0.04)
@@ -950,7 +992,7 @@ def mist_field(P, A, Z, h, w, bands, seed, k):
         hk = b.get("holes", 0.25)
         f = f * (1 - hk * smoothstep(0.55, 0.75, hole))
         m = np.maximum(m, np.clip(f * amt, 0, 1))
-    return m
+    return m, outline
 
 
 def _shift(a, dy, dx):
@@ -1026,13 +1068,17 @@ def composite(ps, look, seed=0, overlays=None, master_size=None, k=4, m=2):
     cover = A * (1.0 - bare) * (1.0 - fade * (fd or {}).get("cover", 0.0))
     # ---- mist ---------------------------------------------------------------------------------
     mist = np.zeros((H, W), np.float32)
+    mist_line = np.zeros((H, W), np.float32)
     if look.get("mist"):
-        mist = mist_field(P, A, Z, H, W, look["mist"], seed, k) * (1 - nomist)
+        mist, mist_line = mist_field(P, A, Z, H, W, look["mist"], seed, k)
+        mist = mist * (1 - nomist)
     cover = cover * (1.0 - mist)
     # ---- sky wash under everything, 2D sky overlays -------------------------------------------
     skc, ska = sky_layer(H, W, look.get("sky", {}))
     if overlays is not None:
         skc, ska = overlays.under(skc, ska)
+    # mist in front of the sky clears the sky wash too (clouds are bare silk)
+    ska = ska * (1.0 - mist * look.get("mist_sky", 1.0) * (A < 0.999))
     # ---- layer: silk_ref <- sky <- objects ----------------------------------------------------
     paint = skc * (ska * (1 - cover))[..., None] + col * cover[..., None]
     pa = cover + ska * (1 - cover)
@@ -1054,8 +1100,9 @@ def composite(ps, look, seed=0, overlays=None, master_size=None, k=4, m=2):
         la = np.maximum(la, shore_line(P, A, look["shore"], k, seed) * (1 - fade * 0.8))
     shader_k = look.get("shader_ink", 1.0) * RECIPE["shader_ink"]
     sink = sink * shader_k * (1 - fade * look.get("shader_fade", 0.9))
-    sa = sink * (1 - mist * 0.95)
-    la = la * (1 - mist * look.get("mist_ink", 0.9))
+    sa = sink * (1 - mist)
+    la = la * (1 - mist * look.get("mist_ink", 1.0))
+    la = np.maximum(la, mist_line * (1 - nomist))
     # bleed: a soft halo of thinned ink around every line
     bl = blur(la, 0.45 * k) * RECIPE["ink_bleed"]
     la2 = np.clip(np.maximum(la, bl * 0.6), 0, 1)

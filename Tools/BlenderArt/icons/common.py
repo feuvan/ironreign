@@ -149,7 +149,7 @@ LIBRARY = {
     # building
     "stone": (P, dict(name="I_Stone", light="#D2CAB4", deep="#8E8672", fen=0.5)),
     "masonry": (P, dict(name="I_Masonry", light="#CFC6AE", deep="#8A826C", fen=0.35,
-                        ink=_bricks((2.6, 4.2, 1.0), 0.6))),
+                        ink=_bricks((1.0, 1.0, 1.0), 0.55, (0.42, 0.2), 0.035))),
     "plaster": (P, dict(name="I_Plaster", light="#F2EADA", deep="#CDBF9E", fen=0.4)),
     "roof": (P, dict(name="I_Roof", light="#7E9094", deep="#3A4A50", fen=0.5)),
     "roof_ridge": (P, dict(name="I_RoofRidge", light="#5E6E72", deep="#2C383C", fen=0.4)),
@@ -162,6 +162,8 @@ LIBRARY = {
     "tassel_red": (P, dict(name="I_TasselRed", light="#C84A36", deep="#8A2418", fen=0.3)),
     "hide": (P, dict(name="I_Hide", light="#F0E2C2", deep="#BEA070", fen=0.65)),
     "leather": (P, dict(name="I_Leather", light="#9A6A42", deep="#4E3020", fen=0.6)),
+    "ox": (P, dict(name="I_Ox", light="#B87A48", deep="#5E3418", fen=0.75)),
+    "bone": (P, dict(name="I_Bone", light="#F0E6CC", deep="#B8A47C", fen=0.6)),
     "jade": (P, dict(name="I_Jade", light="#9ACCAE", deep="#3E8E6E", fen=0.7)),
     "skin": (P, dict(name="I_Skin", light="#F4E2C8", deep="#CC9C78", fen=0.6, formk=0.12)),
     "ink": (gb.flat, dict(name="I_Ink", color="#2A241E")),

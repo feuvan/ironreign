@@ -34,6 +34,7 @@ from . import world_terrain_fields as F
 from .world_terrain_paint import Painter, hexc, AW, AH
 
 SS = 2       # canvas pixels per metre
+K_PAGE = 1.0 / math.tan(math.radians(38.0))    # glyph height -> page (world_terrain_glyphs.K)
 
 #: palette (sRGB) - DESIGN.md section 8 mineral pigments and the silk ground
 GP = {
@@ -41,13 +42,13 @@ GP = {
     "ink": "#1E1A16", "ink_blue": "#2C4058",
     "malachite": "#3E8E6E", "mal_light": "#8CBFA0", "mal_deep": "#2A6E55",
     "azurite": "#2B5C8A", "azu_light": "#7FA6C8", "azu_deep": "#21476E",
-    "ochre": "#A0643A", "ochre_light": "#C49A6A", "umber": "#6E4A30",
+    "ochre": "#A0643A", "ochre_light": "#C49A6A", "ochre_pale": "#D2B48A", "umber": "#6E4A30",
     "plain_green": "#A9BE92", "plain_ochre": "#CDB283", "sand": "#E4D3A8",
-    "desert": "#C99D62", "dot": "#7A5534",
+    "desert": "#D4A867", "dot": "#7A5534",
     "pine": "#2F5E4C", "broad": "#4F8A63", "bamboo": "#7EA766", "trunk": "#5B4330",
     "leaf_dot": "#1F3A2E", "tree_ink": "#1C3328",
-    "water": "#86AEC6", "water_deep": "#5F8DB0", "wave": "#3E6386", "river": "#8FB4CE",
-    "sea": "#AFC8D2",
+    "water": "#86AEC6", "water_deep": "#5F8DB0", "wave": "#3E6386", "river": "#86B0CF",
+    "sea": "#94B9D2",
     "white": "#F0E8D8",
 }
 GC = {k: hexc(v) for k, v in GP.items()}
@@ -88,13 +89,13 @@ class MapPainter(Painter):
     # -- silk ----------------------------------------------------------------------------------
     def silk(self):
         """Aged silk: mottled warm ground, warp and weft fibres, faint stains, darker edges."""
-        t = 0.38 + 0.2 * self.vn(260.0, 1, 3) + 0.08 * self.vn(45.0, 2, 2)
+        t = 0.4 + 0.13 * self.vn(300.0, 1, 3) + 0.05 * self.vn(45.0, 2, 2)
         col = np.empty(self.shape + (3,), np.float32)
         col[:] = GC["silk_light"]
         col += (GC["silk_dark"] - GC["silk_light"]) * np.clip(t, 0, 1)[..., None]
         # stains / foxing: a few soft blooms of darker ochre
         st = T.smoothstep(1.2, 2.4, self.vn(60.0, 3, 2))
-        glaze(col, GC["stain"] * 1.05, 0.12 * st)
+        glaze(col, GC["stain"] * 1.05, 0.07 * st)
         # warp (vertical) and weft (horizontal) threads: per-column / per-row tone, broken up
         rng = np.random.default_rng(self.seed + 11)
         rows = rng.standard_normal(AH).astype(np.float32)
@@ -121,28 +122,50 @@ class MapPainter(Painter):
         humid = np.clip(T.smoothstep(700.0, 1300.0, y) + 0.4 * np.exp(-np.maximum(self.river_d - self.river_hw, 0) / 80.0), 0, 1)
         # pale plains glaze: green in the humid lands, ochre in the dry west
         a_g = (0.10 + 0.05 * n1 + 0.03 * n2 + 0.07 * humid) * (1 - dry) * land
-        a_o = (0.12 + 0.05 * n2) * dry * land
+        a_o = (0.10 + 0.03 * n2) * dry * land
         glaze(col, GC["plain_green"], np.clip(a_g, 0, 1))
         glaze(col, GC["plain_ochre"], np.clip(a_o, 0, 1))
         # washes dry with a deeper tide-line
         tide = np.exp(-(n1 / 0.06) ** 2) * land
-        col *= (1.0 - 0.025 * tide)[..., None]
+        col *= (1.0 - 0.012 * tide)[..., None]
         # deserts: ochre with fine dots
-        des = np.clip(T.smoothstep(0.15, 0.7, self.desert + 0.06 * n2), 0, 1) * land
-        glaze(col, GC["desert"], (0.2 + 0.04 * n2) * des)
+        des = np.clip(T.smoothstep(0.3, 0.62, self.desert + 0.08 * n2), 0, 1) * land
+        glaze(col, GC["desert"], (0.2 + 0.03 * n2) * des)
         d1 = self.dots(0.4, 0.16 * des, 31, soft=0.2)
         d2 = self.dots(0.75, 0.07 * des, 32, soft=0.2)
         glaze(col, GC["dot"], np.clip(0.6 * d1 + 0.5 * d2, 0, 1) * des)
+        # dune marks: short crescent strokes across the wind, scattered over the sand
+        dph = (self.x * 0.8 + self.y * 0.6) / 16.0 + 0.9 * self.vn(70.0, 33, 1) + 0.15 * self.vn(14.0, 35, 1)
+        dk = np.floor(dph + 0.5)
+        dd = np.abs(dph - dk) / np.maximum(grad_mag(dph), 0.02)
+        dash = T.smoothstep(1.0, 1.4, self.vn(9.0, 34, 1) + 0.5 * np.sin(dk * 4.1))
+        dune = line_cov(dd, 0.85 * SS * 0.65) * dash * T.smoothstep(0.55, 0.9, des)
+        glaze(col, GC["dot"], 0.4 * dune)
         # ranges and hills: ochre and green glazes on the ground they stand on (plan)
         foot = np.clip(np.maximum(self.foot, 0.8 * self.hill), 0, 1) * land
-        glaze(col, GC["ochre_light"], 0.28 * T.smoothstep(0.15, 0.6, foot + 0.1 * n2))
-        glaze(col, GC["mal_light"], 0.18 * T.smoothstep(0.3, 0.8, foot + 0.15 * n1))
-        # woods: a green glaze under the tree glyphs, deeper at its drying edge
-        fz = T.smoothstep(0.08, 0.5, self.forest + 0.06 * n2) * land
+        glaze(col, GC["ochre_light"], 0.12 * T.smoothstep(0.25, 0.7, foot + 0.1 * n2))
+        glaze(col, GC["mal_light"], 0.12 * T.smoothstep(0.3, 0.8, foot + 0.15 * n1))
+        # woods: a green glaze under the painted trees (where the painting has trees), deeper at
+        # its drying edge
+        fz = T.smoothstep(0.15, 0.55, self.wood_density() + 0.06 * n2) * land
         glaze(col, GC["mal_light"], 0.32 * fz)
         edge = np.clip(fz - F.fast_blur(fz, 6.0), 0, 1)
         glaze(col, GC["malachite"], 0.25 * T.smoothstep(0.0, 0.12, edge))
         return col
+
+    def wood_density(self):
+        """0..1 density of the painted trees (``self.map_trees``) on this crop."""
+        trees = getattr(self, "map_trees", None)
+        if not trees:
+            return np.clip(self.forest, 0, 1)
+        tx0, ty0, tx1, ty1 = self.box
+        acc = np.zeros(self.shape, np.float32)
+        for t in trees:
+            i, j = int(t["x"] * SS) - tx0, int((t["y"] - 0.3 * K_PAGE * t.get("z", 0.0)) * SS) - ty0
+            if 0 <= i < self.shape[1] and 0 <= j < self.shape[0]:
+                acc[j, i] += 1.0
+        dens = F.fast_blur(acc, 6.0 * SS) * (math.pi * (6.0 * SS) ** 2) / 2.2
+        return np.clip(dens, 0, 1)
 
     # -- water ----------------------------------------------------------------------------------
     def _coast_along(self):
@@ -164,7 +187,7 @@ class MapPainter(Painter):
         n1 = self.vn(90.0, 41, 3)
         n2 = self.vn(12.0, 42, 2)
         # sea: a pale azurite wash, deeper along the shore (晕染) and settling offshore
-        body(col, GC["sea"], np.clip(0.42 + 0.06 * n1, 0, 1) * sea)
+        body(col, GC["sea"], np.clip(0.62 + 0.06 * n1, 0, 1) * sea)
         glaze(col, GC["water"], np.clip(0.28 * np.exp(-off / 60.0) + 0.1 * T.smoothstep(80.0, 500.0, off + 60.0 * n1), 0, 1) * sea)
         # wave lines (水纹): gently waving parallel lines along the shore, broken into strokes,
         # fading out offshore
@@ -183,7 +206,8 @@ class MapPainter(Painter):
         glaze(col, GC["wave"], 0.55 * np.clip(wl, 0, 1))
         # lakes: glaze, concentric ripples, ink shore
         lsd = self.lake_sd * SS
-        glaze(col, GC["water"], 0.42 * lake)
+        body(col, GC["sea"], 0.7 * lake)
+        glaze(col, GC["water"], 0.22 * lake)
         glaze(col, GC["water_deep"], 0.15 * T.smoothstep(10.0, 70.0, lsd) * lake)
         lp = lsd / (7.0 * SS) + 0.2 * n2
         lk = np.floor(lp + 0.5)
@@ -201,6 +225,7 @@ class MapPainter(Painter):
         tx0, ty0, tx1, ty1 = self.box
         ink = np.zeros(self.shape, np.float32)
         wash = np.zeros(self.shape, np.float32)
+        ripple = np.zeros(self.shape, np.float32)
         for c in self.w.rivers:
             pts = np.asarray(c["pts"], np.float64)
             t_m, w_m = np.asarray(c["t"]), np.asarray(c["w"])
@@ -221,10 +246,15 @@ class MapPainter(Painter):
             w_ = np.where(ok, T.smoothstep(hw + 0.5, hw - 0.5, d), 0.0)
             lw = (0.95 + 0.25 * src) * SS * 0.62
             bank = np.where(ok, line_cov(d - hw, lw), 0.0) * (0.35 + 0.65 * src)
+            # a few ripple strokes down the middle of the wider reaches
+            rip = np.where(ok, line_cov(d, 0.6 * SS * 0.6), 0.0) * T.smoothstep(4.0 * SS, 6.0 * SS, hw)
+            rip *= T.smoothstep(0.2, 0.6, np.sin(t / (9.0 * SS)) + 0.4 * np.sin(t / (3.1 * SS) + 1.0))
             wash[sl] = np.maximum(wash[sl], w_)
             ink[sl] = np.maximum(ink[sl], bank)
+            ripple[sl] = np.maximum(ripple[sl], rip)
         dry = self.land_m * (1.0 - self.lake_m)
-        body(col, GC["river"], 0.62 * wash * dry)
+        body(col, GC["river"], 0.74 * wash * dry)
+        glaze(col, GC["wave"], 0.45 * ripple * wash * dry)
         self.ink_extra = np.maximum(self.ink_extra, 0.8 * ink * T.smoothstep(-2.0, 2.0, self.sd_px)
                                     * (1.0 - self.lake_m))
         return col
@@ -266,8 +296,8 @@ class MapPainter(Painter):
         h2 = hn + 0.08 * (rnd - 0.5) + 0.05 * n1
         green_pk = rnd < 0.3
         c_m = np.empty(self.shape + (3,), np.float32)
-        c_m[:] = GC["ochre_light"]
-        c_m += (GC["ochre"] - c_m) * T.smoothstep(0.1, 0.3, h2 + 0.03 * n1)[..., None] * 0.45
+        c_m[:] = GC["ochre_pale"]
+        c_m += (GC["ochre"] - c_m) * T.smoothstep(0.1, 0.32, h2 + 0.03 * n1)[..., None] * 0.55
         tm = T.smoothstep(0.2, 0.46, h2)
         c_m += (GC["malachite"] - c_m) * tm[..., None]
         tall = T.smoothstep(0.35, 0.75, hpage + 0.15 * (rnd - 0.5))
@@ -306,7 +336,9 @@ class MapPainter(Painter):
         c_h += (GC["mal_light"] - c_h) * (0.75 * th_h)[..., None]
         c_h += (GC["malachite"] - c_h) * (0.35 * th_h * (0.4 + 0.6 * near))[..., None]
         c_h += (GC["umber"] - c_h) * (0.25 * near * (1 - th_h))[..., None]
-        c_h += (GC["ink"] - c_h) * (0.25 * cun * T.smoothstep(0.2, 0.5, hn))[..., None]
+        c_h += (GC["ink"] - c_h) * (np.clip(0.5 * fl + 0.32 * cun, 0, 1) * T.smoothstep(0.2, 0.5, hn))[..., None]
+        moss_h = self.dots(0.9, 0.3, 69, soft=0.3) * T.smoothstep(0.7, 0.9, hn) * near
+        c_h += (GC["ink"] - c_h) * (0.7 * moss_h)[..., None]
         # ---- trees: crown by species, leaf dots, trunks in umber
         spc = ct * 0.5 + 0.5
         tc = np.where((spc < 0.35)[..., None], GC["broad"], np.where((spc < 0.65)[..., None], GC["pine"], GC["bamboo"]))
@@ -317,7 +349,7 @@ class MapPainter(Painter):
         trunk = (rho < 0.5)
         tc = np.where(trunk[..., None], GC["trunk"], tc)
         # ---- mist: the feet of the glyphs dissolve into bare silk
-        mist_m = T.smoothstep(0.04, 0.26, hn + 0.04 * n1 + 0.03 * self.vn(60.0, 68, 1))
+        mist_m = T.smoothstep(0.06, 0.22, hn + 0.05 * n1 + 0.04 * self.vn(60.0, 68, 1))
         mist_h = T.smoothstep(0.02, 0.3, hn + 0.06 * n1)
         a_m = mtn * mist_m
         a_h = hil * mist_h
@@ -329,6 +361,8 @@ class MapPainter(Painter):
         # ink: Freestyle contours (fading into the mist with the foot), then the 2D ink
         mist_ink = np.where(kind > 1.5, 1.0, np.where(kind > 0.5, mist_h, mist_m) ** 0.7)
         self.tree_w = np.clip(F.fast_blur(tre, 1.5) * 1.5, 0, 1) * (1 - np.clip(mtn + hil, 0, 1))
+        # the plan-view ink (rivers, shores) lies under the glyphs
+        self.ink_extra = self.ink_extra * (1.0 - np.clip(a_m + a_h + a_t, 0, 1))
         self.ink_glyph = ink_a * np.where(A > 0.02, mist_ink, 1.0)
         return col
 

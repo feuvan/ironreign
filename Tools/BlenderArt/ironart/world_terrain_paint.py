@@ -41,11 +41,11 @@ def hexc(h):
 #: pale washes on the silk tone, mountains carry the saturated malachite / azurite.
 PAL = {
     "silk": "#DCCBA2",
-    "plain_green": "#B4BF94", "plain_green_deep": "#9DB287", "plain_ochre": "#C8BA97",
+    "plain_green": "#AFBF98", "plain_green_deep": "#98B08B", "plain_ochre": "#C8BA97",
     "plain_warm": "#C3B691", "field_a": "#B0BD8E", "field_b": "#C6B588", "field_c": "#BABB8E",
     "field_d": "#A9B990", "field_edge": "#97A479",
     "steppe": "#CCBD99", "desert": "#CFBA90", "desert_light": "#D8C7A2", "desert_dot": "#8F7356",
-    "foot_ochre": "#C09D70", "ochre": "#A97C52", "umber": "#7F5F42",
+    "foot_ochre": "#BFA27C", "ochre": "#A77D56", "umber": "#7F5F42",
     "mal_light": "#8CBFA0", "malachite": "#3E8E6E", "mal_deep": "#2D7258",
     "azu_light": "#7FA6C8", "azurite": "#2B5C8A", "azu_deep": "#244E78",
     "forest": "#6E9670", "forest_deep": "#557E5C", "ink_dot": "#2F4636",
@@ -317,9 +317,9 @@ class Painter:
         # ridge highlight: a paler wash on the crests and spur backs (lead white over the pigment)
         hi = ridge * T.smoothstep(40.0, 100.0, h) * (0.6 + 0.4 * T.smoothstep(-0.5, 1.0, n2))
         hl = lerp(C["mal_light"], C["azu_light"], top)
-        col = over(col, hl, 0.32 * hi)
+        col = over(col, hl, 0.4 * hi)
         # valley wash: deeper ink-green pooled in the gullies
-        col = over(col, lerp(C["mal_deep"], C["ink"], 0.35), 0.3 * valley * T.smoothstep(30.0, 80.0, h))
+        col = over(col, lerp(C["mal_deep"], C["ink"], 0.4), 0.42 * valley * T.smoothstep(30.0, 80.0, h))
         # 4. hemp-fibre texture strokes (披麻皴) running down the slope in the valleys and on
         #    the steep flanks
         hs = F.fast_blur(hm, 2.0)
@@ -388,7 +388,7 @@ class Painter:
         col = over(col, C["sand_wet"], 0.8 * T.smoothstep(0.9, 0.05, h) * T.smoothstep(-1.5, -0.1, h))
         sea = T.smoothstep(0.05, -0.4, h) * (lake < 0.5)
         dep = np.clip(-h, 0, 40.0)
-        sb = lerp(C["sea_shallow"], C["sea_mid"], T.smoothstep(1.0, 14.0, dep + 2.0 * n))
+        sb = lerp(C["sea_shallow"], C["sea_mid"], T.smoothstep(1.0, 14.0, dep + 2.0 * self.vn(60.0, 73, 2)))
         sb = lerp(sb, C["sea_deep"], T.smoothstep(16.0, 38.0, dep))
         col = over(col, sb, sea)
         water = np.maximum(np.maximum(rw, lake), T.smoothstep(0.1, -0.3, h) * (lake < 0.5))

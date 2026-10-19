@@ -223,7 +223,21 @@ class Face:
         self.nose()
         self.mouth()
         self.wrinkles()
+        if self.s.get("huadian"):
+            self.huadian(self.s["huadian"])
         return self.objs
+
+    def huadian(self, hd):
+        """花钿: a small painted flower between the brows (Tang court make-up)."""
+        petals = hd.get("petals", 5)
+        r = hd.get("r", 0.26) * CM
+        a = np.linspace(0, 2 * math.pi, 60, endpoint=False)
+        rr = r * (0.55 + 0.45 * np.abs(np.cos(a * petals / 2)) ** 0.8)
+        z0 = self.H.eye_z + hd.get("dz", 2.25) * CM
+        pts = np.stack([np.sin(a) * rr, z0 + np.cos(a) * rr * 1.25], 1)
+        mat = wash_material("Huadian", hd.get("color", "#C8302A"), 0.95, self.skin_cfg, 0.75)
+        self.objs.append(geo.decal_fill("Huadian", self.surf, pts, self.col, mat,
+                                        offset=0.0005, rings=4, parent=self.parent))
 
     # ---------------------------------------------------------------------------- eye
     def eye(self, side):

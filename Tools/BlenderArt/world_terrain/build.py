@@ -6,21 +6,22 @@ Outputs (DESIGN.md 12.2 / section 8):
     Content/Data/Art3D/Terrain/Terrain.json   terrain contract
     Content/Data/Art3D/Terrain/Height.png      1201 x 751, 16-bit grey (pixel (i, j) = map (2i, 2j))
     Content/Data/Art3D/Terrain/Trees.json      tree instances
-    ArtSource/Terrain/Albedo.png               4800 x 3000 sRGB ground colour, no lighting
+    ArtSource/Terrain/Albedo.png               4800 x 3000 sRGB ground pigment (gongbi blue-green,
+                                               no lighting)
     ArtSource/Terrain/Masks.png                4800 x 3000 RGBA: R water, G forest, B rock/snow, A road
     ArtSource/Textures/Water_Normal.png        1024 x 1024 tileable normal map (OpenGL)
     ArtSource/Textures/Water_Foam.png          1024 x 1024 tileable foam mask
-    Content/Data/Art/Map/WorldMap.png          2400 x 1500 2D fallback map (Cycles, top-down)
+    Content/Data/Art/Map/WorldMap.png          2400 x 1500 gongbi painted map on silk (2D fallback)
     ArtSource/manifest.json                    entries added, version bumped
 Scratch (previews, caches): $IRONART_OUT/world_terrain/
 
 Options
     --stages a,b,...   subset of: fields paint trees water worldmap preview qa manifest
                        (default: all, in that order)
-    --reuse            load the field / paint caches from scratch when present (iteration only;
-                       a clean run rebuilds everything and produces identical files)
-    --crop x0,y0,x1,y1 worldmap stage: render only this map rectangle (metres) to scratch
-    --spp N            override the worldmap samples (iteration)
+    --reuse            load the world cache from scratch when present (iteration only; a clean run
+                       rebuilds everything and produces identical files)
+    --crop x0,y0,x1,y1 worldmap stage: paint only this map rectangle (metres) to scratch
+    --spp N            override the glyph / preview samples (iteration)
     --views N          preview stage: number of 3/4 views (default all)
 """
 
@@ -41,6 +42,14 @@ STAGES = ["fields", "paint", "trees", "water", "worldmap", "preview", "qa", "man
 ART3D = os.path.join(REPO_DIR, "Content", "Data", "Art3D", "Terrain")
 ARTSRC = os.path.join(REPO_DIR, "ArtSource")
 WORLDMAP = os.path.join(REPO_DIR, "Content", "Data", "Art", "Map", "WorldMap.png")
+MANIFEST_FILES = ["Terrain/Albedo.png", "Terrain/Masks.png", "Textures/Water_Normal.png",
+                  "Textures/Water_Foam.png"]
+
+#: worldmap render: glyph layer samples (flat emission + AOVs: anti-aliasing only)
+GLYPH_SPP = 12
+#: the 3/4 previews: (map x, map y, camera distance m, pitch deg) like the Unreal strategy camera
+PREVIEW_VIEWS = [(1240, 760, 1700.0, 60.0), (700, 430, 1050.0, 52.0), (1250, 1150, 1100.0, 55.0),
+                 (1200, 820, 2600.0, 68.0)]
 
 
 def scratch(*p):
@@ -89,18 +98,22 @@ class Build:
         self.world = None
         self.painter = None
         self.trees = None
+        self.trees_cat = None
 
-    # -- stages ------------------------------------------------------------------------------
+    # -- world ---------------------------------------------------------------------------------
     def get_world(self):
         if self.world is not None:
             return self.world
         cache = scratch("world.pkl")
         if self.a["reuse"] and os.path.isfile(cache):
-            self.world = F.World.load(cache, log=log)
-            log("[build] world from cache")
-        else:
-            self.world = F.build_world(log=log)
-            self.world.save(cache)
+            try:
+                self.world = F.World.load(cache, log=log)
+                log("[build] world from cache")
+                return self.world
+            except Exception as exc:          # a cache from another numpy: rebuild
+                log("[build] world cache unusable (%s): rebuilding" % exc)
+        self.world = F.build_world(log=log)
+        self.world.save(cache)
         return self.world
 
     def stage_fields(self):
@@ -118,6 +131,7 @@ class Build:
         log("[build] Height.png %s, h %.1f..%.1f m" % (hp.shape[::-1], float(w.f["h"].min()),
                                                       float(w.f["h"].max())))
 
+    # -- albedo / masks ----------------------------------------------------------------------------
     def get_painter(self):
         if self.painter is not None:
             return self.painter
@@ -126,45 +140,40 @@ class Build:
         return self.painter
 
     def stage_paint(self):
-        from ironart import world_terrain_recipe as RC
-        from ironart import world_terrain_water as WA
         p = self.get_painter()
         os.makedirs(os.path.join(ARTSRC, "Terrain"), exist_ok=True)
-        Image.fromarray(p.albedo8(True), "RGB").save(os.path.join(ARTSRC, "Terrain", "Albedo.png"))
-        Image.fromarray(p.masks(), "RGBA").save(os.path.join(ARTSRC, "Terrain", "Masks.png"))
-        # scratch inputs of the 2D render
-        Image.fromarray(p.albedo8(False), "RGB").save(scratch("albedo_noroads.png"))
-        Image.fromarray(np.round(p.water * 255).astype(np.uint8), "L").save(scratch("water_mask.png"))
+        alb = p.albedo8(True)
+        Image.fromarray(alb, "RGB").save(os.path.join(ARTSRC, "Terrain", "Albedo.png"), optimize=True)
+        m = p.masks()
+        Image.fromarray(m, "RGBA").save(os.path.join(ARTSRC, "Terrain", "Masks.png"), optimize=True)
+        Image.fromarray(m[..., 0], "L").save(scratch("water_mask.png"))
         np.save(scratch("fieldm.npy"), p.fieldm.astype(np.float16))
-        np.save(scratch("bankm.npy"), p.bankm.astype(np.float16))
-        sea = WA.sea_colour(p, RC.WORLDMAP["sea"])
-        Image.fromarray(np.round(sea * 255).astype(np.uint8), "RGB").save(scratch("sea.png"))
-        a = Image.fromarray(p.albedo8(True), "RGB")
-        a.resize((1200, 750), Image.LANCZOS).save(scratch("albedo_small.png"))
-        Image.fromarray(p.masks()[..., :3], "RGB").resize((1200, 750), Image.LANCZOS).save(scratch("masks_small.png"))
+        Image.fromarray(alb, "RGB").resize((1200, 750), Image.LANCZOS).save(scratch("albedo_small.png"))
+        Image.fromarray(m[..., :3], "RGB").resize((1200, 750), Image.LANCZOS).save(scratch("masks_small.png"))
 
+    # -- trees -----------------------------------------------------------------------------------
     def stage_trees(self):
         from ironart import world_terrain_trees as TR
         w = self.get_world()
-        fm = bk = None
+        fm = None
         if self.painter is not None:
-            fm, bk = self.painter.fieldm, self.painter.bankm
+            fm = self.painter.fieldm
         elif os.path.isfile(scratch("fieldm.npy")):
             fm = np.load(scratch("fieldm.npy")).astype(np.float32)
-            if os.path.isfile(scratch("bankm.npy")):
-                bk = np.load(scratch("bankm.npy")).astype(np.float32)
-        trees, counts = TR.scatter(w, fm, log=log, bankm=bk)
+        trees, counts = TR.scatter(w, fm, log=log)
         probs = TR.check(w, trees)
         if probs:
             for pr in probs[:20]:
                 log("[trees] QA " + pr)
             raise RuntimeError("%d tree placement problems" % len(probs))
+        self.trees_cat = trees
+        with open(scratch("trees_cat.json"), "w") as f:
+            json.dump(trees, f)
         self.trees = TR.to_json(trees)
         os.makedirs(ART3D, exist_ok=True)
         with open(os.path.join(ART3D, "Trees.json"), "w", encoding="utf-8") as f:
             json.dump(self.trees, f, separators=(",", ":"))
             f.write("\n")
-        self.tree_counts = counts
 
     def get_trees(self):
         if self.trees is None:
@@ -172,6 +181,13 @@ class Build:
                 self.trees = json.load(f)
         return self.trees
 
+    def get_trees_cat(self):
+        if self.trees_cat is None:
+            with open(scratch("trees_cat.json")) as f:
+                self.trees_cat = json.load(f)
+        return self.trees_cat
+
+    # -- water -----------------------------------------------------------------------------------
     def stage_water(self):
         from ironart import world_terrain_water as WA
         os.makedirs(os.path.join(ARTSRC, "Textures"), exist_ok=True)
@@ -180,7 +196,6 @@ class Build:
         foam = WA.water_foam(1024)
         Image.fromarray(foam, "L").save(os.path.join(ARTSRC, "Textures", "Water_Foam.png"))
         log("[water] normal map: %s" % json.dumps(info))
-        # preview: 2x2 tiles lit from the top-left (seam check) + foam tiles
         n = rgb.astype(np.float32) / 127.5 - 1.0
         L = np.array([-0.5, 0.5, 0.7])
         L /= np.linalg.norm(L)
@@ -190,84 +205,114 @@ class Build:
         prev = np.concatenate([np.round(tile * 255).astype(np.uint8), ftile], 1)
         Image.fromarray(prev).resize((1024, 512), Image.LANCZOS).save(scratch("water_tiles.png"))
 
+    # -- the 2D gongbi map -------------------------------------------------------------------------
     def stage_worldmap(self):
-        from ironart import world_terrain_render as WR
-        from ironart import world_terrain_recipe as RC
-        from ironart import scene, post
-        rec = RC.WORLDMAP
+        import bpy
+        from ironart import scene
+        from ironart import world_terrain_glyphs as G
+        from ironart import world_terrain_gongbi as G2
         w = self.get_world()
-        trees = self.get_trees()
         crop = self.a["crop"]
-        scene.reset(seed=11)
-        if crop:
-            x0, y0, x1, y1 = crop
-            tw, th = int(round(x1 - x0)), int(round(y1 - y0))
-        else:
-            x0, y0, x1, y1 = 0.0, 0.0, float(F.MAP_W), float(F.MAP_H)
-            tw, th = rec["size"]
-        spp = self.a["spp"] or rec["spp"]
-        scene.setup_cycles(samples=spp, transparent=False, preset="map", view="Standard", look="None",
-                           adaptive_threshold=rec["adaptive"])
-        scene.set_resolution(tw, th, rec["ss"])
-        normal = os.path.join(ARTSRC, "Textures", "Water_Normal.png")
+        x0, y0, x1, y1 = crop if crop else (0.0, 0.0, float(F.MAP_W), float(F.MAP_H))
         t0 = time.time()
-        WR.build_terrain(w.f["h"], scratch("albedo_noroads.png"), scratch("water_mask.png"), normal, step=1)
-        WR.build_sea(scratch("sea.png"), normal)
-        protos = WR.tree_prototypes()
-        sel = [t for t in trees if x0 - 20 <= t["x"] <= x1 + 20 and y0 - 20 <= t["y"] <= y1 + 20]
-        WR.instance_trees(sel, w.f["h"], protos)
-        cam = WR.camera_top(x0, y0, x1, y1)
-        WR.light_top(cam, rec)
-        k = rec["kuwahara"]
-        post.comp_painterly(size=k["size"], sharpness=k["sharpness"], eccentricity=k["eccentricity"],
-                            amount=k["amount"], ink=False)
+        peaks = G.layout(w)
+        r = G.rasterize(peaks, cell=1.0)
+        mtrees = G.map_trees(w, self.get_trees_cat())
+        for t in mtrees:
+            t["z"] = G.raster_z(r, t["x"], t["y"])
+        log("[worldmap] %d glyph peaks (%d mountain), %d painted trees" % (
+            len(peaks), sum(p["kind"] == "mountain" for p in peaks), len(mtrees)))
+        with open(scratch("peaks.json"), "w") as f:
+            json.dump(peaks, f)
+        # ---- Blender: the glyph layer (flat emission + AOVs + Freestyle ink as passes)
+        scene.reset(seed=3)
+        spp = self.a["spp"] or GLYPH_SPP
+        scene.setup_cycles(samples=spp, transparent=True, preset="fast", view="Standard", look="None",
+                           adaptive_threshold=0.0)
+        bpy.context.scene.cycles.filter_width = 1.0
+        scene.set_resolution(int(round(x1 - x0)), int(round(y1 - y0)), G2.SS)
+        mat = G.glyph_material()
+        rel = bpy.data.collections.new("Relief")
+        bpy.context.scene.collection.children.link(rel)
+        gb = (x0 - 160.0, y0 - 20.0, x1 + 160.0, y1 + 180.0)
+        obj = G.build_relief_glyphs(r, peaks, mat, box=gb)
+        for c in obj.users_collection:
+            c.objects.unlink(obj)
+        rel.objects.link(obj)
+        trc = bpy.data.collections.new("Trees")
+        bpy.context.scene.collection.children.link(trc)
+        prc = bpy.data.collections.new("Protos")
+        bpy.context.scene.collection.children.link(prc)
+        protos = G.tree_prototypes(prc)
+        sel = [t for t in mtrees if gb[0] < t["x"] < gb[2] and gb[1] < t["y"] < gb[3]]
+        G.instance_trees(sel, protos, trc)
+        G.camera((x0, y0, x1, y1))
+        G.ground_plane()
+        G.setup_aovs()
+        G.ink_lines(G2.SS, relief_collection=rel, tree_collection=trc)
+        pdir = scratch("passes")
+        os.makedirs(pdir, exist_ok=True)
+        files, names = G.comp_passes(pdir, "glyph")
         self.times["worldmap_build"] = time.time() - t0
-        tag = "crop_%d_%d_%d_%d" % tuple(int(v) for v in (x0, y0, x1, y1)) if crop else "full"
-        raw = scratch("worldmap_raw_%s.png" % tag)
-        self.times["worldmap_render"] = scene.render(raw)
-        img = post.load(raw)
-        img = post.downsample(img, rec["ss"])
-        img = post.grade(img, **rec["grade"])
-        if rec.get("unsharp"):
-            img = post.unsharp(img, *rec["unsharp"])
-        img[..., 3] = 1.0
+        self.times["worldmap_render"] = scene.render(scratch("passes", "glyph_beauty.png"))
+        passes = {nm: G.read_exr(fp) for nm, fp in zip(names, files)}
+        bpy.ops.wm.read_factory_settings(use_empty=True)          # free the render memory
+        # ---- numpy: the painting
+        crop_tx = tuple(int(round(v * G2.SS)) for v in (x0, y0, x1, y1))
+        mp = G2.MapPainter(w, log=log, crop=crop_tx)
+        mp.map_trees = mtrees
+        t1 = time.time()
+        col = mp.paint_map(passes)
+        del passes
+        small = G2.downsample(col)
+        self.times["worldmap_paint"] = time.time() - t1
+        img = np.concatenate([small, np.ones(small.shape[:2] + (1,), np.float32)], -1)
         if crop:
-            post.save(img, scratch("worldmap_%s.png" % tag), opaque=True)
+            tag = "crop_%d_%d_%d_%d" % tuple(int(v) for v in (x0, y0, x1, y1))
+            Image.fromarray(np.round(small * 255).astype(np.uint8)).save(scratch("worldmap_%s.png" % tag))
+            Image.fromarray(np.round(np.clip(col, 0, 1) * 255).astype(np.uint8)).save(
+                scratch("worldmap_%s_2x.png" % tag))
             log("[build] crop saved %s" % scratch("worldmap_%s.png" % tag))
         else:
+            from ironart import post
             path = post.save_asset(img, "Art/Map/WorldMap.png")
-            post.save(img, scratch("worldmap_full.png"), opaque=True)
-            Image.open(path).resize((1200, 750), Image.LANCZOS).save(scratch("worldmap_small.png"))
+            Image.open(path).convert("RGB").resize((1200, 750), Image.LANCZOS).save(scratch("worldmap_small.png"))
             log("[build] WorldMap.png -> %s" % path)
 
+    # -- 3/4 previews (scratch) ------------------------------------------------------------------
     def stage_preview(self):
+        import bpy
+        import math
+        from mathutils import Vector
+        from ironart import scene
         from ironart import world_terrain_render as WR
-        from ironart import world_terrain_recipe as RC
-        from ironart import scene, post
-        rec = RC.PREVIEW3D
         trees = self.get_trees()
-        # terrain from the *exported* Height.png (checks the contract round trip)
         hp = np.asarray(Image.open(os.path.join(ART3D, "Height.png")), np.float64)
         tj = json.load(open(os.path.join(ART3D, "Terrain.json")))
         h2 = (tj["minHeight"] + hp / 65535.0 * (tj["maxHeight"] - tj["minHeight"])).astype(np.float32)
         hfull = _upsample_grid2(h2)
         Image.open(os.path.join(ARTSRC, "Terrain", "Masks.png")).getchannel("R").save(scratch("masks_r.png"))
-        views = rec["focus"][: (self.a["views"] or len(rec["focus"]))]
-        for vi, (fx, fy, dist) in enumerate(views):
+        views = PREVIEW_VIEWS[: (self.a["views"] or len(PREVIEW_VIEWS))]
+        for vi, (fx, fy, dist, pitch) in enumerate(views):
             scene.reset(seed=12)
-            w_, h_ = rec["size"]
-            scene.setup_cycles(samples=self.a["spp"] or rec["spp"], transparent=False, preset="map",
-                               view="Filmic", look="Medium Contrast", adaptive_threshold=0.03)
-            scene.set_resolution(w_, h_, 1)
-            normal = os.path.join(ARTSRC, "Textures", "Water_Normal.png")
+            scene.setup_cycles(samples=self.a["spp"] or 24, transparent=False, preset="map",
+                               view="Standard", look="None", adaptive_threshold=0.03)
+            scene.set_resolution(1280, 720, 1)
+            # terrain exactly as Unreal builds it: the exported Height.png grid (2 m)
             WR.build_terrain(hfull, os.path.join(ARTSRC, "Terrain", "Albedo.png"), scratch("masks_r.png"),
-                             normal, step=2)
-            WR.build_sea(scratch("sea.png"), normal, margin=3000.0)
-            protos = WR.tree_prototypes()
-            WR.instance_trees(trees, hfull, protos)
-            WR.camera_persp((fx, fy), dist, hfull, tilt=rec["tilt"], fov=rec["focal_fov"])
-            WR.light_persp(rec)
-            _mist_comp(scene_obj=None)
+                             None, step=2)
+            _sea_plane(WR)
+            protos = _glb_tree_protos()
+            if protos:
+                WR.instance_trees(trees, hfull, protos)
+            WR.camera_persp((fx, fy), dist, hfull, tilt=pitch, fov=40.0)
+            # the painted look of AIronEnvironment: a soft key from the north-west (bearing 305)
+            # at ~48 deg and a strong warm sky fill
+            az, el = math.radians(305.0), math.radians(48.0)
+            d = Vector((math.sin(az) * math.cos(el), math.cos(az) * math.cos(el), math.sin(el)))
+            WR._sun("Sun", d, 3.2, "#FFF4E2", 8.0)
+            WR.world_color("#E8DCC0", 0.9)
+            _mist_comp()
             raw = scratch("preview3d_%d.png" % vi)
             self.times["preview_%d" % vi] = scene.render(raw)
             log("[build] preview %s" % raw)
@@ -277,8 +322,7 @@ class Build:
         contact_sheet(self)
 
     def stage_manifest(self):
-        update_manifest(["Terrain/Albedo.png", "Terrain/Masks.png", "Textures/Water_Normal.png",
-                         "Textures/Water_Foam.png"])
+        update_manifest(MANIFEST_FILES)
 
     def run(self):
         for st in STAGES:
@@ -301,15 +345,55 @@ def _upsample_grid2(h2):
     return out
 
 
-def _mist_comp(scene_obj=None):
-    """Aerial perspective for the 3/4 previews: mist pass -> haze colour."""
+def _sea_plane(WR):
+    """Preview stand-in for M_IronWater: a pale azurite, slightly glossy plane at sea level."""
+    import bpy
+    import bmesh
+    me = bpy.data.meshes.new("Sea")
+    bm = bmesh.new()
+    bmesh.ops.create_grid(bm, x_segments=1, y_segments=1, size=4000)
+    bm.to_mesh(me)
+    bm.free()
+    ob = bpy.data.objects.new("Sea", me)
+    bpy.context.scene.collection.objects.link(ob)
+    me.materials.append(WR.simple_material("SeaM", "#6F93AE", 0.25))
+    return ob
+
+
+def _glb_tree_protos():
+    """SM_Tree_* stand-ins for the previews: the World Models family's glbs (when present)."""
+    import bpy
+    protos = {}
+    for kind, name in (("pine", "Tree_Pine"), ("broad", "Tree_Broad"), ("bamboo", "Tree_Bamboo")):
+        path = os.path.join(ARTSRC, "Models", name + ".glb")
+        if not os.path.isfile(path):
+            continue
+        before = set(bpy.data.objects)
+        bpy.ops.import_scene.gltf(filepath=path)
+        meshes = [o for o in bpy.data.objects if o not in before and o.type == "MESH"]
+        if not meshes:
+            continue
+        bpy.ops.object.select_all(action="DESELECT")
+        for o in meshes:
+            o.select_set(True)
+        bpy.context.view_layer.objects.active = meshes[0]
+        if len(meshes) > 1:
+            bpy.ops.object.join()
+        p = bpy.context.view_layer.objects.active
+        p.location = (0, 0, -5000)
+        protos[kind] = p
+    return protos if len(protos) == 3 else None
+
+
+def _mist_comp():
+    """Aerial perspective for the 3/4 previews: mist pass -> warm silk haze."""
     import bpy
     sc = bpy.context.scene
     vl = sc.view_layers[0]
     vl.use_pass_mist = True
     w = sc.world
-    w.mist_settings.start = 500.0
-    w.mist_settings.depth = 2600.0
+    w.mist_settings.start = 800.0
+    w.mist_settings.depth = 3200.0
     w.mist_settings.falloff = "QUADRATIC"
     sc.use_nodes = True
     nt = sc.node_tree
@@ -320,11 +404,11 @@ def _mist_comp(scene_obj=None):
     mix.blend_type = "MIX"
     mul = nt.nodes.new("CompositorNodeMath")
     mul.operation = "MULTIPLY"
-    mul.inputs[1].default_value = 0.42
+    mul.inputs[1].default_value = 0.35
     nt.links.new(rl.outputs["Mist"], mul.inputs[0])
     nt.links.new(mul.outputs[0], mix.inputs[0])
     nt.links.new(rl.outputs["Image"], mix.inputs[1])
-    mix.inputs[2].default_value = (0.62, 0.70, 0.78, 1.0)
+    mix.inputs[2].default_value = (0.86, 0.80, 0.66, 1.0)
     nt.links.new(mix.outputs[0], comp.inputs["Image"])
 
 
@@ -360,6 +444,10 @@ def qa_report(b):
     log("[qa] Trees.json %d instances %s" % (len(trees), kinds))
     if len(trees) > 25000:
         probs.append("too many trees")
+    for t in trees:
+        for c in b.get_world().cities:
+            if (t["x"] - c[1]) ** 2 + (t["y"] - c[2]) ** 2 < 25.0 ** 2:
+                probs.append("tree within 25 m of %s" % c[0])
     nimg = Image.open(os.path.join(ARTSRC, "Textures", "Water_Normal.png"))
     if nimg.size != (1024, 1024):
         probs.append("Water_Normal.png size")
@@ -372,6 +460,9 @@ def qa_report(b):
             off = worldmap_alignment(b, np.asarray(wm.convert("RGB"), np.int16))
             if off != (0, 0):
                 probs.append("WorldMap.png coast is offset by %s px from the map data" % (off,))
+            calm = worldmap_city_calm(b, np.asarray(wm.convert("RGB"), np.float32))
+            if calm:
+                probs.extend(calm)
     if probs:
         for pr in probs:
             log("[qa] PROBLEM " + pr)
@@ -379,25 +470,58 @@ def qa_report(b):
     log("[qa] all contract checks passed")
 
 
-def worldmap_alignment(b, rgb):
-    """Best (dx, dy) shift between the rendered sea (blue-dominant pixels) and the heightfield's
-    sea (h < 0 at the pixel centres); (0, 0) means the 2D map is registered to map metres."""
+def _height_at_pixels(w=2400, h=1500):
+    """Height.png sampled (bilinear) at the WorldMap pixel centres (map x + 0.5, y + 0.5)."""
     hp = np.asarray(Image.open(os.path.join(ART3D, "Height.png")), np.float64)
-    h = -40 + hp / 65535.0 * 220.0
-    # pixel (i, j) centre = map (i + 0.5, j + 0.5) -> Height.png (2 m grid) bilinear
-    hm = np.asarray(Image.fromarray(h.astype(np.float32), "F").resize((2400, 1500), Image.BILINEAR))
-    sea_d = hm < -0.5
-    sea_r = (rgb[..., 2] > rgb[..., 0] + 25) & (rgb[..., 2] > 70)
+    hg = -40 + hp / 65535.0 * 220.0
+    u = (np.arange(w) + 0.5) / 2.0
+    v = (np.arange(h) + 0.5) / 2.0
+    i0 = np.clip(np.floor(u).astype(int), 0, hg.shape[1] - 2)
+    j0 = np.clip(np.floor(v).astype(int), 0, hg.shape[0] - 2)
+    fu = (u - i0)[None, :]
+    fv = (v - j0)[:, None]
+    a = hg[j0][:, i0] * (1 - fu) + hg[j0][:, i0 + 1] * fu
+    b_ = hg[j0 + 1][:, i0] * (1 - fu) + hg[j0 + 1][:, i0 + 1] * fu
+    return a * (1 - fv) + b_ * fv
+
+
+def worldmap_alignment(b, rgb):
+    """Best (dx, dy) shift between the painted sea (pale azurite: blue above red) and the
+    heightfield's sea (h < 0), measured in the shore band (|h| < 6 m); (0, 0) means the 2D map
+    is registered to map metres."""
+    hm = _height_at_pixels()
+    sea_d = hm < 0.0
+    band = np.abs(hm) < 6.0
+    sea_r = rgb[..., 2] > rgb[..., 0] + 6
     best, arg = -1.0, (0, 0)
     for dy in range(-3, 4):
         for dx in range(-3, 4):
             a = np.roll(np.roll(sea_d, dy, 0), dx, 1)[8:-8, 8:-8]
+            m = np.roll(np.roll(band, dy, 0), dx, 1)[8:-8, 8:-8]
             r = sea_r[8:-8, 8:-8]
-            score = float((a == r).mean())
+            score = float((a == r)[m].mean())
             if score > best:
                 best, arg = score, (dx, dy)
-    log("[qa] WorldMap registration: best shift %s, sea agreement %.4f" % (arg, best))
+    log("[qa] WorldMap registration: best shift %s, shore-band sea agreement %.4f" % (arg, best))
+    if best < 0.9:
+        log("[qa] WARNING low sea agreement")
     return arg
+
+
+def worldmap_city_calm(b, rgb):
+    """The city sites must stay calm (no glyph ink on them): little dark ink within 22 px."""
+    probs = []
+    luma = rgb @ np.array([0.299, 0.587, 0.114], np.float32)
+    for (k, cx, cy, s) in b.get_world().cities:
+        x0, x1 = int(max(0, cx - 22)), int(min(2400, cx + 23))
+        y0, y1 = int(max(0, cy - 22)), int(min(1500, cy + 23))
+        ys, xs = np.mgrid[y0:y1, x0:x1]
+        m = (xs - cx) ** 2 + (ys - cy) ** 2 < 22 ** 2
+        dark = float((luma[y0:y1, x0:x1][m] < 90).mean())
+        if dark > 0.04:
+            probs.append("city %s site is not calm: %.1f %% dark ink within 22 px" % (k, 100 * dark))
+    log("[qa] city sites calm: %d problem(s)" % len(probs))
+    return probs
 
 
 def contact_sheet(b):
@@ -408,12 +532,12 @@ def contact_sheet(b):
 
     def add(img, label):
         im = img.convert("RGB").resize((tw, th), Image.LANCZOS)
-        ImageDraw.Draw(im).text((8, 6), label, fill=(255, 255, 255))
+        ImageDraw.Draw(im).text((8, 6), label, fill=(30, 26, 22))
         tiles.append(im)
     if os.path.isfile(WORLDMAP):
-        add(Image.open(WORLDMAP), "WorldMap.png (2D fallback)")
+        add(Image.open(WORLDMAP), "WorldMap.png (2D gongbi map)")
     alb = Image.open(os.path.join(ARTSRC, "Terrain", "Albedo.png"))
-    add(alb, "Albedo.png (no lighting)")
+    add(alb, "Albedo.png (pigment, no lighting)")
     m = Image.open(os.path.join(ARTSRC, "Terrain", "Masks.png"))
     add(Image.merge("RGB", m.split()[:3]), "Masks.png RGB = water / forest / rock-snow")
     add(m.getchannel("A"), "Masks.png A = road")
@@ -427,7 +551,7 @@ def contact_sheet(b):
     for t in b.get_trees():
         x, y = t["x"] / F.MAP_W * tw, t["y"] / F.MAP_H * th
         d.point((x, y), fill=cols[t["t"]])
-    ImageDraw.Draw(small).text((8, 6), "Trees.json (%d)" % len(b.get_trees()), fill=(255, 255, 255))
+    ImageDraw.Draw(small).text((8, 6), "Trees.json (%d)" % len(b.get_trees()), fill=(30, 26, 22))
     tiles.append(small)
     sheet = Image.new("RGB", (2 * tw + 12, 3 * th + 16), (27, 23, 18))
     for i, im in enumerate(tiles):

@@ -10,8 +10,10 @@ Blender world space for this family: 1 unit = 1 m, X = map x - 1200 (east), Y = 
     camera_top() / camera_persp(focus, distance)                 2D map / Unreal-like 3/4 view
     light_top(cam) / light_persp()                               studio sun / Unreal-like sun
 
-The tree prototypes are the 2D map's stand-ins for SM_Tree_* (the 3D models come from the World
-Models family); they match the contract sizes (broad ~20 m, pine ~24 m, bamboo ~19 m at s = 1).
+Used by the scratch 3/4 previews of build.py (the terrain exactly as Unreal builds it from
+Height.png + Albedo.png).  The previews instance the World Models glbs (SM_Tree_*); the bmesh tree
+prototypes here are only a fallback when those are missing (contract sizes: broad ~20 m, pine
+~24 m, bamboo ~19 m at s = 1).
 """
 
 import math

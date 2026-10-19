@@ -310,8 +310,12 @@ def separate_rows(obj):
 
 
 def transfer_row_uvs(rows, surface):
-    """Give every ``~row`` loop the atlas UV of the closest point on the matching roof surface
-    faces of ``surface`` (same base material, non-row) - rows sample the baked roof under them."""
+    """Give every ``~row`` face the atlas UVs of ONE roof surface face of ``surface`` (same base
+    material, non-row): the one nearest to the row face's centre; each row loop takes the UV of
+    its closest point on that face.  Rows sample the baked roof under them, and a row face never
+    spans two UV islands (a row ending at a hip or valley used to interpolate across the atlas
+    between the two slopes' islands and showed other materials as blotches)."""
+    from mathutils import geometry as mg
     from mathutils.bvhtree import BVHTree
     from mathutils.interpolate import poly_3d_calc
     sme = surface.data
@@ -331,21 +335,32 @@ def transfer_row_uvs(rows, surface):
         trees[nm] = (BVHTree.FromPolygons(verts, polys, all_triangles=False), faces)
     rme = rows.data
     ruv = rme.uv_layers[UV_EXPORT].data
+
+    def closest_on_poly(pts, co):
+        best, bd = None, 1e30
+        for i in range(1, len(pts) - 1):
+            q = mg.closest_point_on_tri(co, pts[0], pts[i], pts[i + 1])
+            d = (q - co).length_squared
+            if d < bd:
+                best, bd = q, d
+        return best
+
     for p in rme.polygons:
         nm = base_name(rsl[p.material_index]) if p.material_index < len(rsl) else ""
         tr = trees.get(nm)
         if tr is None:
             continue
         tree, faces = tr
+        hit = tree.find_nearest(p.center)
+        if hit[0] is None:
+            continue
+        sp = sme.polygons[faces[hit[2]]]
+        pts = [verts[v] for v in sp.vertices]
+        n = len(pts)
         for li in p.loop_indices:
             co = rme.vertices[rme.loops[li].vertex_index].co
-            hit = tree.find_nearest(co)
-            if hit[0] is None:
-                continue
-            sp = sme.polygons[faces[hit[2]]]
-            pts = [verts[v] for v in sp.vertices]
-            w = poly_3d_calc(pts, hit[0])
-            n = len(w)
+            q = closest_on_poly(pts, co)
+            w = poly_3d_calc(pts, q)
             w = [0.8 * wi + 0.2 / n for wi in w]          # stay inside the island (no edge bleed)
             u = sum(wi * suv[l].uv.x for wi, l in zip(w, sp.loop_indices))
             v = sum(wi * suv[l].uv.y for wi, l in zip(w, sp.loop_indices))
@@ -888,11 +903,14 @@ def verify_glb(path, footprint=None, height=None, tint=None, max_tris=150000, fr
 # ---------------------------------------------------------------------------------------------
 def manifest_add(paths, root=ART_SOURCE):
     """Add ``paths`` (absolute or ArtSource-relative) to ArtSource/manifest.json
-    ``{"version": N, "files": [...]}`` and bump the version, under an exclusive file lock so
-    concurrent artists never lose each other's entries.  Returns the new version."""
+    ``{"version": N, "files": [...]}`` and bump the version, under the studio's exclusive file lock
+    (``<tmp>/ironreign_artsource_manifest.lock``, shared with the other families) so concurrent
+    artists never lose each other's entries.  Returns the new version."""
     os.makedirs(root, exist_ok=True)
     mpath = os.path.join(root, "manifest.json")
-    lock = open(os.path.join(root, ".manifest.lock"), "a+")
+    # the studio-wide lock every family's manifest_add takes (scenes_look, icons, ui_chrome)
+    import tempfile
+    lock = open(os.path.join(tempfile.gettempdir(), "ironreign_artsource_manifest.lock"), "a+")
     try:
         fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
         data = {"version": 0, "files": []}

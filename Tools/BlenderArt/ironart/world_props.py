@@ -128,7 +128,7 @@ def p_pavilion():
         bays=(1, 1), bay=3.4, col_h=2.8, col_r=0.16, plat_h=0.5, plat_margin=0.7, plat_mat="W_Stone",
         steps=False, wall_mat="W_Plaster", front="open", side="open", front_inset=0.0, brackets=False,
         roof=K.RoofSpec(style="pyramid", overhang=1.0, lift=0.5, flare=0.3, thick=0.2, pitch=0.5, tile_seg=4,
-                        tile_faces=2, nv=4, mat="W_TileGreen", ridge_mat="W_RidgeGreen", finial="gold",
+                        tile_faces=2, nv=8, mat="W_TileGreen", ridge_mat="W_RidgeGreen", finial="gold",
                         ridge_h=0.35)), roof_h=2.4)
     K.railing_rect(mb, 4.4, 4.4, 0.5, 0.8)
     return mb

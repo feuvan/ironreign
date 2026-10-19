@@ -111,7 +111,7 @@ def build_city(tier, preview=False, render=True):
     WG.set_density(gsz / (2.0 * max(lay.half)))
     gmat = WG.ground("W_Ground_%d" % tier, mask, lay.half)
     gp.data.materials[0] = gmat
-    gmaps = WB.bake([gp], gsz, tex_dir, "%s_Ground" % name, ao=False, cavity=0.0, jpeg=False, margin=4,
+    gmaps = WB.bake([gp], gsz, tex_dir, "%s_Ground" % name, ao=False, cavity=0.0, jpeg=True, margin=4,
                     const={"rough": WG.ROUGH, "metal": 0.0})
     gp.data.materials.clear()
     gp.data.materials.append(WB.pbr_material("Ground", maps=gmaps))

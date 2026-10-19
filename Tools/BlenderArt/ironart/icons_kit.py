@@ -14,7 +14,7 @@ import math
 
 import bmesh
 import bpy
-from mathutils import Euler, Matrix, Vector
+from mathutils import Euler, Vector
 
 from .geometry import MeshBuilder
 
@@ -251,7 +251,7 @@ def outline_mesh(name, outline, depth, mat, bevel_w=0.0, segments=3, plane="XZ",
         vs = [bm.verts.new(to3(p, d0)) for p in lp]
         for i in range(len(vs)):
             edges.append(bm.edges.new((vs[i], vs[(i + 1) % len(vs)])))
-    res = bmesh.ops.triangle_fill(bm, use_beauty=True, use_dissolve=True, edges=edges)
+    bmesh.ops.triangle_fill(bm, use_beauty=True, use_dissolve=True, edges=edges)
     bmesh.ops.dissolve_limit(bm, angle_limit=math.radians(1.0), verts=bm.verts[:],
                              edges=bm.edges[:])
     faces = [f for f in bm.faces]
@@ -435,3 +435,27 @@ def smooth_mesh(obj, iterations=4, factor=0.5):
     m.iterations = iterations
     m.factor = factor
     return m
+
+
+def spline_outline(points, n=8, closed=True):
+    """Catmull-Rom resampling of a 2D outline (``n`` points per segment): hand-placed control
+    points become a smooth brush-like contour."""
+    pts = list(points)
+    m = len(pts)
+    out = []
+    segs = m if closed else m - 1
+    for i in range(segs):
+        p0 = pts[(i - 1) % m] if closed or i > 0 else pts[0]
+        p1 = pts[i]
+        p2 = pts[(i + 1) % m]
+        p3 = pts[(i + 2) % m] if closed or i + 2 < m else pts[-1]
+        for k in range(n):
+            t = k / float(n)
+            t2, t3 = t * t, t * t * t
+            out.append(tuple(0.5 * (2 * p1[j] + (-p0[j] + p2[j]) * t
+                                    + (2 * p0[j] - 5 * p1[j] + 4 * p2[j] - p3[j]) * t2
+                                    + (-p0[j] + 3 * p1[j] - 3 * p2[j] + p3[j]) * t3)
+                             for j in range(2)))
+    if not closed:
+        out.append(tuple(pts[-1]))
+    return out

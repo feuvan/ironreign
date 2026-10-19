@@ -302,8 +302,9 @@ def rock_mass(mb, outline, z0, z1, mat, rng, rings=6, jag=0.18, top_noise=0.25, 
     inner = []
     for i in top:
         v = mb.verts[i]
-        inner.append(mb.v((tx + (v.x - tx) * 0.6, ty + (v.y - ty) * 0.6, z1 + H * 0.02 + rng.uniform(0, top_noise) * H * 0.05)))
-    cid = mb.v((tx, ty, z1 + H * 0.03))
+        inner.append(mb.v((tx + (v.x - tx) * 0.6, ty + (v.y - ty) * 0.6,
+                           z1 + min(H * 0.02, 0.6) + rng.uniform(0, top_noise) * min(H * 0.05, 1.5))))
+    cid = mb.v((tx, ty, z1 + min(H * 0.03, 0.8)))
     tm = top_mat or mat
     for i in range(n):
         mb.face((top[i], top[(i + 1) % n], inner[(i + 1) % n], inner[i]), tm)
@@ -403,3 +404,62 @@ def peak_ribs(X, Y, peaks, cam_xy, focal_px, spacing_px=7.0):
         per_rad = pr * 0.55 * focal_px / D
         rib = np.where(m, th * per_rad / spacing_px + (px * 0.013 % 1.0), rib)
     return rib
+
+
+def pinnacle(mb, center, base_r, top_r, z0, z1, rng, mat="Rock", subs=5, sides=11, jag=0.12):
+    """A 斧劈-faceted rock pinnacle: a main tapering column (flat top at ``z1``, radius ``top_r``)
+    with lower satellite columns crowding its flanks, all rising from ``z0``."""
+    cx, cy = center[0], center[1]
+
+    def column(x, y, r0, r1, top, seed_lean):
+        outline = [(x + math.cos(-i / sides * math.tau) * r0 * rng.uniform(0.8, 1.15),
+                    y + math.sin(-i / sides * math.tau) * r0 * rng.uniform(0.8, 1.15)) for i in range(sides)]
+        taper = 1.0 - r1 / max(r0, 1e-6)
+        rock_mass(mb, outline, z0, top, mat, rng, rings=12, jag=jag, taper=taper,
+                  lean=(rng.uniform(-1, 1) * r0 * 0.15 * seed_lean, rng.uniform(-1, 1) * r0 * 0.1 * seed_lean),
+                  bulge=rng.uniform(-0.05, 0.08), top_noise=0.0)
+    column(cx, cy, base_r, top_r, z1, 0.0)
+    H = z1 - z0
+    for i in range(subs):
+        a = rng.uniform(0, math.tau)
+        d = base_r * rng.uniform(0.55, 0.9)
+        r0 = base_r * rng.uniform(0.35, 0.6)
+        top = z1 - H * rng.uniform(0.12, 0.45)
+        column(cx + math.cos(a) * d, cy + math.sin(a) * d, r0, r0 * rng.uniform(0.3, 0.55), top, 1.0)
+
+
+def boulder(mb, center, size, rng, mat="Rock", lumps=6, seg=(18, 12), flat_top=None, squash=1.0,
+            spread=0.45, rough=0.12):
+    """Lumpy painted rock: a cluster of overlapping, noise-dented ellipsoids.  Where the lumps
+    overlap the 'land' ink draws the folds of the stone (the contour lines of a 青绿 rock).
+    ``size`` = (sx, sy, sz) metres; ``flat_top`` clamps vertices above that z (a ledge to stand on)."""
+    from mathutils import Vector
+    cx, cy, cz = center
+    sx, sy, sz = size
+    for i in range(lumps):
+        if i == 0:
+            c = Vector((cx, cy, cz + sz * 0.45))
+            r = (sx * 0.5, sy * 0.5, sz * 0.55)
+        else:
+            a = rng.uniform(0, math.tau)
+            c = Vector((cx + math.cos(a) * sx * spread * rng.uniform(0.3, 1.0),
+                        cy + math.sin(a) * sy * spread * rng.uniform(0.3, 1.0),
+                        cz + sz * rng.uniform(0.15, 0.6)))
+            k = rng.uniform(0.45, 0.75)
+            r = (sx * 0.5 * k, sy * 0.5 * k, sz * 0.5 * k * squash)
+        s0 = mb.n
+        mb.sphere(tuple(c), 1.0, mat, seg[0], seg[1], scale=r)
+        ph = [rng.uniform(0, math.tau) for _ in range(4)]
+        for vi in range(s0, mb.n):
+            v = mb.verts[vi] - c
+            if v.length < 1e-6:
+                continue
+            n = v.normalized()
+            ang = math.atan2(n.y, n.x)
+            el = math.asin(max(-1.0, min(1.0, n.z)))
+            f = 1.0 + rough * (math.sin(3 * ang + ph[0]) * 0.6 + math.sin(5 * ang + 3 * el + ph[1]) * 0.4
+                               + math.sin(2 * el + ph[2]) * 0.5 + math.sin(7 * ang + ph[3]) * 0.2)
+            p = c + v * f
+            if flat_top is not None and p.z > flat_top:
+                p.z = flat_top + (p.z - flat_top) * 0.05
+            mb.verts[vi] = p

@@ -11,14 +11,20 @@ Pipeline (:func:`build_world`)::
     coast       signed distance to the land polygons (map-border edges are not coast), domain
                 warped -> land / sea, beaches, a 2.5 m surf shelf and a -40 m sea floor
     base        plains 2-15 m rising inland, gentle rolling noise, dune swells in the deserts
-    hills       rounded 20-60 m hills along the hill strokes
-    mountains   eroded ridged multifractal along the mountain strokes, peaks 150-180 m, saddles
-                where roads cross them, suppressed around city sites
-    rivers      meandered, deflected around city pads, tributaries snapped onto their main river;
-                monotonic bed profiles to the sea / lakes, channels 2-4 m below the banks, gorges
-                where a river cuts a range
+    hills       rolling 20-60 m hill chains along the hill strokes (:func:`range_relief`)
+    mountains   RANGES along the mountain strokes (:func:`range_relief`): a continuous meandering
+                crest with summits and cols (150-180 m), spurs and V side valleys from an
+                anisotropic |noise| field in crest coordinates (they run downhill and never cut
+                the crest), shoulder knobs, crags, a foothill apron; ends taper into foothills;
+                saddles where roads and passes cross; eased down over a long domain-warped
+                falloff around every city (:meth:`World.city_keep`: cities sit in open basins)
+    rivers      meandered, deflected around city pads, sources and confluences kept out of the
+                pads, tributaries snapped onto their main river; monotonic bed profiles to the
+                sea / lakes, channels 2-4 m below the banks, narrow gorges where a river cuts a
+                range
     lakes       flat basins at (surface - 1 m) with soft shores
-    pads        flat city pads (radius by city size) blended into the land
+    pads        flat where the city model stands (``PAD_FLAT``), then a long gaussian feather on a
+                warped distance (``PAD_FEATHER``): no visible disc; never over the shore
     forests     organic forest density (scenario circles + copses), used by trees and the painter
 
 Everything is deterministic for a seed.  Units: metres everywhere.
@@ -42,8 +48,6 @@ PAD_RADIUS = {1: 38.0, 2: 52.0, 3: 68.0}
 #: feather length (m) of the blend back into the land
 PAD_FLAT = {1: 30.0, 2: 46.0, 3: 68.0}
 PAD_FEATHER = 70.0
-#: no trees closer than this to a city point (DESIGN.md: 25 m; we keep the whole pad clear)
-TREE_CITY_CLEAR = {1: 50.0, 2: 64.0, 3: 80.0}
 
 PARAMS = {
     "seed": 1212,
@@ -58,6 +62,8 @@ PARAMS = {
     "mtn_base": 140.0, "mtn_per_width": 0.6, "mtn_ridge_scale": 150.0, "mtn_peak": 179.0,
     # rivers
     "river_bank": 3.0, "river_meander": 1.0,
+    # erosion: droplets per 2 m cell of relief
+    "erosion_droplets": 0.0,
 }
 
 
@@ -541,105 +547,8 @@ def extend(pts, start=0.0, end=0.0):
 
 
 # ---------------------------------------------------------------------------------------------
-# dendritic ridge networks (mountain skeletons)
+# relief helpers
 # ---------------------------------------------------------------------------------------------
-def _rot(v, deg):
-    a = math.radians(deg)
-    c, s_ = math.cos(a), math.sin(a)
-    return np.array([c * v[0] - s_ * v[1], s_ * v[0] + c * v[1]])
-
-
-def ridge_network(stroke, width, peak, seed):
-    """Skeleton of a mountain range: a meandering main crest with summits, spurs branching to
-    alternating sides and sub-spurs off the spurs.  Returns a list of ridges
-    ``(pts (n, 2), heights (n,), lam)`` - ``lam`` is the flank fall-off length (m).
-
-    Sizes follow the *peak height* (not only the stroke width), so even a narrow stroke gets
-    flanks of at most ~50-55 deg: crest fall-off ``lc = 0.36 * peak``."""
-    rng = np.random.default_rng(seed)
-    w = float(width)
-    lc = 0.36 * peak
-    crest = smooth_line(resample(stroke, 4.0), 9.0)
-    crest = meander(crest, 0.4 * lc, seed + 1, step=4.0, fade=20.0)
-    crest = smooth_line(crest, 2.0)
-    u = arclen(crest)
-    L = u[-1]
-    summit = T.perlin_at((u / 120.0).astype(np.float32), np.full(len(u), 0.4, np.float32), seed + 2)
-    summit2 = T.perlin_at((u / 45.0).astype(np.float32), np.full(len(u), 0.8, np.float32), seed + 3)
-    taper = 0.55 + 0.45 * T.smoothstep(0.0, 1.6 * lc, u) * T.smoothstep(L, L - 1.6 * lc, u)
-    hc = peak * (0.76 + 0.26 * summit + 0.07 * summit2) * taper
-    ridges = [(crest, hc, lc)]
-    nrm, tg = normals(crest)
-    pos = rng.uniform(0.2, 0.6) * lc
-    side = 1.0 if rng.random() < 0.5 else -1.0
-    while pos < L - 0.15 * lc:
-        i = min(int(np.searchsorted(u, pos)), len(crest) - 1)
-        if rng.random() < 0.72:
-            side = -side
-        length = lc * rng.uniform(1.7, 3.1) * (0.75 + 0.25 * taper[i])
-        d0 = _rot(nrm[i] * side, rng.uniform(-42, 42))
-        sp = [crest[i]]
-        dcur = d0.copy()
-        bend = rng.uniform(-12, 12)
-        for k in range(1, 6):
-            dcur = _rot(dcur, bend + rng.uniform(-10, 10))
-            sp.append(sp[-1] + dcur * length / 5.0)
-        sp = resample(np.array(sp), 6.0)
-        ss = arclen(sp) / max(1e-6, arclen(sp)[-1])
-        h0 = hc[i] * rng.uniform(0.84, 0.96)
-        hs = h0 * (1.0 - 0.9 * ss ** 0.85)
-        ridges.append((sp, hs, 0.62 * lc))
-        for _ in range(int(rng.integers(1, 4))):
-            s0 = rng.uniform(0.2, 0.65)
-            j = int(s0 * (len(sp) - 1))
-            q0 = sp[j]
-            dd = sp[min(j + 1, len(sp) - 1)] - sp[max(j - 1, 0)]
-            dd = dd / (np.linalg.norm(dd) + 1e-9)
-            d2 = _rot(dd, (1 if rng.random() < 0.5 else -1) * rng.uniform(38, 68))
-            l2 = length * rng.uniform(0.32, 0.55)
-            sub = [q0]
-            for k in range(1, 4):
-                d2 = _rot(d2, rng.uniform(-12, 12))
-                sub.append(sub[-1] + d2 * l2 / 3.0)
-            sub = resample(np.array(sub), 6.0)
-            s2 = arclen(sub) / max(1e-6, arclen(sub)[-1])
-            hsub = hs[j] * rng.uniform(0.86, 0.96) * (1.0 - 0.88 * s2)
-            ridges.append((sub, hsub, 0.45 * lc))
-        pos += lc * rng.uniform(0.9, 1.5)
-    return ridges
-
-
-def ridge_raster(out, pts, heights, lam, origin_xy, pert=None, power=1.18, reach=3.6, k=0.35):
-    """Union (smooth max, in place) of one ridge into ``out`` (a window of the master grid whose
-    point (0, 0) is map ``origin_xy``).  Exact distance to the whole ridge polyline (no
-    per-segment scallops); the height along the ridge comes from the arc parameter blurred over
-    6 m (no bisector seams on the inner side of bends); the profile across is
-    ``exp(-(d / lam) ** power)``, faded to 0 over the last 20 % of ``reach * lam``."""
-    H, W = out.shape
-    R = reach * lam
-    pts = np.asarray(pts, np.float64)
-    sy, sx, org = window(pts - np.asarray(origin_xy, np.float64), R, (H, W))
-    if sy.stop <= sy.start or sx.stop <= sx.start:
-        return out
-    shp = (sy.stop - sy.start, sx.stop - sx.start)
-    gorg = (origin_xy[0] + org[0], origin_xy[1] + org[1])
-    d, t = polyline_field(pts, R, want_t=True, shape=shp, origin=gorg)
-    ok = np.isfinite(d)
-    if not ok.any():
-        return out
-    tb = gaussian(np.where(ok, t, 0.0), 6.0)
-    wb = gaussian(ok.astype(np.float32), 6.0)
-    tb = np.where(wb > 1e-3, tb / np.maximum(wb, 1e-3), 0.0)
-    hh = np.interp(tb, arclen(pts), heights).astype(np.float32)
-    dist = np.where(ok, np.sqrt(d * d + 9.0) - 3.0, 1e5)          # crest rounded over ~3 m
-    if pert is not None:
-        dist = np.maximum(dist + 0.16 * lam * pert[sy, sx], 0.0)
-    g = np.exp(-(dist / lam) ** power) * T.smoothstep(R, 0.8 * R, dist)
-    prof = (hh * g).astype(np.float32)
-    out[sy, sx] = smax(out[sy, sx], prof, k)
-    return out
-
-
 def smax(a, b, k):
     """Smooth maximum (rounded valley floors where two ridge flanks meet), width ~1/k metres.
     The rounding fades out where either side is ~0, so empty ground stays exactly 0."""
@@ -678,7 +587,7 @@ def _box1d(a, r, axis):
 RANGE = {
     "mountain": dict(peak=158.0, peak_per_w=0.2, a_per_w=1.0, a_min_per_peak=0.48, power=1.25,
                      crest_noise=(0.80, 0.16, 0.08), summit_scale=(150.0, 50.0), spur_u=0.9,
-                     spur_v=2.0, spur_depth=0.66, crag=0.045, foot=32.0, foot_reach=2.4, meander=0.2,
+                     spur_v=2.0, spur_depth=0.74, crag=0.045, foot=32.0, foot_reach=2.4, meander=0.2,
                      extend=0.55, knobs=0.22),
     "hill": dict(peak=64.0, peak_per_w=0.0, a_per_w=0.8, a_min_per_peak=0.0, power=1.8,
                  crest_noise=(0.70, 0.22, 0.10), summit_scale=(120.0, 46.0), spur_u=1.0,
@@ -751,8 +660,8 @@ def range_relief(stroke, kind, seed, p=None):
     s1 = np.sqrt(n1_ * n1_ + 0.004) - 0.063          # |n| with a rounded valley floor
     s2 = np.sqrt(n2_ * n2_ + 0.004) - 0.063
     s3 = np.sqrt(n3_ * n3_ + 0.004) - 0.063
-    spur = (np.clip(s1 / 0.5, 0, 1) ** 0.8 * (0.55 + 0.45 * np.clip(s2 / 0.5, 0, 1) ** 0.8)
-            * (0.82 + 0.18 * np.clip(s3 / 0.5, 0, 1)))
+    spur = (np.clip(s1 / 0.5, 0, 1) ** 0.8 * (0.42 + 0.58 * np.clip(s2 / 0.5, 0, 1) ** 0.8)
+            * (0.72 + 0.28 * np.clip(s3 / 0.5, 0, 1)))
     # knobs: the spurs rise into secondary summits on their way down
     knob = 1.0 + rc["knobs"] * T.perlin_at(uu / (0.7 * lu) + 7.7, (v + wv) / (0.55 * a), seed + 11) \
         * T.smoothstep(0.2 * a, 0.7 * a, np.abs(v))
@@ -967,6 +876,8 @@ class World:
         hills *= saddle_h * (0.3 + 0.7 * keep)
         lift = smax(hills, mtn, 0.15) * T.smoothstep(-6.0, 40.0, self.f["sd"])
         h = self.f["base"] + lift
+        if self.p["erosion_droplets"] > 0:
+            h = self._erode(h, lift)
         # islands: a wooded central hill on each small island
         lumps = 0.5 + 0.5 * T.fbm_at(self.xs, self.ys, 60.0, 3, seed=self.seed + 42)
         for poly in self.m["land"][1:]:
@@ -989,6 +900,26 @@ class World:
         self.log("[world] relief: max %.1f m, hills max %.1f m, p99.9 mountains %.1f m"
                  % (float(self.f["h_pre"].max()), float(hills.max()),
                     float(np.percentile(self.f["h_pre"][core_env > 0.5], 99.9))))
+
+    def _erode(self, h, lift, k=2):
+        """Droplet hydraulic erosion on a ``k`` m grid over the hills and ranges: gullies cut
+        into the flanks, the spurs between them sharpen, the valley floors fill a little.  Then
+        a short talus relaxation.  Returns the eroded master-grid height."""
+        hk = box_down(h, k)
+        lk = box_down(lift, k)
+        spawn = np.where(lk > 10.0, lk, 0.0) ** 0.6
+        n = int((lk > 10.0).sum() * self.p["erosion_droplets"])
+        e = erode_droplets(hk, spawn, n, self.seed + 77, unit=100.0, inertia=0.25,
+                           erode_speed=0.35, deposit_speed=0.2, steps=48, max_step=0.008,
+                           capacity=6.0, log=None)
+        e = thermal(e, talus=1.4 * k, rate=0.3, iters=3, cell=1.0)
+        delta = gaussian(e - hk, 0.6) * (box_down(self.f["sd"], k) > 4.0)
+        up = smooth_up(delta, (hk.shape[0] * k, hk.shape[1] * k))
+        out = h.copy()
+        out[:up.shape[0], :up.shape[1]] += up
+        self.log("[world] erosion: %d droplets, change p1/p99 %.1f / %.1f m"
+                 % (n, float(np.percentile(delta, 1)), float(np.percentile(delta, 99))))
+        return out
 
     def city_keep(self):
         """0 at a city site -> 1 away from it: relief is eased down over a long, irregular
@@ -1268,6 +1199,8 @@ class World:
             dw = np.maximum(dd + warp[sl] * T.smoothstep(0.5 * rf, rf + 10.0, dd), 0.0)
             wgt = np.exp(-(np.maximum(dw - rf, 0.0) / fe) ** 2)
             wgt *= T.smoothstep(1.0, 9.0, rd[sl])
+            # never over the sea or the shore: the coastline stays where the map draws it
+            wgt *= T.smoothstep(4.0, 24.0, self.f["sd"][sl])
             h[sl] = h[sl] * (1 - wgt) + level * wgt
             self.pads.append({"key": key, "x": cx, "y": cy, "size": s, "radius": R, "flat": rf,
                               "level": round(level, 2)})

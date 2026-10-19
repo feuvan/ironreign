@@ -144,7 +144,7 @@ def p_earth_gate():
         bays=(3, 2), bay=2.6, col_h=2.9, col_r=0.18, plat_h=0.0, steps=False, wall_mat="W_PlasterWarm",
         front="lattice", front_inset=0.0, brackets=False, col_mat="W_LacquerDark",
         roof=K.RoofSpec(style="hip_gable", overhang=1.0, lift=0.35, flare=0.2, thick=0.22, pitch=0.55,
-                        tile_seg=4, tile_faces=2, nv=4, mat="W_Tile", ridge_h=0.4)), roof_h=2.4)
+                        tile_seg=4, tile_faces=2, nv=6, mat="W_Tile", ridge_h=0.4)), roof_h=2.4)
     return mb
 
 
@@ -164,7 +164,7 @@ def p_watchtower():
         bays=(2, 2), bay=2.2, col_h=2.8, col_r=0.15, plat_h=0.0, steps=False, wall_mat="W_PlasterWarm",
         front="open", side="open", front_inset=0.0, brackets=False, col_mat="W_LacquerDark",
         roof=K.RoofSpec(style="pyramid", overhang=1.2, lift=0.45, flare=0.25, thick=0.2, pitch=0.5,
-                        tile_seg=4, tile_faces=2, nv=4, mat="W_Tile", finial="gold", ridge_h=0.4)),
+                        tile_seg=4, tile_faces=2, nv=8, mat="W_Tile", finial="gold", ridge_h=0.4)),
            roof_h=2.6)
     return mb
 

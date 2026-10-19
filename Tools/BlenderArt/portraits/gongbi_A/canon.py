@@ -178,7 +178,7 @@ def spec(key, officer=None, start_year=212):
                  corner=r.u(0.0, 0.08) if female or kind in ("scholar", "elder", "monk")
                  else r.u(-0.1, 0.0),
                  color="#C0383A" if female else r.pick(["#9E5A4C", "#A9605A", "#B06A5E"]),
-                 line="#7A2226" if female else "#5A2A22", line_len=0.86 if female else 0.92)
+                 line="#7A2226" if female else "#5A2A22", line_len=0.8 if female else 0.92)
     wr = {}
     if years > 40:
         wr = dict(forehead=1 + int(years > 50) + int(years > 62), crows=1 + int(years > 55),
@@ -192,9 +192,12 @@ def spec(key, officer=None, start_year=212):
                     shade_tint="#C98A78", edge=0.45, ao=0.6)
     if old:
         skin["base"] = "skin_old"
-    face = dict(eye=eye, brow=brow, mouth=mouth, nose=dict(wing=0.82 if female else
-                                                              r.u(0.95, 1.12),
-                                                              bridge=0.6 if female else 1.0),
+    huadian = (dict(color=r.pick(["#C8302A", "#C9A040", "#2F7457"]), r=r.u(0.18, 0.26),
+                    petals=int(r.u(3, 6)), dz=2.3) if female and kind != "elder" and r.chance(0.5)
+               else None)
+    face = dict(huadian=huadian, eye=eye, brow=brow, mouth=mouth,
+                nose=dict(wing=0.82 if female else
+                          r.u(0.95, 1.12), bridge=0.6 if female else 1.0),
                 wrinkles=wr, skin=skin)
     builders = []
     pal = r.pick(ROBES)
@@ -284,7 +287,8 @@ def spec(key, officer=None, start_year=212):
         elif kind == "elder":
             builders.append(lambda C, hc=hc: gear.hair_cap(C, hc, C.root))
             if r.chance(0.5):
-                builders.append(lambda C: gear.tall_hat(C, dict(), C.root))
+                builders.append(lambda C: gear.tall_hat(C, dict(half=0.072, height=0.12,
+                                                                flare=0.06), C.root))
             else:
                 cc = r.pick(["gold", "#C9C2B0"])
                 builders.append(lambda C, cc=cc: gear.topknot(C, dict(crown=dict(color=cc)),

@@ -1,14 +1,15 @@
-"""World Terrain family recipe: the look numbers of the 3D world terrain and its 2D fallback map.
+"""World Terrain family recipe: legacy look numbers of the Blender scene helpers.
 
-Kept out of :mod:`ironart.recipes` (shared by every artist) on purpose; it follows the same rules:
-one sun from the screen top-left for the 2D map (STYLE.md section 4), Cycles CPU only, integer
-supersampling, Kuwahara sizes in *target* pixels.
+The 2D map is now a gongbi blue-green painting: its numbers live with the code that uses them -
+:mod:`ironart.world_terrain_glyphs` (``ELEV_DEG``, ``GLYPH``, ``CITY_CLEAR_PX``, ``TREE_GLYPH``:
+the pictorial mountains, hills and trees) and :mod:`ironart.world_terrain_gongbi` (``GP``: the
+silk and mineral palette, glazes, ink weights).  The 3D albedo palette is
+:data:`ironart.world_terrain_paint.PAL`.
 
-``worldmap``   Art/Map/WorldMap.png 2400 x 1500: 1 target px = 1 m, ortho top-down, studio sun
-               (screen 135 deg / 50 deg) + a neutral sky; painted finish lighter than the old
-               'map' recipe (modern premium look: crisp relief, soft painterly strokes).
-``preview3d``  scratch 3/4 view as the Unreal camera sees it (55 deg tilt, 40 deg FOV, looking
-               north) lit like IronEnvironment (sun from the south-west, ~32 deg).
+What is left here is used only by :mod:`ironart.world_terrain_render` (the scratch 3/4 previews):
+``WORLDMAP`` (the retired realistic top-down render; ``light_top`` default only), ``PREVIEW3D``
+(``light_persp`` default) and ``TREES`` (the stand-in tree prototypes, used when the World Models
+glbs are missing).
 """
 
 WORLDMAP = dict(
