@@ -1,36 +1,32 @@
 """Button.png, Button_Hover.png, Button_Pressed.png, Button_Disabled.png (192x64 9-slice,
-margins 20 / 16): cinnabar painted plaques (牌) with concave quarter-round corners (海棠角),
-an ink outline and a mud-gold inner rule.
+margins 20 / 16): flat cinnabar painted plaques (牌) with true concave quarter-circle corners
+(委角, r 6 px), an ink outline and a mud-gold inner rule that follows the notches.
 
-Cross-section (``d`` = distance inside the plaque outline, target px of the @1x art; the plaque
-is inset 1 px from the canvas, its corners are concave arcs of radius 5):
+Cross-section (``d`` = px inside the plaque outline; the plaque is inset 1 px from the canvas,
+so every straight rule lands on whole @1x pixels):
 
-    d 0.0-1.4    ink outline (warm black, the corner arcs drawn with a touch more weight)
-    d 1.4-9      晕染: the cinnabar deepens into the outline
-    d 3.5-4.5    mud-gold inner rule following the outline (concave corners included)
-    d 4.5-5.0    pale lead-white hairline (提白) inside the rule (normal / hover)
-    field        cinnabar with a soft vertical wash (paler band above the middle, deeper
-                 towards the bottom) and faint horizontal brush streaks - all functions of y
-                 in the strips, so Slate can stretch the button to any width
+    d 0-1      ink outline #1E1A16 (canvas row / column 1)
+    d 1-4      晕染: the only gradient - the colour deepens over these 3 px into the outline
+    d 4-5      mud-gold rule (pressed: an ink hairline here and the gold 1 px further in)
+    field      flat colour, +-1.5 levels of horizontal brush streaks (a function of y only)
 
-States
-    normal    cinnabar #B5382A
-    hover     brighter, towards vermilion, with a soft mud-gold wash across the middle rows
-    pressed   deeper cinnabar, the wash inverted (darker on top: pressed in), the gold rule
-              inset by 1 px with an ink hairline outside it (an inset double rule)
-    disabled  ink-grey wash (墨灰) with a greyed rule and a soft ink outline
-
-Corners: a small mud-gold cloud curl sits in each corner pocket inside the rule.
-Labels: Body-Bold 16, TextLight with the 1 px dark shadow the Slate code draws.
+States (field, 晕染 edge colour, rule)
+    normal    cinnabar #B5382A -> #8E2A20, mud-gold #C9A24B                      TextLight 4.8:1
+    hover     a warmer, more saturated cinnabar of the *same* luminance (#BA3624, 4.7:1);
+              the cue is at the rim: the 晕染 brightens towards vermilion, the rule is a
+              paler gold and a 2 px mud-gold wash (35 %) lines the inside of the rule
+    pressed   deeper cinnabar #962A20 -> #5E1A13, inset double rule                  6.4:1
+    disabled  ink-grey #5E5750 -> #48423C, greyed rule, soft ink outline; the label is drawn
+              #D8CFBF with no Slate DisabledEffect                                 4.6:1
+Corners: a small mud-gold cloud-thunder hook (云雷纹, 1 px lines) in each corner pocket inside
+the rule, mirrored.  Labels: Body-Bold 16; the QA asserts >= 4.5:1 for the worst pixel of the
+label zone (x 24-168, y 26-38) in every state.
 """
-
-import math
 
 import numpy as np
 
-from ironart import ui_chrome_gongbi as GB
-from ironart import ui_chrome_ornament as O
 from ironart import ui_chrome_paint as P
+from ironart import ui_chrome_pixel as X
 from ironart import ui_chrome_sdf as S
 
 NAME = "Button"
@@ -41,36 +37,36 @@ FILE = {"normal": "Button", "hover": "Button_Hover", "pressed": "Button_Pressed"
         "disabled": "Button_Disabled"}
 
 INSET = 1.0
-CORNER = 5.0
-OUTLINE = 1.4
-
-#: per state: field, deep (晕染 edge), pale (wash), outline, rule gold, highlight opacity
+NOTCH = 6.0
+#: label colour per state (what the Slate code should draw; the QA measures against it)
+LABEL = {"normal": (243, 232, 207), "hover": (243, 232, 207), "pressed": (243, 232, 207),
+         "disabled": (216, 207, 191)}
 STATES = {
-    "normal": dict(field="#B5382A", deep="#7C2118", pale="#C3493A", outline="#1E1A16",
-                   gold="#C9A24B", hi=0.55, rule=(3.5, 4.5)),
-    "hover": dict(field="#C4472F", deep="#86281B", pale="#D46446", outline="#1E1A16",
-                  gold="#D8B565", hi=0.65, rule=(3.5, 4.5), wash=0.30),
-    "pressed": dict(field="#982B20", deep="#5C1811", pale="#A93527", outline="#1E1A16",
-                    gold="#B8913F", hi=0.0, rule=(4.5, 5.5), inset_line=(3.6, 4.1)),
-    "disabled": dict(field="#6D655D", deep="#463F39", pale="#7A726A", outline="#3A322B",
-                     gold="#9A9078", hi=0.25, rule=(3.5, 4.5)),
+    "normal": dict(field="#B5382A", edge="#8E2A20", outline="#1E1A16", gold="#C9A24B",
+                   rule=(4.0, 5.0)),
+    "hover": dict(field="#BA3624", edge="#D0643C", outline="#1E1A16", gold="#E0C47E",
+                  rule=(4.0, 5.0), rim=0.35),
+    "pressed": dict(field="#962A20", edge="#5E1A13", outline="#1E1A16", gold="#B8913F",
+                    rule=(5.0, 6.0), inset_line=(4.0, 5.0)),
+    "disabled": dict(field="#5E5750", edge="#48423C", outline="#3A322B", gold="#8F8670",
+                     rule=(4.0, 5.0)),
 }
+#: corner hook (top-left orientation), 1 px lines, placed with its corner at (HOOK, HOOK)
+HOOK_PATHS = [[(0, 4), (0, 0), (4, 0), (4, 4), (2, 4), (2, 2)]]
+HOOK = 10
 
 
 def plaque_d(G):
-    """Distance inside the plaque outline (positive inside): a box inset 1 px with concave
-    quarter-circle corners."""
-    sd = P.plaque_sd(G, W, H, inset=INSET, notch=CORNER)
-    return -sd
+    """Distance inside the plaque outline (positive inside)."""
+    return -P.plaque_sd(G, W, H, inset=INSET, notch=NOTCH)
 
 
-def corner_curl(G, variant):
-    """sd of the four corner ornaments: a small ruyi head inside the rule's concave corner,
-    pointing into the corner (built top-left, mirrored)."""
-    st = STATES[variant]
-    c = INSET + st["rule"][1] + 2.9
-    sd, _ = O.ruyi(G, c, c, 2.5, rot=135.0, curls=False)
-    return GB.mirror4(sd)
+def hooks():
+    m = np.zeros((5, 5), bool)
+    for p in HOOK_PATHS:
+        X.draw_path(m, p)
+    full = np.zeros((H, W), bool)
+    return X.mirror4_place(full, m, HOOK, HOOK)
 
 
 def paint(G, variant="normal", seed=None):
@@ -80,47 +76,26 @@ def paint(G, variant="normal", seed=None):
     d = plaque_d(G)
     C = P.Canvas(G)
     inside = S.aa_mask(-d, G)
-    y = G.Y
-    # ---- the cinnabar wash: vertical wash x 晕染 into the outline, brush streaks along x ----
-    v = (y - INSET) / (H - 2 * INSET)
-    if variant == "pressed":
-        wash = 0.35 * P.smoothstep(0.25, 0.85, v) - 0.35 * (1.0 - P.smoothstep(0.0, 0.35, v))
-    else:
-        wash = 0.55 * np.exp(-((v - 0.40) / 0.22) ** 2) - 0.30 * P.smoothstep(0.55, 1.0, v)
-    col = P.mix(st["field"], st["pale"], np.clip(wash, 0, 1))
-    col = P.mix(col, st["deep"], np.clip(-wash, 0, 1) * 0.6)
-    k = P.smoothstep(0.0, 9.0, d - OUTLINE) ** 0.7
-    col = P.mix(st["deep"], col, k)
-    streak = P.noise1d(G.ys, 2.5, seed + 1, octaves=2) * 0.008 \
-        + P.noise1d(G.ys, 0.6, seed + 2, octaves=1) * 0.004
-    col = col * (1.0 + streak[:, None])[..., None]
-    if st.get("wash"):
-        # hover: a soft mud-gold glaze across the middle rows, fading in the end margins
-        ends = P.smoothstep(4.0, 18.0, np.minimum(G.X, W - G.X))
-        gw = st["wash"] * np.exp(-((v - 0.48) / 0.26) ** 2) * ends
-        col = P.mix(col, P.rgb("#E2B866"), gw * 0.55)
+    # ---- flat field + horizontal brush streaks (y only: stretch-safe) ------------------------
+    streak = P.noise1d(G.ys, 3.0, seed + 1, octaves=2) * 0.006
+    col = P.rgb(st["field"]) * (1.0 + streak[:, None, None])
+    col = np.broadcast_to(col, G.shape + (3,)).copy()
+    # ---- 晕染 over the 3 px next to the outline -------------------------------------------
+    k = P.smoothstep(1.0, 4.0, d)
+    col = P.mix(st["edge"], col, k ** 0.8)
     C.over(inside, col)
-
-    # ---- inner rules --------------------------------------------------------------------------
+    # ---- hover: a soft mud-gold wash lining the inside of the rule ---------------------------
     r0, r1 = st["rule"]
-    gthr = GB.strip_threads(d, seed + 3, pitch=0.5, amp=0.04, gap=0.15, slow=0.02)
-    gold = P.rgb(st["gold"]) * gthr[..., None]
-    gold = gold * (1.0 - 0.12 * (1.0 - P.smoothstep(r0, r0 + 0.35, d))
-                   - 0.12 * P.smoothstep(r1 - 0.35, r1, d))[..., None]
+    if st.get("rim"):
+        C.over(S.band(d, r1, r1 + 2.0, G), "#C9A24B", st["rim"])
+    # ---- rules ---------------------------------------------------------------------------------
     if st.get("inset_line"):
-        a, b = st["inset_line"]
-        C.over(GB.band(d, a, b, G), "#3A140E", 0.85)
-    C.over(GB.band(d, r0, r1, G), gold)
-    if st["hi"] > 0:
-        C.over(GB.band(d, r1 + 0.05, r1 + 0.55, G), "#F0E2C8", st["hi"] * 0.55)
-
-    # ---- corner curls -----------------------------------------------------------------------
-    curl = corner_curl(G, variant)
-    C.over(S.aa_mask(curl, G), GB.mud_gold(G, curl, seed + 5, base=st["gold"], yun=0.0,
-                                            gran=0.03, flecks=0.0, pool=0.12, pool_w=0.3))
-
-    # ---- ink outline --------------------------------------------------------------------------
-    ink = GB.ink_density(G, seed + 6, st["outline"], var=0.0)
-    C.over(GB.band(d, -1.0, OUTLINE, G) * inside, ink)
+        C.over(S.band(d, *st["inset_line"], G), "#2A120D", 0.9)
+    C.over(S.band(d, r0, r1, G), st["gold"])
+    # ---- corner hooks (pixel grid) --------------------------------------------------------------
+    hk = X.up(hooks().astype(np.float32), G.ss)
+    C.over(hk, st["gold"])
+    # ---- ink outline -----------------------------------------------------------------------------
+    C.over(S.band(d, -1.0, 1.0, G) * inside, st["outline"])
     C.erase(1.0 - inside)
     return C.rgba()

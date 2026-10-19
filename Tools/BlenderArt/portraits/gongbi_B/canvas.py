@@ -75,7 +75,7 @@ def profile(kind, t, taper=None):
 
 
 class Prim:
-    __slots__ = ("V", "Al", "col", "mode", "tris", "ngon", "z", "C", "grain")
+    __slots__ = ("V", "Al", "col", "mode", "tris", "ngon", "z", "C", "grain", "tag")
 
     def __init__(self, V, Al, col, mode, tris=None, ngon=False, C=None, grain=None):
         self.V = V
@@ -88,17 +88,22 @@ class Prim:
         self.z = 0.0
         # pigment granulation / silk show-through amount (shader noise), per primitive
         self.grain = (0.45 if mode == "paint" else 1.0) if grain is None else grain
+        # render variant: None = always, 'main' = full-size render only, 't96' = 96 px
+        # thumbnail pass only (heavier face-structure lines, see face.FaceDrawer._tstroke)
+        self.tag = None
 
 
 class Canvas:
     def __init__(self, W=384, H=480, seed=0):
         self.W, self.H = W, H
         self.prims = []
+        self.tag = None
         self.rng = np.random.default_rng(seed)
         self._seed = seed * 1000 + 17
 
     # -- bookkeeping ---------------------------------------------------------------------
     def _push(self, p):
+        p.tag = self.tag
         p.z = len(self.prims) * DZ
         self.prims.append(p)
         return p

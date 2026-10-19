@@ -116,29 +116,51 @@ def skull_shell(fd, volume=0.02):
     return Shell(H, (0.0, 0.43, -0.035), (0.330 * w + volume, 0.432 + volume, 0.475 + volume))
 
 
-def male_hairline(far, top=0.205, sideburn=0.50, recede=0.0, nape=0.64):
+def hairline_y(lon, top=0.205, arch=1.0, recede=0.0, peak=0.0):
+    """Forehead hairline height (head units, y down) at longitude ``lon`` (|lon| <= ~0.95):
+    a soft arch curving down towards the temples, optional temple recession (the corners go
+    back, an M) and a slight widow's peak (美人尖).  Never a ruler-straight edge."""
+    a = np.abs(np.asarray(lon, float))
+    y = top + 0.11 * arch * np.clip(a / 0.9, 0, 1.3) ** 1.6
+    y = y - 0.05 * recede * np.exp(-((a - 0.62) / 0.17) ** 2)
+    y = y + 0.024 * peak * np.exp(-(a / 0.13) ** 2)
+    return y
+
+
+def hairline_sagitta(top=0.205, arch=1.0, recede=0.0, peak=0.0):
+    """How far the forehead hairline departs from a straight edge between the temples
+    (head units): the canon gate requires >= 0.08 (a ruler-straight 'bowl' cut has ~0.06)."""
+    lon = np.linspace(-0.9, 0.9, 61)
+    y = hairline_y(lon, top, arch, recede, peak)
+    chord = y[0] + (y[-1] - y[0]) * (lon - lon[0]) / (lon[-1] - lon[0])
+    return float(np.max(np.abs(y - chord)))
+
+
+def male_hairline(far, top=0.205, sideburn=0.50, recede=0.0, nape=0.64, arch=1.0, peak=0.0):
     """Hairline on the head surface as (lon, y): far temple -> forehead -> near sideburn ->
     over the near ear -> nape."""
-    t = top + 0.035 * recede
     r = recede
-    # a gentle arch: highest at the centre, curving down to the temples and sideburns
-    return np.array([
-        (far * 1.36, 0.44), (far * 1.18, 0.325 + 0.03 * r), (far * 0.88, 0.268 + 0.05 * r),
-        (far * 0.42, t + 0.022), (0.0, t), (-far * 0.42, t + 0.022),
-        (-far * 0.88, 0.268 + 0.05 * r), (-far * 1.14, 0.315 + 0.04 * r),
-        (-far * 1.30, 0.40), (-far * 1.37, sideburn),
-        (-far * 1.47, sideburn - 0.04), (-far * 1.62, 0.43), (-far * 1.85, 0.45),
-        (-far * 2.05, 0.54), (-far * 2.30, nape)])
+    fl = np.array([0.92, 0.74, 0.56, 0.38, 0.20, 0.10, 0.0])
+    fore_far = [(far * l, float(hairline_y(l, top, arch, r, peak))) for l in fl]
+    fore_near = [(-far * l, float(hairline_y(l, top, arch, r, peak))) for l in fl[::-1][1:]]
+    y92 = float(hairline_y(0.92, top, arch, r, peak))
+    return np.array(
+        [(far * 1.36, 0.44), (far * 1.16, max(0.335 + 0.03 * r, y92 + 0.03))] + fore_far + fore_near
+        + [(-far * 1.14, max(0.325 + 0.04 * r, y92 + 0.025)), (-far * 1.30, 0.40),
+           (-far * 1.37, sideburn), (-far * 1.47, sideburn - 0.04), (-far * 1.62, 0.43),
+           (-far * 1.85, 0.45), (-far * 2.05, 0.54), (-far * 2.30, nape)])
 
 
 def male_hair(cv, fd, color="hair", grey=0.0, top=0.205, sideburn=0.50, bun=True,
-              recede=0.0, volume=0.022, seed=0, strands=150, nape=0.64):
-    """Hair combed up into a topknot (束发).  Returns dict with polygons and the bun shell."""
+              recede=0.0, volume=0.022, seed=0, strands=150, nape=0.64, arch=1.0, peak=0.0):
+    """Hair combed up into a topknot (束发).  Returns dict with polygons and the bun shell.
+    The hairline is a soft arch (``arch``), with temple recession (``recede``) or a slight
+    widow's peak (``peak``); combed strands stay visible on grey and white hair too."""
     H = fd.H
     s = H.s
     far = fd.far
     rng = np.random.default_rng(seed + 5)
-    hl = male_hairline(far, top, sideburn, recede, nape)
+    hl = male_hairline(far, top, sideburn, recede, nape, arch, peak)
     HLc = g.catmull(hl, 8)
     HL = H.Plon(HLc[:, 0], HLc[:, 1], 0.004)
     y_nape = hl[-1, 1]
@@ -160,7 +182,8 @@ def male_hair(cv, fd, color="hair", grey=0.0, top=0.205, sideburn=0.50, bun=True
             cv.band(P1[vis], P2[vis], sheen_col,
                     lambda S, T: al * np.sin(np.pi * T) * np.sin(np.pi * S) ** 0.8
                     * (1.2 - 0.6 * S if far > 0 else 0.6 + 0.6 * S), mode="paint", rows=4)
-    dark = pal.hexs(pal.mix("ink", base, 0.20 if grey < 0.5 else 0.55))
+    # strands must read on grey hair too (never a flat grey cap): darker combing lines
+    dark = pal.hexs(pal.mix("ink", base, 0.20 if grey < 0.3 else 0.38))
     light = pal.hexs(pal.mix(base, "white", 0.22 + 0.5 * grey))
     # combed strands from the hairline up to the knot
     def strand(lon0, y0, lon1, y1, w, col, al, n=26):
@@ -171,7 +194,9 @@ def male_hair(cv, fd, color="hair", grey=0.0, top=0.205, sideburn=0.50, bun=True
         vis = H.facing_lon(lo, yy) > 0.02
         for seg in _segments_visible(P, vis):
             cv.stroke(seg, w, col, al, prof="hair", noise=0.15)
-    front = HLc[: int(len(HLc) * 0.62)]
+    # the front part of the hairline: far temple -> forehead -> near sideburn
+    f_sb = (len(hl) - 6) / (len(hl) - 1)
+    front = HLc[: int(len(HLc) * f_sb * 0.97)]
     for i in range(strands):
         u = rng.uniform(0, 1)
         lon0, y0 = g.at(front, u)
@@ -179,9 +204,19 @@ def male_hair(cv, fd, color="hair", grey=0.0, top=0.205, sideburn=0.50, bun=True
         lon1 = lon0 * 0.18 + rng.normal(0, 0.06)
         y1 = 0.015 + rng.normal(0, 0.01)
         strand(lon0, y0, lon1, y1, s * 0.0026 * rng.uniform(0.7, 1.2), dark,
-               0.75 * rng.uniform(0.5, 1.0))
-        if i % 3 == 0:
+               (0.75 + 0.15 * min(grey * 2, 1)) * rng.uniform(0.5, 1.0))
+        if i % 3 == 0 or (grey > 0.3 and i % 2 == 0):
             strand(lon0 + 0.02, y0, lon1, y1, s * 0.0022, light, (0.35 + 0.4 * grey) * rng.uniform(0.5, 1))
+    # temples (鬓): a denser lock of combed strands sweeping up and back from the sideburn on
+    # each side, so the hairline is drawn by hair, not by an edge
+    for side in (far, -far):
+        for i in range(34):
+            lon0 = side * rng.uniform(0.80, 1.32)
+            y0 = rng.uniform(0.30, sideburn - 0.02)
+            y0 = max(y0, float(hairline_y(min(abs(lon0), 0.95), top, arch, recede, peak)) + 0.01)
+            lon1 = side * rng.uniform(0.35, 0.75)
+            strand(lon0, y0, lon1, rng.uniform(0.03, 0.10), s * 0.0024 * rng.uniform(0.8, 1.2),
+                   dark if i % 3 else light, (0.80 if i % 3 else 0.55) * rng.uniform(0.6, 1.0))
     # back hair: from the nape and behind the ear up to the knot
     for i in range(int(strands * 0.45)):
         lon0 = -far * rng.uniform(1.55, 2.6)
@@ -190,7 +225,7 @@ def male_hair(cv, fd, color="hair", grey=0.0, top=0.205, sideburn=0.50, bun=True
         if i % 3 == 0:
             strand(lon0, y0, lon0 * 0.3, 0.02, s * 0.0022, light, (0.3 + 0.4 * grey) * rng.uniform(0.5, 1))
     # hairline fringe: fine short strokes softening the edge into the skin
-    HLd = g.resample(HL[: int(len(HL) * 0.70)], 150)
+    HLd = g.resample(HL[: int(len(HL) * (f_sb + 0.06))], 150)
     nrm = g.normals(HLd)
     tan = g.tangents(HLd)
     cen = H.P([(0.0, 0.5)])[0]
@@ -328,23 +363,27 @@ def flow_mass(cv, R, B, cols, rng, n, s, sway=0.012, tips=None, tip_pull=0.6,
     return poly
 
 
-def lock(cv, C, W0, cols, rng, n, s, strand_w=0.0034, wash=0.3, base_alpha=0.95):
+def lock(cv, C, W0, cols, rng, n, s, strand_w=0.0034, wash=0.3, base_alpha=0.95, conv=0.55,
+         end_w=0.20, end_fade=0.0):
     """One lock of hair (绺) along centreline C (root -> tip) of half-width W0 px at its fullest:
-    a soft base mass, an ink-wash body, then strands combed along it converging to the tip."""
+    a soft base mass, an ink-wash body, then strands combed along it converging to the tip.
+    ``conv`` how strongly the strands gather to the tip, ``end_w`` the width left at the end
+    (a blunt, brushed end rather than a point), ``end_fade`` dissolves the end (into a beard)."""
     base, mix = cols
     M = 60
     Cr = g.resample(C, M)
     t = np.linspace(0, 1, M)
     w = W0 * (0.60 + 0.40 * np.sin(np.pi * np.clip(t * 1.7, 0, 1)) ** 0.7) \
-        * (1 - 0.80 * g.smoothstep(0.50, 1.0, t))
+        * (1 - (1 - end_w) * g.smoothstep(0.50, 1.0, t))
     N = g.normals(Cr)
     L = Cr + N * w[:, None]
     R = Cr - N * w[:, None]
-    cv.band(L, R, base, lambda S, T: base_alpha * g.smoothstep(0.0, 0.10, S)
+    ef = lambda S: 1 - end_fade * g.smoothstep(0.55, 1.0, S)
+    cv.band(L, R, base, lambda S, T: base_alpha * g.smoothstep(0.0, 0.10, S) * ef(S)
             * (1 - 0.35 * (np.abs(T - 0.5) * 2) ** 3), mode="paint", rows=4)
     if wash:
         sd = int(rng.integers(1 << 20))
-        cv.band(L, R, "ink_m", lambda S, T: wash * (1 - 0.6 * S) * (1 - (np.abs(T - 0.5) * 2) ** 2),
+        cv.band(L, R, "ink_m", lambda S, T: wash * (1 - 0.6 * S) * ef(S) * (1 - (np.abs(T - 0.5) * 2) ** 2),
                 rows=4, alpha_xy=lambda V: np.clip(1 + 0.4 * g.vnoise(V, s * 0.03, sd), 0.3, 1.6))
     wts = np.array([m[2] for m in mix], float)
     wts = wts / wts.sum()
@@ -355,16 +394,39 @@ def lock(cv, C, W0, cols, rng, n, s, strand_w=0.0034, wash=0.3, base_alpha=0.95)
         t1 = rng.uniform(0.55, 1.0)
         ts = np.linspace(t0, t1, 8)
         k = (ts * (M - 1)).astype(int)
-        conv = 1 - 0.55 * (ts - t0) / max(t1 - t0, 1e-3)          # strands converge to the tip
-        P = Cr[k] + N[k] * (v * conv * w[k])[:, None]
+        cv_ = 1 - conv * (ts - t0) / max(t1 - t0, 1e-3)          # strands gather to the tip
+        P = Cr[k] + N[k] * (v * cv_ * w[k])[:, None]
         cv.stroke(g.catmull(P, 4), s * strand_w * rng.uniform(0.7, 1.2), col,
-                  al * rng.uniform(0.55, 1.0), prof="hair", noise=0.12, taper=(0.12, 0.6))
+                  al * rng.uniform(0.55, 1.0) * (1 - 0.7 * end_fade * g.smoothstep(0.75, 1.0, t1)),
+                  prof="hair", noise=0.12, taper=(0.12, 0.6))
+
+
+MOUS_STYLES = ("bazi", "up", "merge")
+
+
+def goatee_half_width(mouth_w, width=1.0):
+    """Half-width (head units) of a short goatee's end.  Canon rule: a short goatee is at
+    least ~0.35 of the mouth width - here never under 0.48 of it at the end (a full, rounded
+    chin beard, never an isolated narrow chin tuft)."""
+    return max(0.072 * width, 0.24 * mouth_w)
+
+
+def default_mous(kind):
+    return "merge" if kind in ("full", "long") else "bazi"
 
 
 def beard(cv, fd, kind="full", length=0.30, width=1.0, grey=0.0, density=1.0, seed=0,
-          moustache=True, whiskers=True, color="hair", droop=1.0):
+          moustache=True, whiskers=True, color="hair", mous=None, link=None):
     """kind: 'full' (络腮胡 whiskers + chin beard + moustache), 'long' (长髯 to the chest),
-    'goatee' (scholar's moustache and chin beard), 'stubble' (short full)."""
+    'goatee' (scholar's moustache joined by a sparse chin beard to a full, rounded chin beard),
+    'stubble' (short full).
+
+    Moustache (髭) styles - never thin drooping whiskers that end in points below the mouth:
+      'bazi'  八字胡: full at the root, combed out over the upper lip, the ends level with or
+              above the mouth corners and turned outward
+      'up'    the ends brushed outward and a little up
+      'merge' (full and long beards) the ends sweep out over the mouth corners and dissolve
+              into the beard mass, in the beard's own colour"""
     F = fd.F
     H = fd.H
     s = H.s
@@ -375,10 +437,15 @@ def beard(cv, fd, kind="full", length=0.30, width=1.0, grey=0.0, density=1.0, se
     mw = F.mouth_w / 2
     chin = fd.lm["chin"]
     L = length * s
-    out = {}
+    mous = mous or default_mous(kind)
+    if mous not in MOUS_STYLES:
+        raise ValueError("moustache style %r: drooping whiskers are not in the canon" % mous)
+    if mous == "merge" and kind not in ("full", "long"):
+        raise ValueError("a 'merge' moustache needs a beard mass to merge into")
+    if link is None:
+        link = 0.5 if kind == "goatee" else 0.0
+    out = dict(kind=kind, mous=mous)
 
-    def Pf(pts, dz=0.012):
-        return H.P(pts, dz)
     tip = np.array([chin[0] + far * s * 0.012, chin[1] + L])
     if kind in ("full", "stubble", "long", "goatee"):
         if kind in ("full", "stubble"):
@@ -391,13 +458,17 @@ def beard(cv, fd, kind="full", length=0.30, width=1.0, grey=0.0, density=1.0, se
                    (0.0, my + F.lip_lo + 0.04), (far * 0.3, 0.875), (far * 0.7, 0.85),
                    (far * 0.95, 0.79)]
         else:
-            top = [(-far * 0.36, 0.89), (-far * 0.15, my + F.lip_lo + 0.05), (0.0, my + F.lip_lo + 0.045),
-                   (far * 0.15, my + F.lip_lo + 0.05), (far * 0.36, 0.89)]
+            # the chin beard grows from under the lower lip across the whole chin
+            top = [(-far * 0.42, 0.880), (-far * 0.20, my + F.lip_lo + 0.040),
+                   (0.0, my + F.lip_lo + 0.034), (far * 0.20, my + F.lip_lo + 0.040),
+                   (far * 0.42, 0.880)]
         top = np.array(top)
         R = H.Plon(*g.catmull(top, 8).T, 0.012)
         # end curve: short below the jaw at the sides, long at the centre, lobed into locks
         jn = R[0]
         jf = R[-1]
+        tip_pull = 0.55
+        end_spread = 0.04
         if kind in ("full", "stubble"):
             sp = s * 0.17 * width
             B = g.catmull([jn + np.array([-far * s * 0.005, s * 0.16]),
@@ -417,40 +488,72 @@ def beard(cv, fd, kind="full", length=0.30, width=1.0, grey=0.0, density=1.0, se
                            jf + np.array([far * s * 0.005, s * 0.26])], 8)
             tips = [0.35, 0.5, 0.62]
         else:
-            # 山羊须 done the dignified way: a full, rounded chin lock, not a stringy point
-            sp = s * 0.075 * width
-            B = g.catmull([R[0] + np.array([-far * s * 0.015, s * 0.06]),
+            # 山羊须 done the dignified way: a full, rounded chin beard whose end stays broad
+            sp = s * goatee_half_width(F.mouth_w, width)
+            B = g.catmull([R[0] + np.array([-far * s * 0.010, s * 0.05]),
                            tip + np.array([-far * sp, -L * 0.30]),
-                           tip + np.array([-far * sp * 0.45, -L * 0.04]), tip,
-                           tip + np.array([far * sp * 0.45, -L * 0.04]),
+                           tip + np.array([-far * sp * 0.60, -L * 0.04]), tip,
+                           tip + np.array([far * sp * 0.60, -L * 0.04]),
                            tip + np.array([far * sp, -L * 0.30]),
-                           R[-1] + np.array([far * s * 0.015, s * 0.06])], 8)
-            tips = [0.42, 0.5, 0.58]
-        n = int({"full": 900, "stubble": 450, "long": 900, "goatee": 380}[kind] * density)
+                           R[-1] + np.array([far * s * 0.010, s * 0.05])], 8)
+            tips = [0.34, 0.5, 0.66]
+            tip_pull = 0.25
+            end_spread = 0.08
+        n = int({"full": 900, "stubble": 450, "long": 900, "goatee": 460}[kind] * density)
         out["mass"] = flow_mass(cv, R, B, cols, rng, n, s, sway=0.014 if kind != "long" else 0.02,
-                                tips=tips, tip_pull=0.55, root_band=0.35 if kind == "full" else 0.15,
-                                base_alpha=0.92, fade_in=0.30, wash=0.45 * (1 - 0.6 * grey))
-    # --- moustache (髭): two locks combed outward from the philtrum over the upper lip, full
-    # at the root, draping past the mouth corners and tapering (into the beard when there is
-    # one) - never thin drooping whiskers ---
+                                tips=tips, tip_pull=tip_pull,
+                                root_band=0.35 if kind == "full" else 0.15,
+                                base_alpha=0.92, fade_in=0.30, wash=0.45 * (1 - 0.6 * grey),
+                                end_spread=end_spread)
+        if kind == "goatee":
+            # drawn width of the chin beard near its end (for the canon gate)
+            Bm = g.resample(B, 60)
+            band_ = Bm[(Bm[:, 1] > tip[1] - 0.45 * L)]
+            out["goatee_w"] = float(band_[:, 0].max() - band_[:, 0].min()) if len(band_) else 0.0
+    # --- sparse chin beard joining the moustache ends to the chin beard (no isolated tuft) ---
+    if kind == "goatee" and link > 0:
+        for side in (-1, 1):
+            Rl = H.P([(side * (mw + 0.010), my - 0.016), (side * (mw + 0.016), my + 0.012),
+                      (side * (mw + 0.010), my + F.lip_lo + 0.040),
+                      (side * (mw * 0.55), 0.900)], np.array([0.03, 0.025, 0.02, 0.015]))
+            Bl = H.P([(side * (mw + 0.024), my + 0.006), (side * (mw + 0.030), my + 0.040),
+                      (side * (mw + 0.022), my + F.lip_lo + 0.070),
+                      (side * (mw * 0.62), 0.935)], 0.012)
+            flow_mass(cv, g.catmull(Rl, 6), g.catmull(Bl, 6), cols, rng,
+                      int(90 * link * density), s, sway=0.006, base_alpha=0.30 * link,
+                      fade_in=0.25, wash=0.10 * link, strand_w=0.0026, end_spread=0.02)
+        out["link"] = link
+    # --- moustache (髭): two locks combed outward from the philtrum over the upper lip ---
     if moustache and kind != "none":
         ny = F.nose_y + 0.020
-        drop = {"long": 0.17, "full": 0.085, "goatee": 0.028, "stubble": 0.030}[kind] * droop
-        W0 = {"long": 0.022, "full": 0.030, "goatee": 0.022, "stubble": 0.020}[kind]
+        mc_y = my - F.smile * 0.012              # mouth corner height
+        W0 = {"long": 0.024, "full": 0.032, "goatee": 0.026, "stubble": 0.022}[kind]
+        # the moustache is painted in the beard's own colour: a lighter wash than a lone lock
+        mcols = beard_colors(grey + (0.08 if grey > 0.15 else 0.0), color)
+        ends = []
         for side in (-far, far):
             fs = side == far
-            if kind in ("goatee", "stubble"):
-                # a neat moustache that ends at the mouth corner (never thin drooping whiskers)
-                fr = [(side * 0.006, ny + 0.010), (side * mw * 0.50, ny + 0.024),
-                      (side * mw * 0.92, my - 0.016), (side * (mw + 0.010), my + drop)]
-            else:
-                fr = [(side * 0.006, ny + 0.010), (side * mw * 0.45, ny + 0.026),
-                      (side * mw * 0.90, my - 0.014), (side * (mw + 0.020), my + drop * 0.45),
-                      (side * (mw + 0.028), my + drop)]
+            if mous == "bazi":
+                fr = [(side * 0.006, ny + 0.010), (side * mw * 0.48, ny + 0.020),
+                      (side * mw * 0.90, mc_y - 0.020), (side * (mw + 0.024), mc_y - 0.020)]
+                kw = dict(conv=0.30, end_w=0.40)
+            elif mous == "up":
+                fr = [(side * 0.006, ny + 0.010), (side * mw * 0.48, ny + 0.020),
+                      (side * mw * 0.92, mc_y - 0.022), (side * (mw + 0.026), mc_y - 0.036)]
+                kw = dict(conv=0.30, end_w=0.38)
+            else:   # merge
+                fr = [(side * 0.006, ny + 0.010), (side * mw * 0.45, ny + 0.024),
+                      (side * mw * 0.92, mc_y - 0.012), (side * (mw + 0.028), mc_y + 0.016),
+                      (side * (mw + 0.040), mc_y + 0.046)]
+                kw = dict(conv=0.20, end_w=0.55, end_fade=0.85)
             dz = [0.050, 0.048, 0.040, 0.020, 0.0][:len(fr)]
             C = g.catmull(H.P(fr, np.array(dz)), 10)
-            lock(cv, C, s * W0 * (0.85 if fs else 1.0), cols, rng,
-                 int(170 * density * (0.8 if fs else 1.0)), s, wash=0.35 * (1 - 0.5 * grey))
+            lock(cv, C, s * W0 * (0.85 if fs else 1.0), mcols, rng,
+                 int(190 * density * (0.8 if fs else 1.0)), s,
+                 wash=0.16 * (1 - 0.5 * grey), base_alpha=0.88, **kw)
+            ends.append(C[-1])
+        out["mous_ends"] = ends
+        out["mouth_corners"] = [H.P([(sd * mw, mc_y)], 0.02)[0] for sd in (-far, far)]
     out["tip"] = tip
     return out
 
@@ -510,9 +613,11 @@ def lady_hair_back(cv, fd, T, length=0.0, color="hair"):
 
 
 def lady_hair(cv, fd, color="hair", style="high_bun", seed=0, volume=0.03, puff=1.0,
-              bun_h=1.0, loops=0, tiers=2):
+              bun_h=1.0, loops=0, tiers=2, hairline=0.268, peak=0.0):
     """Court lady's hair (仕女): centre parting, hair swept smoothly over the temples and the
-    tops of the ears with soft volume (鬓), gathered into a high two-tier bun (高髻)."""
+    tops of the ears with soft volume (鬓), gathered into a high two-tier bun (高髻).
+    ``hairline`` is the height of the parting's front (y down); the temples come down over
+    the corners of the forehead so the forehead stays modest; ``peak`` a slight 美人尖."""
     H = fd.H
     s = H.s
     far = fd.far
@@ -548,9 +653,12 @@ def lady_hair(cv, fd, color="hair", style="high_bun", seed=0, volume=0.03, puff=
     # --- cranium hair with centre parting, temples puffed over the ears ---
     def vol(y):
         return volume + 0.06 * puff * np.exp(-((y - 0.42) / 0.12) ** 2)
-    hl = np.array([(far * 1.30, 0.56), (far * 1.05, 0.44), (far * 0.85, 0.33), (far * 0.55, 0.262),
-                   (far * 0.22, 0.236), (0.0, 0.240), (-far * 0.22, 0.236), (-far * 0.55, 0.262),
-                   (-far * 0.85, 0.33), (-far * 1.02, 0.44), (-far * 1.18, 0.54),
+    hy = hairline
+    hl = np.array([(far * 1.30, 0.56), (far * 1.05, 0.45), (far * 0.85, hy + 0.072),
+                   (far * 0.55, hy + 0.024), (far * 0.22, hy - 0.002), (far * 0.08, hy + 0.004 * peak),
+                   (0.0, hy + 0.016 * peak), (-far * 0.08, hy + 0.004 * peak),
+                   (-far * 0.22, hy - 0.002), (-far * 0.55, hy + 0.024),
+                   (-far * 0.85, hy + 0.072), (-far * 1.02, 0.45), (-far * 1.18, 0.54),
                    (-far * 1.45, 0.585), (-far * 1.75, 0.58), (-far * 2.3, 0.62)])
     HLc = g.catmull(hl, 8)
     dr_l = np.array([vol(y) * (0.15 if abs(lo) < 1.0 else min(1.0, (abs(lo) - 0.9) * 2.0))
@@ -590,10 +698,10 @@ def lady_hair(cv, fd, color="hair", style="high_bun", seed=0, volume=0.03, puff=
         if vis.sum() > 4:
             cv.band(A_[vis], B_[vis], "ink_l", lambda S, T: 0.22 * np.sin(np.pi * T) *
                     np.sin(np.pi * S) ** 0.7, mode="paint", rows=3)
-    pt = H.Plon(np.zeros(12), np.linspace(0.0, 0.215, 12), volume)
+    pt = H.Plon(np.zeros(12), np.linspace(0.0, hy - 0.025, 12), volume)
     cv.stroke(pt, s * 0.003, "skin_ivory", 0.45, prof="silk")
     # hairline fringe (fine baby hairs at the forehead and temples)
-    HLd = g.resample(HL[int(len(HL) * 0.12): int(len(HL) * 0.55)], 120)
+    HLd = g.resample(HL[int(len(HL) * 0.12): int(len(HL) * 0.60)], 120)
     nrm = g.normals(HLd)
     tan = g.tangents(HLd)
     cen = H.P([(0.0, 0.5)])[0]

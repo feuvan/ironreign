@@ -29,8 +29,10 @@ def main():
         canon.check_drawn(fd, key)
         raw = os.path.join(out, "raw", key + "_raw3x.png")
         backend.render(cv, raw, ss=3, samples=5)
+        raw96 = os.path.join(out, "raw", key + "_raw96.png")
+        backend.render(cv, raw96, ss=1, samples=8, variant="t96")
         finish.finish(raw, os.path.join(out, key + ".png"), os.path.join(out, key + "_192.png"),
-                      os.path.join(out, key + "_96.png"))
+                      os.path.join(out, key + "_96.png"), raw96=raw96)
         print("[gongbi] %s total %.1fs" % (key, time.time() - t0))
 
 

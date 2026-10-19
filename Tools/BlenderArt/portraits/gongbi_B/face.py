@@ -81,28 +81,56 @@ class FaceSpec:
     # age / character
     wrinkles: float = 0.0
     frown: float = 0.0
+    frown_lines: int = 2          # vertical lines between knitted brows (1 = one eased)
     cheekbone_line: float = 0.0
+    # 晕染 structure: shading under the cheekbones and along the jaw, a soft light on the
+    # cheekbone (so a broad face has planes instead of one flat pale field)
+    cheek_shade: float = 0.5
     seed: int = 0
 
 
 # ------------------------------------------------------------------------------------------
 # eye templates: (u along inner->outer corner, v up), heights as fractions of the opening h
+#
+# Three canon eye types (plus the elder's), each with its own lid drawing (EYE_STYLE):
+#   环眼 'fierce'   generals: round and wide open, the strongest upper lid, a firm lower lid
+#   丹凤眼 'phoenix' scholars: long, the outer corner lifted into a tail, a slimmer band of
+#                   iris between lids that still open >= 0.32 (never narrowed), fine upper lid
+#   杏眼 'almond'   ladies and youths: an apricot almond, full lower lid, softer brown-black lid
+#   'elder'         a heavier hooded lid, the outer corner a little lowered
 
 EYES = {
     "phoenix": dict(
-        U=[(0.0, 0.0), (0.09, 0.60), (0.30, 1.0), (0.58, 0.94), (0.84, 0.58), (1.0, 0.0)],
-        L=[(0.0, 0.0), (0.16, -0.30), (0.46, -0.40), (0.78, -0.27), (1.0, 0.0)]),
+        U=[(0.0, 0.0), (0.10, 0.58), (0.32, 1.0), (0.60, 0.95), (0.84, 0.62), (1.0, 0.04)],
+        L=[(0.0, 0.0), (0.16, -0.28), (0.46, -0.36), (0.78, -0.25), (1.0, 0.04)]),
     "almond": dict(
         U=[(0.0, 0.0), (0.08, 0.56), (0.30, 0.95), (0.55, 1.0), (0.80, 0.74), (1.0, 0.0)],
-        L=[(0.0, 0.0), (0.14, -0.36), (0.42, -0.52), (0.74, -0.42), (1.0, 0.0)]),
-    # fierce: the inner half of the upper lid presses down (anger), peak towards the outside
+        L=[(0.0, 0.0), (0.14, -0.38), (0.42, -0.54), (0.74, -0.44), (1.0, 0.0)]),
+    # fierce: round, the peak of the upper lid towards the outside, deep lower lid
     "fierce": dict(
-        U=[(0.0, 0.0), (0.10, 0.42), (0.36, 0.82), (0.64, 1.0), (0.87, 0.74), (1.0, 0.08)],
-        L=[(0.0, 0.0), (0.15, -0.36), (0.46, -0.48), (0.78, -0.36), (1.0, 0.08)]),
+        U=[(0.0, 0.0), (0.08, 0.50), (0.30, 0.90), (0.58, 1.0), (0.84, 0.80), (1.0, 0.10)],
+        L=[(0.0, 0.0), (0.14, -0.42), (0.46, -0.56), (0.78, -0.43), (1.0, 0.10)]),
     "elder": dict(
         U=[(0.0, 0.0), (0.10, 0.62), (0.34, 1.0), (0.62, 0.90), (0.86, 0.52), (1.0, -0.04)],
         L=[(0.0, 0.0), (0.16, -0.32), (0.48, -0.42), (0.80, -0.30), (1.0, -0.04)]),
 }
+
+# lid drawing per eye type: upper-lid weight, lower-lid strength, crease, iris colour, the
+# cap on the iris (fraction of the eye width) and the lid ink
+EYE_STYLE = {
+    "fierce": dict(lid=1.30, lower=1.05, crease=1.0, iris="#2b1e17", iris_cap=0.50, ink="ink",
+                   lower_from=0.12),
+    "phoenix": dict(lid=0.86, lower=0.55, crease=1.1, iris="#2e2018", iris_cap=0.44, ink="ink",
+                    lower_from=0.30),
+    "almond": dict(lid=0.92, lower=0.85, crease=0.9, iris="#3a261b", iris_cap=0.48, ink="ink_d",
+                   lower_from=0.18),
+    "elder": dict(lid=0.95, lower=0.80, crease=1.0, iris="#2e2119", iris_cap=0.48, ink="ink",
+                  lower_from=0.22),
+}
+
+# multiplier on the face-structure lines (jaw contour, nose wings, nostrils) for the 96 px
+# thumbnail pass; the main render draws them at 1.0 (see FaceDrawer._tstroke)
+THUMB_K = 1.3
 
 
 class FaceDrawer:
@@ -123,6 +151,23 @@ class FaceDrawer:
 
     def W(self, pts, dz=0.0):
         return self.H.P(pts, dz)
+
+    def _tstroke(self, P, width, color, alpha, **kw):
+        """A face-structure line drawn twice: as authored for the main render (tag 'main')
+        and THUMB_K x heavier for the 96 px thumbnail pass (tag 't96'), with the same brush
+        noise, so a small portrait keeps its jaw and nose instead of eyes and brows only."""
+        cv = self.cv
+        sd = cv.next_seed()
+        prev = getattr(cv, "tag", None)
+        cv.tag = "main"
+        cv.stroke(P, width, color, alpha, seed=sd, **kw)
+        cv.tag = "t96"
+        kw2 = dict(kw)
+        if kw2.get("widths") is not None:
+            kw2["widths"] = np.asarray(kw2["widths"], float) * THUMB_K
+        kw2.pop("bleed", None)
+        cv.stroke(P, width * THUMB_K, color, min(1.0, alpha * 1.08), seed=sd, **kw2)
+        cv.tag = prev
 
     def side_sign(self, side):
         """frontal side (-1 viewer-left, +1 viewer-right) -> 'near'/'far'."""
@@ -163,8 +208,22 @@ class FaceDrawer:
             b = bump(ys, 0.86, 0.075)
             farpts[:, 0] += far * rnd * (0.010 * b + 0.016 * bump(ys, 0.78, 0.09))
             nearpts[:, 0] -= far * rnd * 0.022 * b
+        # near-side jaw drawn in (a lady's face turned 3/4 must not sweep wide from the ear to
+        # the chin): the near half-width shrinks by near_jaw below the ear lobe
+        nj = sh.get("near_jaw", 0.0)
+        if nj:
+            yr = (ys - 0.62) / max(cyl - 0.62, 1e-3)
+            wgt = g.smoothstep(0.10, 0.55, yr)
+            nearpts[:, 0] *= 1 - nj * wgt
+        # a soft chin point: the last stretch of both sides narrows towards the chin
+        cp = sh.get("chin_point", 0.0)
+        if cp:
+            yr = (ys - 0.84) / max(cyl - 0.84, 1e-3)
+            wgt = g.smoothstep(0.0, 1.0, yr)
+            farpts[:, 0] *= 1 - 0.22 * cp * wgt
+            nearpts[:, 0] *= 1 - 0.22 * cp * wgt
         # chin: rounded bottom between the two y=1 points, through the chin's lowest point
-        chin_c = np.array([0.0, cyl + 0.012 - 0.006 * sh.get("chin_round", 0.0),
+        chin_c = np.array([0.0, cyl + 0.012 - 0.006 * sh.get("chin_round", 0.0) + 0.006 * cp,
                            float(H.zc(cyl) + H.d(cyl) * 0.85)])
         return farpts, nearpts, chin_c
 
@@ -213,6 +272,45 @@ class FaceDrawer:
         # chin / jaw underside
         C = self.lm["chin"]
         cv.blob(C + np.array([0, -self.px(10)]), self.px(18), self.px(10), F.shade, 0.16 * sk)
+        self.structure()
+
+    def structure(self):
+        """颧下/腮 晕染: the planes of the face.  A soft diagonal wash in the hollow under each
+        cheekbone (towards the mouth corner), a broader wash along the jaw from the ear to the
+        chin, and a faint shell-white light on the top of the cheekbone - so a broad face
+        has structure instead of one flat field, and the jaw still reads at 96 px."""
+        cv, F = self.cv, self.F
+        cs = F.cheek_shade
+        if cs <= 0:
+            return
+        sk = F.shade_k
+        fem = F.sex == "f"
+        for side in (-1, 1):
+            fs = side == self.far
+            k = 0.7 if fs else 1.0
+            # hollow under the cheekbone: elongated along the line cheekbone -> mouth corner
+            a = self.W([(side * 0.270, 0.615)])[0]
+            b = self.W([(side * 0.205, 0.775)])[0]
+            c = (a + b) / 2
+            d = b - a
+            rot = math.atan2(d[1], d[0])
+            L = np.linalg.norm(d)
+            cv.blob(c, L * 0.62, self.px(11) * (0.65 if fs else 1.0), F.shade,
+                    (0.10 if fem else 0.16) * cs * sk * k, rot=rot, power=1.4)
+            # light on the cheekbone (三白's cousin): only where the plane turns to the light
+            cv.blob(self.W([(side * 0.200, F.eye_y + 0.075)], 0.01)[0],
+                    self.px(15) * (0.6 if fs else 1.0), self.px(8),
+                    pal.hexs(pal.mix(F.skin, "white", 0.55)), (0.10 if fem else 0.14) * cs,
+                    mode="paint")
+        # along the jaw, both sides, from below the ear lobe to the chin
+        Fp = self.lm["far_outline"]
+        Np = self.lm["near_outline"]
+        nf = len(Fp)
+        jf = Fp[int(nf * 0.62):]
+        jn = Np[int(len(Np) * 0.62):]
+        self._edge_in(jf, self.px(20), F.shade, (0.12 if fem else 0.20) * cs * sk, rows=5)
+        self._edge_in(jn, self.px(30), F.shade, (0.14 if fem else 0.24) * cs * sk, rows=5,
+                      power=1.2)
 
     def _edge_in(self, P, width, color, alpha, rows=6, power=1.4):
         """graded wash along P towards the face interior."""
@@ -226,11 +324,21 @@ class FaceDrawer:
 
     def rouge_and_lifts(self):
         cv, F = self.cv, self.F
+        fem = F.sex == "f"
         for side in (-1, 1):
             fs = side == self.far
             c = self.W([(side * 0.18, F.eye_y + 0.105)])[0]
             rx = self.px(34) * (0.62 if fs else 1.0)
             cv.blob(c, rx, self.px(28), "#e3828a", 0.17 * F.rouge_k, power=1.2)
+            if fem:
+                # 胭脂 laid broad and warm (桃花妆): a wide peach flush from the cheekbone to
+                # the jaw, then a deeper centre high on the cheek
+                c2 = self.W([(side * 0.19, F.eye_y + 0.13)])[0]
+                cv.blob(c2, self.px(44) * (0.62 if fs else 1.0), self.px(40), "#e79a86",
+                        0.11 * F.rouge_k, power=1.0)
+                c3 = self.W([(side * 0.17, F.eye_y + 0.095)])[0]
+                cv.blob(c3, self.px(20) * (0.62 if fs else 1.0), self.px(14), "rouge",
+                        0.10 * F.rouge_k, power=1.3)
         # 三白: forehead, nose bridge, chin lifted with shell white
         wk = F.white_k
         cv.blob(self.W([(0.0, 0.31)])[0], self.px(30), self.px(18), "white", 0.30 * wk,
@@ -271,6 +379,7 @@ class FaceDrawer:
         the fine crease and the faint broken lower lid."""
         cv, F, H = self.cv, self.F, self.H
         fs = side == self.far
+        ES = EYE_STYLE.get(F.eye, EYE_STYLE["almond"])
         U, L, Uf, Lf, to_frontal = self.eye_curves(side)
         ew0 = F.eye_w * self.s
         lw = self.px(1.0) * F.line_w
@@ -314,13 +423,14 @@ class FaceDrawer:
         # tall opening it grows a little (up to half the eye width) so that it also reaches
         # down towards the lower lid instead of floating high (an upward, rolling look)
         oh = ly - uy
-        ri = float(np.clip((oh * 0.97 + F.iris_tuck * ri) / 2.0, ri, 0.50 * ew0 / 2))
+        ri = float(np.clip((oh * 0.97 + F.iris_tuck * ri) / 2.0, ri,
+                           max(ri, ES["iris_cap"] * ew0 / 2)))
         icy = uy + ri * (1.0 - F.iris_tuck) + F.gaze[1]
         ic = np.array([icx, icy])
         open_poly = np.vstack([U, L[::-1][1:-1]])
         ring = g.clip_convex(g.ellipse(ic, ri, ri, n=48), open_poly)
         if len(ring) >= 3:
-            cv.fill(ring, "#2b1e17", 1.0, "paint")
+            cv.fill(ring, ES["iris"], 1.0, "paint")
             cv.blob(ic + np.array([0, ri * 0.38]), ri * 0.72, ri * 0.50, "#6a4a34", 0.45,
                     mode="paint")
             pup = g.clip_convex(g.ellipse(ic, ri * 0.48, ri * 0.48, n=24), open_poly)
@@ -347,7 +457,8 @@ class FaceDrawer:
         Uu = g.resample(U, n)
         t = np.linspace(0, 1, n)
         wprof = (0.28 + 0.72 * g.smoothstep(0.0, 0.42, t)) * (1 - 0.5 * g.smoothstep(0.88, 1.0, t))
-        wmax = self.px(2.6) * F.line_w
+        wmax = self.px(2.6) * F.line_w * ES["lid"]
+        lid_ink = ES["ink"]
         tail = F.tail
         if tail > 0:
             ext = to_frontal([(1.0, 0.0), (1.0 + tail * 0.55, 0.06 + 0.45 * tail),
@@ -358,9 +469,9 @@ class FaceDrawer:
             k_end = 1.0 / (1 + tail)
             wl = np.interp(t2 / k_end, t, wprof, right=wprof[-1])
             wl = wl * (1 - 0.95 * g.smoothstep(k_end * 0.97, 1.0, t2))
-            cv.stroke(Uu2, 1, "ink", 0.97, widths=wmax * wl, noise=0.04, bleed=0.25, pool=0.2)
+            cv.stroke(Uu2, 1, lid_ink, 0.97, widths=wmax * wl, noise=0.04, bleed=0.25, pool=0.2)
         else:
-            cv.stroke(Uu, 1, "ink", 0.97, widths=wmax * wprof, noise=0.04, bleed=0.25, pool=0.2)
+            cv.stroke(Uu, 1, lid_ink, 0.97, widths=wmax * wprof, noise=0.04, bleed=0.25, pool=0.2)
         # inner corner hook (内眦)
         ic0 = U[0]
         dn = (L[4] - ic0)
@@ -372,13 +483,16 @@ class FaceDrawer:
         if F.crease > 0:
             cr = to_frontal([(0.20, 1.30), (0.50, 1.42), (0.82, 1.15), (1.0 + tail * 0.5, 0.40 + 0.4 * tail)])
             C = g.catmull(self.W(cr, 0.0), 8)
-            cv.stroke(C, self.px(0.8) * F.line_w, F.line, 0.70 * F.crease, prof="silk")
+            cv.stroke(C, self.px(0.8) * F.line_w, F.line, min(0.95, 0.70 * F.crease * ES["crease"]),
+                      prof="silk")
             cv.edge(C, self.px(3.5), F.shade, 0.18 * F.shade_k, side=self._down_side(C), rows=3)
         # lower lid: fine and broken
         if F.lower_lid > 0:
-            Ls = g.sub(L, 0.22, 1.0)[::-1]
-            cv.stroke(Ls, self.px(0.8) * F.line_w, F.line, 0.80 * F.lower_lid, prof="silk",
-                      alpha_along=lambda t: 1 - 0.75 * g.smoothstep(0.45, 1.0, t))
+            Ls = g.sub(L, ES["lower_from"], 1.0)[::-1]
+            fade = 0.75 if F.eye != "fierce" else 0.45
+            cv.stroke(Ls, self.px(0.8) * F.line_w * (1.15 if F.eye == "fierce" else 1.0), F.line,
+                      min(0.95, 0.80 * F.lower_lid * ES["lower"]), prof="silk",
+                      alpha_along=lambda t: 1 - fade * g.smoothstep(0.45, 1.0, t))
             Lb = g.sub(L, 0.1, 0.95)
             k = 0.10 + 0.22 * F.wrinkles
             cv.edge(Lb, self.px(4 + 4 * F.wrinkles), F.shade, k * F.shade_k,
@@ -418,6 +532,16 @@ class FaceDrawer:
         elif kind == "crescent":       # 月眉: a clear arch, thinner, for bright young faces
             C = [(0.0, 0.004), (0.30, -0.028), (0.66, -0.034), (1.02, -0.006)]
             thick = lambda t: np.sin(np.pi * np.clip(0.06 + t * 0.94, 0, 1)) ** 0.8 * (1 - 0.35 * t)
+        elif kind == "flat":           # 一字眉: level and even, a steady character
+            C = [(0.0, 0.002), (0.34, -0.008), (0.70, -0.012 - 0.3 * lift), (1.0, -0.008 - 0.5 * lift)]
+            thick = lambda t: (0.92 + 0.10 * np.sin(np.pi * t)) * (1 - g.smoothstep(0.72, 1.0, t) * 0.75)
+        elif kind == "yuanshan":       # 远山眉: long, pale, a low distant-hill arch (ladies)
+            C = [(0.0, 0.003), (0.36, -0.016), (0.74, -0.019), (1.12, 0.002)]
+            thick = lambda t: np.sin(np.pi * np.clip(0.10 + t * 0.90, 0, 1)) ** 0.6 * (1 - 0.25 * t)
+        elif kind == "lady_sword":     # 英气眉: a swordswoman's brow, rising, firm head, fine tail
+            C = [(0.0, 0.002), (0.34, -0.014 - 0.35 * lift), (0.70, -0.026 - 0.7 * lift),
+                 (1.0, -0.020 - 0.9 * lift)]
+            thick = lambda t: (0.95 - 0.15 * t) * (1 - g.smoothstep(0.62, 1.0, t) * 0.85)
         elif kind == "longevity":
             C = [(0.0, 0.0), (0.35, -0.018), (0.72, -0.010), (1.05, 0.030)]
             thick = lambda t: (0.85 + 0.2 * np.sin(np.pi * t)) * (1 - g.smoothstep(0.8, 1.0, t) * 0.6)
@@ -444,11 +568,15 @@ class FaceDrawer:
         grey = F.brow_grey
         base_col = pal.hexs(pal.mix("ink_m", "hair_grey", min(1, grey * 1.2)))
         # wash body
-        if kind in ("willow", "crescent"):
-            cv.band(top, bot, "ink_m", lambda S, T: 0.60 * np.sin(np.pi * np.clip(T, 0, 1)) ** 0.6
+        if kind in ("willow", "crescent", "yuanshan", "lady_sword"):
+            bk = {"yuanshan": 0.46, "lady_sword": 0.72}.get(kind, 0.60)
+            if grey > 0:
+                bk *= 1 - 0.35 * grey
+            cv.band(top, bot, base_col if grey > 0 else "ink_m",
+                    lambda S, T: bk * np.sin(np.pi * np.clip(T, 0, 1)) ** 0.6
                     * (0.35 + 0.65 * np.sin(np.pi * np.clip(S * 0.9 + 0.1, 0, 1)) ** 0.6),
                     mode="glaze", rows=4)
-            cv.stroke(Cs, 1, "ink_d", 0.60, widths=th * 0.42, noise=0.05)
+            cv.stroke(Cs, 1, "ink_d", 0.60 * bk / 0.60 * (1 - 0.4 * grey), widths=th * 0.42, noise=0.05)
             # fine hairs along the brow
             rng = np.random.default_rng(F.seed + (3 if fs else 5))
             for i in range(26):
@@ -457,7 +585,8 @@ class FaceDrawer:
                 p0 = Cs[k] + Nn[k] * th[k] * rng.uniform(-0.4, 0.2)
                 tg = g.tangents(Cs)[k]
                 p1 = p0 + (tg * 0.9 + Nn[k] * 0.25) * th[k] * 1.6
-                cv.stroke(np.array([p0, p1]), self.px(0.45), "ink_d", 0.5, prof="hair")
+                cv.stroke(np.array([p0, p1]), self.px(0.45), "ink_d" if grey < 0.3 else base_col,
+                          0.5, prof="hair")
             self.lm["brow_%s" % ("far" if fs else "near")] = Cs
             return
         cv.band(top, bot, base_col, lambda S, T: (0.55 - 0.25 * grey) * np.sin(np.pi * np.clip(T, 0, 1)) ** 0.5
@@ -544,25 +673,25 @@ class FaceDrawer:
                 (far * 0.010, tipy + 0.012, tip_z * 0.70), (-far * 0.012, tipy + 0.016, tip_z * 0.62)]
         tip = g.catmull(self.H.Pz([(x, y, self.H.zsurf(x, y) + z) for x, y, z in tip3]), 6)
         dl = 0.55 if F.sex == "f" else 1.0          # ladies: the most delicate nose lines
-        cv.stroke(tip, lw * 1.05 * dl, F.line, 0.85 * dl ** 2, prof="iron")
+        self._tstroke(tip, lw * 1.05 * dl, F.line, 0.85 * dl ** 2, prof="iron")
         # near wing (鼻翼): C curve
         wn = [(-far * (w * 0.55), y_w - 0.026, 0.035), (-far * (w * 0.98), y_w - 0.006, 0.010),
               (-far * (w * 0.90), y_w + 0.010, 0.012), (-far * (w * 0.55), y_w + 0.014, 0.030)]
         WN = g.catmull(self.H.Pz([(x, y, self.H.zsurf(x, y) + z) for x, y, z in wn]), 8)
-        cv.stroke(WN, lw * 1.05 * (0.8 if F.sex == "f" else 1.0), F.line, 0.85 * dl,
-                  prof="orchid", taper=(0.4, 0.6))
+        self._tstroke(WN, lw * 1.05 * (0.8 if F.sex == "f" else 1.0), F.line, 0.85 * dl,
+                      prof="orchid", taper=(0.4, 0.6))
         # far wing peeking past the tip
         wf = [(far * (w * 0.55), y_w - 0.010, 0.040), (far * (w * 0.92), y_w + 0.002, 0.015),
               (far * (w * 0.60), y_w + 0.014, 0.030)]
         WF = g.catmull(self.H.Pz([(x, y, self.H.zsurf(x, y) + z) for x, y, z in wf]), 6)
-        cv.stroke(WF, lw * 0.8, F.line, 0.6 * dl, prof="silk")
+        self._tstroke(WF, lw * 0.8, F.line, 0.6 * dl, prof="silk")
         # nostrils
         nn = [(-far * w * 0.50, y_w + 0.010, 0.045), (-far * w * 0.22, y_w + 0.016, 0.06)]
         NN = g.catmull(self.H.Pz([(x, y, self.H.zsurf(x, y) + z) for x, y, z in nn]), 5)
-        cv.stroke(NN, lw * 1.5, "ink_brown", 0.85, prof="orchid")
+        self._tstroke(NN, lw * 1.5, "ink_brown", 0.85, prof="orchid")
         nf = [(far * w * 0.18, y_w + 0.016, 0.06), (far * w * 0.40, y_w + 0.012, 0.045)]
         NF = g.catmull(self.H.Pz([(x, y, self.H.zsurf(x, y) + z) for x, y, z in nf]), 5)
-        cv.stroke(NF, lw * 1.0, "ink_brown", 0.6, prof="orchid")
+        self._tstroke(NF, lw * 1.0, "ink_brown", 0.6, prof="orchid")
         # shadow under the nose & wing creases
         under = self.W([(-far * w, y_w + 0.016), (0, y_w + 0.026), (far * w * 0.8, y_w + 0.016)], 0.03)
         cv.edge(g.catmull(under, 6), self.px(7), F.shade, 0.26 * F.shade_k,
@@ -682,45 +811,64 @@ class FaceDrawer:
         line = poly[start:k + 1]
         lw = self.px(1.25) * F.line_w
         t = np.linspace(0, 1, 80)
-        cv.stroke(g.resample(line, 160), 1, F.line, 0.92,
-                  widths=lw * (0.55 + 0.45 * g.smoothstep(0.0, 0.5, t) * (1 - 0.35 * g.smoothstep(0.75, 1.0, t))),
-                  noise=0.06, pool=0.3, bleed=0.35)
+        self._tstroke(g.resample(line, 160), 1, F.line, 0.92,
+                      widths=lw * (0.55 + 0.45 * g.smoothstep(0.0, 0.5, t) * (1 - 0.35 * g.smoothstep(0.75, 1.0, t))),
+                      noise=0.06, pool=0.3, bleed=0.35)
 
     def age_lines(self):
         cv, F = self.cv, self.F
         wk = F.wrinkles
         lw = self.px(0.8) * F.line_w
+        fem = F.sex == "f"
         if F.frown > 0:
-            for sx in (-0.016, 0.016):
+            for j, sx in enumerate((-0.016 * self.far, 0.016 * self.far)):
+                # frown_lines 1: the far line is eased to a whisper (iron-willed, not menacing)
+                k = 1.0 if (j == 0 or F.frown_lines >= 2) else 0.30
                 P = self.W([(sx, F.brow_y - 0.035), (sx * 1.25, F.brow_y + 0.005), (sx * 0.9, F.brow_y + 0.03)])
-                cv.stroke(g.catmull(P, 6), lw, F.line, 0.55 * F.frown, prof="silk")
-            cv.blob(self.W([(0.0, F.brow_y)])[0], self.px(9), self.px(9), F.shade, 0.18 * F.frown)
+                cv.stroke(g.catmull(P, 6), lw, F.line, 0.55 * F.frown * k, prof="silk")
+            cv.blob(self.W([(0.0, F.brow_y)])[0], self.px(9), self.px(9), F.shade,
+                    0.18 * F.frown * (1.0 if F.frown_lines >= 2 else 0.7))
         if wk <= 0:
             return
         rng = np.random.default_rng(F.seed + 99)
+        # ladies' age is painted softer (fewer, finer lines) but must still read as age
+        la = 0.8 if fem else 1.0
         # forehead lines
         for i, yy in enumerate((0.29, 0.325, 0.36)):
-            if rng.uniform() > wk + 0.2:
+            if rng.uniform() > wk + 0.2 or (fem and i == 0 and wk < 0.7):
                 continue
             w = 0.16 - 0.02 * i
             P = self.W([(-w, yy + 0.008), (-w * 0.3, yy - 0.004), (w * 0.35, yy - 0.002), (w, yy + 0.01)])
-            cv.stroke(g.catmull(P, 8), lw * 0.9, F.line, 0.35 * wk, prof="silk",
+            cv.stroke(g.catmull(P, 8), lw * 0.9, F.line, 0.35 * wk * la, prof="silk",
                       alpha_along=lambda t: 0.4 + 0.6 * np.sin(np.pi * t))
-        # nasolabial folds
         for side in (-1, 1):
             fs = side == self.far
+            # nasolabial folds (法令纹): from the nose wing round the mouth corner, with a soft
+            # shadow on the cheek side so they read as a fold, not a scratch
             P = self.W([(side * (F.nose_w + 0.012), F.nose_y - 0.012),
                         (side * (F.nose_w + 0.035), F.nose_y + 0.05),
-                        (side * (F.mouth_w / 2 + 0.03), F.mouth_y + 0.035)], 0.01)
+                        (side * (F.mouth_w / 2 + 0.03), F.mouth_y + 0.035 + 0.02 * wk)], 0.01)
             Pc = g.catmull(P, 8)
-            cv.stroke(Pc, lw * (0.8 if fs else 1.0), F.line, 0.55 * wk, prof="silk")
-            cv.edge(Pc, self.px(6), F.shade, 0.16 * wk, side=self._side_towards(Pc, side), rows=3)
-            # crow's feet
+            cv.stroke(Pc, lw * (0.8 if fs else 1.0) * (1 + 0.3 * wk), F.line,
+                      min(0.9, 0.55 * wk * la + 0.1 * wk), prof="silk")
+            cv.edge(Pc, self.px(6 + 5 * wk), F.shade, (0.16 + 0.10 * wk) * wk,
+                    side=self._side_towards(Pc, side), rows=3)
+            # crow's feet (鱼尾纹)
             oc = self.W([(side * (F.eye_gap + F.eye_w + 0.012), F.eye_y - 0.004)])[0]
             for j in range(3):
                 a = (-0.35 + 0.35 * j)
-                d = np.array([side * math.cos(a), math.sin(a)]) * self.px(7)
-                cv.stroke(np.array([oc, oc + d]), lw * 0.7, F.line, 0.3 * wk, prof="silk")
+                d = np.array([side * math.cos(a), math.sin(a)]) * self.px(7 + 3 * wk)
+                cv.stroke(np.array([oc, oc + d * 0.5 + np.array([0, self.px(0.6)]), oc + d]),
+                          lw * 0.75, F.line, 0.34 * wk * la + 0.06, prof="silk")
+            if wk > 0.45:
+                # marionette lines and a soft jowl: the jaw softens and the cheeks settle
+                mc = self.W([(side * (F.mouth_w / 2 + 0.006), F.mouth_y + 0.012),
+                             (side * (F.mouth_w / 2 + 0.016), F.mouth_y + 0.05),
+                             (side * (F.mouth_w / 2 + 0.024), F.mouth_y + 0.085)], 0.01)
+                cv.stroke(g.catmull(mc, 6), lw * 0.8, F.line, 0.38 * (wk - 0.3) * la, prof="silk")
+                jw = self.W([(side * 0.235, 0.80)])[0]
+                cv.blob(jw, self.px(16) * (0.6 if fs else 1.0), self.px(20), F.shade,
+                        0.10 * wk * F.shade_k)
 
     # -- all ---------------------------------------------------------------------------------
     def draw_skin_layers(self):

@@ -66,25 +66,39 @@ RECIPE = dict(
     render=1024, preview_render=512,  # square render: 16 x 64 / 8 x 128 (preview 8 x 64)
     spp=16, preview_spp=6, filter_width=1.2,
     camera=dict(elevation=28.0, azimuth=-24.0, distance=30.0),
-    # keyline box at 64 px (left, top, right, bottom) the subject's geometry fills; the ink and
-    # the halo grow ~3.5 px beyond it, the outer 1 px ring stays clear
+    # keyline box at 64 px (left, top, right, bottom) the subject's geometry fills; the outer
+    # contour adds 1 px outside it (solid ink within 4..60), the halo ~1.5 px more (alpha is 0
+    # outside 2..61); the outer 1 px ring stays clear
     keyline=(5.0, 5.0, 59.0, 59.0),
     # painter's light (screen angle CCW from right, elevation towards the viewer)
     light=dict(angle=135.0, elev=40.0),
-    form=0.20,                       # wash value change between lit and turned-away planes
+    form=0.26,                       # wash value change between lit and turned-away planes
     facing=dict(blend=0.30, lo=0.08, hi=0.92, amount=0.55),
-    # Freestyle ink (64 px units): outer contour, inner lines; brush feel
+    # Freestyle ink (64 px units): the INTERIOR lines only (creases, borders, material
+    # boundaries, object-over-object silhouettes) with a tapered calligraphic brush; the outer
+    # contour is drawn in 2D (`contour`) so it holds at 18-28 px and is reproducible
     ink=dict(
-        ink=dict(color="#1E1A16", alpha=1.0, outer=1.25, inner=0.62, taper=0.45, calli=0.35,
+        ink=dict(color="#1E1A16", alpha=1.0, inner=0.9, taper=0.45, calli=0.3,
                  smooth=3.5, crease=134.0),
-        soft=dict(color="#5E564C", alpha=0.95, outer=0.95, inner=0.5, taper=0.45, calli=0.3,
+        soft=dict(color="#4E463C", alpha=0.95, inner=0.75, taper=0.45, calli=0.3,
                   smooth=3.5, crease=150.0),
-        red=dict(color="#7A2418", alpha=1.0, outer=1.1, inner=0.6, taper=0.45, calli=0.35,
+        red=dict(color="#7A2418", alpha=1.0, inner=0.85, taper=0.45, calli=0.3,
                  smooth=3.5, crease=150.0),
     ),
-    # 2D 分染: each colour region deepens towards its outline over `px` (64 px units); `dir` adds
-    # more on the side away from the light; `amount` = max darkening (linear multiply)
-    fenran=dict(px=9.0, amount=0.58, dir=0.8, power=1.6),
+    # the outer contour (铁线描, 64 px units): an untinted warm-black line centred on the
+    # silhouette (`outer` wide: half of it outside the keyline geometry), a finer one round the
+    # holes in the silhouette (`hole`); a little calligraphic pressure (wider on strokes running
+    # along `calli_angle`) and slow +-`noise` swell; never dry-brushed (core alpha `alpha`)
+    contour=dict(color="#1E1A16", alpha=0.97, outer=2.05, hole=1.3, calli=0.08,
+                 calli_angle=50.0, noise=0.06, noise_cell=9.0),
+    # 2D 分染: each colour region deepens towards its outline over `px` (64 px units) on the
+    # edges facing the painter's light and `wide` x that on the edges turned away from it; `dir`
+    # adds more depth on the shadow side; `amount` = max darkening (linear multiply)
+    fenran=dict(px=6.5, wide=1.8, amount=0.56, dir=0.8, power=1.5),
+    # 提白: a lead-white crescent just inside the lit (upper-left) edge of every colour region,
+    # strength per pigment (``pigment(tibai=)``, AOV ic_tibai; `default` for plain pigments);
+    # `sigma` sets its width, `lo`..`hi` its inset (fractions of the blurred region mask)
+    tibai=dict(default=0.14, color="#F0E8D8", sigma=1.5, lo=0.62, hi=0.96),
     granulation=0.06,
     shader_ink=0.9,                  # strength of the material texture strokes (ic_ink AOV)
     ink_dry=0.06, ink_bleed=0.25,
@@ -92,11 +106,13 @@ RECIPE = dict(
     # pigment laid on silk: washes multiply a little of the silk tone (`tint`) and show its
     # warp / weft fibre (`fibre`, +- value); `period` in 64 px units
     silk=dict(tint=0.3, fibre=0.06, period=0.75),
-    # line colour: ink takes a little of the pigment it bounds (gongbi lines are ground into the
-    # colour, never a printer's black): k = mix towards the local deep pigment, `deep` = its value
-    line_tint=dict(k=0.35, deep=0.38, sigma=1.4),
-    # silk-tone wash halo (64 px units): blur sigma, gain (how far it carries), max alpha
-    halo=dict(color="#EADDBE", edge="#DCC9A2", sigma=0.9, gain=4.5, alpha=0.62, mottle=0.13),
+    # interior line colour: ink takes a little of the pigment it bounds (gongbi lines are ground
+    # into the colour): k = mix towards the local deep pigment (<= 0.3), `deep` = its value
+    line_tint=dict(k=0.25, deep=0.38, sigma=1.4),
+    # silk-tone wash halo (64 px units) just outside the outer contour: max alpha at the ink,
+    # fading over `width` (falloff exponent `power`), slightly mottled; also the straight colour
+    # of every transparent pixel (no fringes under bilinear filtering)
+    halo=dict(color="#D8C39A", alpha=0.40, width=1.5, power=1.7, mottle=0.12),
     unsharp={64: (0.6, 0.30), 128: (0.8, 0.22)},
     # review backgrounds: DESIGN.md tokens and the measured UI chrome fields
     backgrounds=dict(parchment="#E9DCC0", panel="#EBDEC2", lacquer="#1B1712",
@@ -107,7 +123,7 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(_HERE)))
 ART_SOURCE = os.path.join(REPO, "ArtSource")
 MASTER_DIR = "UI/Icons"                         # ArtSource/UI/Icons/Icon_<Name>@2x.png
-AOVS = (("ic_ink", "VALUE"), ("ic_nofen", "VALUE"))
+AOVS = (("ic_ink", "VALUE"), ("ic_nofen", "VALUE"), ("ic_tibai", "VALUE"))
 
 
 # =============================================================================================
@@ -341,8 +357,11 @@ def form(b):
 
 def pigment(name, light, deep=None, fen=None, formk=None, grad=None, ink=None, hi=None,
             image=None, image_color=None, image_ink=0.0, image_box=None, image_plane="XZ",
-            fen2d=1.0):
+            fen2d=1.0, tibai=None):
     """A mineral wash: ``light`` deepening to ``deep`` (default light x 0.62).
+
+    tibai   strength of the 2D lead-white 提白 crescent inside the lit edge (default RECIPE
+            tibai default; round volumes 0.2-0.35, flat seal paste 0); AOV ``ic_tibai``
 
     fen     amount of the facing 分染 (default RECIPE facing amount)
     formk   value change on planes turned from the painter's light (default RECIPE form)
@@ -416,12 +435,15 @@ def pigment(name, light, deep=None, fen=None, formk=None, grad=None, ink=None, h
         _aov(b, "ic_ink", v)
     if fen2d < 1.0:
         _aov(b, "ic_nofen", 1.0 - fen2d)
+    tb = RECIPE["tibai"]["default"] if tibai is None else tibai
+    if tb > 0:
+        _aov(b, "ic_tibai", float(tb))
     return mat
 
 
 def flat(name, color):
     """Perfectly flat colour (seal paste, ink, lacquer black)."""
-    return pigment(name, color, color, fen=0.0, formk=0.0)
+    return pigment(name, color, color, fen=0.0, formk=0.0, tibai=0.0)
 
 
 def attr(b, name):
@@ -493,7 +515,7 @@ def _style(name, spec, px, which, seed):
     st.use_same_object = True
     st.caps = "ROUND"
     st.use_length_min = True
-    st.length_min = (2.0 if which == "outer" else 1.6) * px
+    st.length_min = 1.6 * px
     split = RECIPE.get("ink_split", 0.0)
     if split:
         # one brush stroke per side: chains break at sharp 2D corners so each stroke starts,
@@ -502,9 +524,10 @@ def _style(name, spec, px, which, seed):
         st.angle_min = math.radians(split)
     g = st.geometry_modifiers.new("Smooth", "BEZIER_CURVE")
     g.error = spec["smooth"] * px * 0.5
-    # the outer contour is mostly one closed chain whose start point Freestyle picks per run
-    # (memory order, not bit-reproducible): a softer taper there keeps that seam invisible
-    tp = spec["taper"] * (0.55 if which == "outer" else 1.0)
+    # Freestyle picks chain start points and order from memory layout, so the taper seams of
+    # closed chains land differently per run: the interior lines are visually equivalent but
+    # not bit-exact between runs (the 2D outer contour and all colour passes are exact)
+    tp = spec["taper"]
     m = st.thickness_modifiers.new("Taper", "ALONG_STROKE")
     m.blend = "MULTIPLY"
     m.mapping = "CURVE"
@@ -547,23 +570,23 @@ def setup_ink(render_px):
     cols = collections()
     seed = 3
     for kind, spec in RECIPE["ink"].items():
-        for which in ("outer", "inner"):
-            st = _style("IC_%s_%s" % (kind, which), spec, render_px, which, seed)
-            seed += 7
-            ls = fs.linesets.new("IC_%s_%s" % (kind, which))
-            ls.linestyle = st
-            ls.select_by_visibility = True
-            ls.visibility = "VISIBLE"
-            ls.select_by_edge_types = True
-            ls.select_silhouette = which == "inner"
-            ls.select_border = which == "inner"
-            ls.select_crease = which == "inner"
-            ls.select_material_boundary = which == "inner"
-            ls.select_external_contour = which == "outer"
-            ls.select_edge_mark = which == "inner"
-            ls.select_by_collection = True
-            ls.collection = cols[kind]
-            ls.collection_negation = "INCLUSIVE"
+        which = "inner"
+        st = _style("IC_%s_%s" % (kind, which), spec, render_px, which, seed)
+        seed += 7
+        ls = fs.linesets.new("IC_%s_%s" % (kind, which))
+        ls.linestyle = st
+        ls.select_by_visibility = True
+        ls.visibility = "VISIBLE"
+        ls.select_by_edge_types = True
+        ls.select_silhouette = True
+        ls.select_border = True
+        ls.select_crease = True
+        ls.select_material_boundary = True
+        ls.select_external_contour = False
+        ls.select_edge_mark = True
+        ls.select_by_collection = True
+        ls.collection = cols[kind]
+        ls.collection_negation = "INCLUSIVE"
 
 
 # =============================================================================================
@@ -633,11 +656,15 @@ def load_exr(path):
 
 
 def save_npz(ps, path):
-    """Compact pass archive (float16) so the 2D finishing can be re-run without Blender."""
+    """Compact pass archive (float16) so the 2D finishing can be re-run without Blender.  The
+    full build composes from this archive too (:func:`load_npz` round trip), so ``--recomp``
+    reproduces a full build bit for bit.  ``meta_*`` keys (int arrays) pass through."""
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     keep = {}
     for k, v in ps.items():
-        if k in ("obj", "mat"):
+        if k.startswith("meta_"):
+            keep[k] = np.asarray(v, np.int32)
+        elif k in ("obj", "mat"):
             keep[k] = np.round(v[..., 0]).astype(np.int16)
         elif k.startswith("ic_"):
             keep[k] = v[..., 0].astype(np.float16)
@@ -652,7 +679,9 @@ def load_npz(path):
     out = {}
     for k in d.files:
         a = d[k]
-        if k in ("obj", "mat"):
+        if k.startswith("meta_"):
+            out[k] = a.astype(np.int64)
+        elif k in ("obj", "mat"):
             out[k] = a.astype(np.float32)[..., None].repeat(4, -1)
         elif k.startswith("ic_"):
             out[k] = a.astype(np.float32)[..., None].repeat(4, -1)

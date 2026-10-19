@@ -1,6 +1,6 @@
 """Finish: Lanczos downsample of the 3x render, the silk weave picked up by the paint, and a
 gentle aged-pigment grade (ink reads warm dark brown on old silk, colours fade a touch).
-Outputs 384x480 + 192x240."""
+Outputs 384x480 + 192x240 (+ 96x120)."""
 import numpy as np
 from PIL import Image
 
@@ -53,12 +53,15 @@ def weave_map(w, h, seed=7, strength=0.35):
     return 1 + 0.018 * strength * n
 
 
-def finish(raw_path, out384, out192, out96=None):
+def finish(raw_path, out384, out192, out96=None, raw96=None):
+    """raw96: the thumbnail-pass render (heavier jaw / nose-wing lines, see
+    face.FaceDrawer._tstroke) the 96x120 output is made from; else the main render."""
     im = Image.open(raw_path).convert("RGB")
     a = np.asarray(im.resize((384, 480), Image.LANCZOS))
     Image.fromarray(grade(a, weave_map(384, 480), silk_texture(384, 480, k=1.6))).save(out384)
     b = np.asarray(im.resize((192, 240), Image.LANCZOS))
     Image.fromarray(grade(b, weave_map(192, 240, strength=0.5), silk_texture(192, 240, k=1.2))).save(out192)
     if out96:
-        c = np.asarray(im.resize((96, 120), Image.LANCZOS))
+        src = Image.open(raw96).convert("RGB") if raw96 else im
+        c = np.asarray(src.resize((96, 120), Image.LANCZOS))
         Image.fromarray(grade(c)).save(out96)

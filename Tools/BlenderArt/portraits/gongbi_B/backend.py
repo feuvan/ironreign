@@ -150,12 +150,16 @@ def _material_silk(img):
     return m
 
 
-def build_mesh(cv):
-    """Concatenate all primitives into numpy buffers for one Blender mesh."""
+def build_mesh(cv, variant="main"):
+    """Concatenate all primitives into numpy buffers for one Blender mesh.  ``variant``
+    selects tagged primitives: 'main' (full-size render) or 't96' (96 px thumbnail pass);
+    untagged primitives are always drawn."""
     verts, cols, loops, starts, totals, mats, grains = [], [], [], [], [], [], []
     nv = 0
     nl = 0
     for p in cv.prims:
+        if p.tag is not None and p.tag != variant:
+            continue
         n = len(p.V)
         V3 = np.empty((n, 3))
         V3[:, 0] = p.V[:, 0]
@@ -190,8 +194,9 @@ def build_mesh(cv):
             np.concatenate(totals), np.concatenate(mats), np.concatenate(grains))
 
 
-def render(cv, out_png, ss=3, samples=5, silk_seed=1, threads=None):
-    """Render canvas ``cv`` to ``out_png`` at ``ss`` x target size.  Returns seconds."""
+def render(cv, out_png, ss=3, samples=5, silk_seed=1, threads=None, variant="main"):
+    """Render canvas ``cv`` to ``out_png`` at ``ss`` x target size.  Returns seconds.
+    ``variant`` 't96' renders the thumbnail pass (heavier face-structure lines)."""
     t0 = time.time()
     W, H = cv.W, cv.H
     sc = S.reset(0)
@@ -227,7 +232,7 @@ def render(cv, out_png, ss=3, samples=5, silk_seed=1, threads=None):
     me.materials.append(_material_silk(img))
 
     # painting
-    V, C, L, ST, TT, M, G = build_mesh(cv)
+    V, C, L, ST, TT, M, G = build_mesh(cv, variant)
     me = bpy.data.meshes.new("art")
     me.vertices.add(len(V))
     me.vertices.foreach_set("co", V.astype(np.float32).ravel())

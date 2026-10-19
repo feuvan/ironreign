@@ -630,11 +630,11 @@ def water_paint(cv, rng, seed, keep_out=None, density=1.0):
     # river of randomly rotated water tiles reads as one surface
     strokes = []
     placed = []
-    for _ in range(int(22 * density)):
+    for _ in range(int(30 * density)):
         for _t in range(40):
             cx, cy = rng.uniform(-3.4, 3.4), rng.uniform(-3.0, 3.0)
             if float(BP.hex_d(np.float32(cx), np.float32(cy))) > 0.75 and \
-                    all(math.hypot(cx - px, cy - py) > 1.0 for px, py in placed) and \
+                    all(math.hypot(cx - px, cy - py) > 0.82 for px, py in placed) and \
                     (keep_out is None or not keep_out(cx, cy)):
                 break
         else:
@@ -654,9 +654,9 @@ def water_paint(cv, rng, seed, keep_out=None, density=1.0):
             pts = np.stack([cx + ex * ca - ey * sa, cy + ex * sa + ey * ca], -1)
             if min(float(BP.hex_d(np.float32(px), np.float32(py))) for px, py in pts[::4]) < 0.3:
                 continue
-            strokes.append(dict(pts=pts, w=0.008, color=P["wave"], alpha=rng.uniform(0.24, 0.36), taper=(0.3, 0.35),
+            strokes.append(dict(pts=pts, w=0.0105, color=P["wave"], alpha=rng.uniform(0.3, 0.44), taper=(0.3, 0.35),
                                 seed=rng.randint(0, 9999)))
-        if rng.random() < 0.25:
+        if rng.random() < 0.45:
             # a curling crest hook beside the ripple
             hx, hy = cx + size * 0.9 * ca, cy + size * 0.9 * sa
             hook = [(hx + 0.07 * math.cos(ang + 0.5 * j) * (1 - j / 9.0), hy + 0.07 * math.sin(ang + 0.5 * j) * (1 - j / 9.0))

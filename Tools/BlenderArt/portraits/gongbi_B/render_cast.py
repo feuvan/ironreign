@@ -5,7 +5,8 @@
 
 Keys are the scenario portrait keys (m_warrior_01 .. f_elder_04, unknown).  Every character
 passes :func:`canon.check` (face-design rules + policy guard) before it is drawn.  Writes
-<key>.png (384x480), <key>_192.png, <key>_96.png and <key>.json (timing, officer); keeps
+<key>.png (384x480), <key>_192.png, <key>_96.png (from a thumbnail pass with 1.3x jaw and
+nose-wing lines) and <key>.json (timing, officer); keeps
 <key>_raw3x.png only with GONGBI_KEEP_RAW=1.
 """
 import json
@@ -40,11 +41,15 @@ def main():
         raw = os.path.join(out, key + "_raw3x.png")
         t_draw = time.time() - t0
         backend.render(cv, raw, ss=3, samples=5)
+        # 96 px thumbnail pass: the same painting with 1.3x jaw / nose-wing lines
+        raw96 = os.path.join(out, key + "_raw96.png")
+        backend.render(cv, raw96, ss=1, samples=8, variant="t96")
         t_render = time.time() - t0 - t_draw
         finish.finish(raw, os.path.join(out, key + ".png"), os.path.join(out, key + "_192.png"),
-                      os.path.join(out, key + "_96.png"))
+                      os.path.join(out, key + "_96.png"), raw96=raw96)
         if not keep:
             os.remove(raw)
+            os.remove(raw96)
         tot = time.time() - t0
         with open(os.path.join(out, key + ".json"), "w") as f:
             json.dump(dict(key=key, officer=officer, seconds=round(tot, 2),

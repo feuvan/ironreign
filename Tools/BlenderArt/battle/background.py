@@ -81,9 +81,9 @@ def mountains(col, G, corner, seed, sheet):
         x = ex + sgn * rng.uniform(10, 40) + sgn * layer * 35
         for k in range(n_pk):
             h = hmax * rng.uniform(0.6, 1.0) * (1.0 - 0.12 * k)
-            w = h * rng.uniform(0.36, 0.5)
+            w = h * rng.uniform(0.5, 0.68)
             pk.append((x, h, w, rng.uniform(-0.12, 0.12)))
-            x += sgn * (w * rng.uniform(0.9, 1.35))
+            x += sgn * (w * rng.uniform(0.75, 1.15))
         # the tallest at the back, then the others in front
         for (px, h, w, lean) in sorted(pk, key=lambda q: -q[1]):
             u = (xs - px) / w
@@ -92,16 +92,16 @@ def mountains(col, G, corner, seed, sheet):
             y_top = base - h * f * (0.94 + 0.12 * (jag - 0.5))
             y_top = np.where(f > 0.004, y_top, base + 1000)[None, :]
             rel = (Y - y_top) / max(h, 1.0)
-            body = ((rel > 0) & (Y < base + 40)).astype(np.float32)
+            body = ((rel > 0) & (Y < base)).astype(np.float32)
             if not body.any():
                 continue
             n = S.fbm(G.shape, 26.0, seed + 9 + layer + int(px) % 97, octaves=3)
             q = rel + (n - 0.5) * 0.18
-            c = P.mix(cols[0], P.mix(cols[0], "#FFFFFF", 0.35), smooth(0.0, 0.25, q))
-            c = P.mix(c, cols[1], smooth(0.16, 0.34, q)[..., None] * np.ones(3))
-            c = P.mix(c, P.mix(cols[1], "#E8E0C0", 0.35), smooth(0.4, 0.6, q)[..., None] * np.ones(3))
-            c = P.mix(c, cols[2], smooth(0.55, 0.8, q)[..., None] * np.ones(3))
-            mist = 1 - smooth(0.62, 1.05, rel)
+            # 晕染: deep azurite at the summit grading into malachite, the ochre foot below; the
+            # peak dissolves into a common mist line above the range's base
+            c = P.mix(cols[0], cols[1], smooth(0.04, 0.3, q))
+            c = P.mix(c, cols[2], smooth(0.42, 0.75, q)[..., None] * np.ones(3))
+            mist = 1 - smooth(base - 0.5 * hmax, base, Y)
             m = body * mist * fall * alpha
             col = over(col, m, c)
             if ink <= 0:
