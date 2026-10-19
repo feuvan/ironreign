@@ -59,58 +59,83 @@ def table(G):
 
 
 def mountains(col, G, corner, seed, sheet):
-    """Blue-green peaks (青绿) in a top corner: azurite summits over malachite shoulders over an
-    ochre foot, ink contours and 皴 strokes, dissolving downwards into bare-silk mist and
-    fading towards the centre (the board stays calm)."""
+    """Blue-green peaks (青绿) in a top corner, painted peak by peak from the back: tall
+    mantou-topped peaks with steep flanks, each its own shape - azurite summit over malachite
+    shoulders over an ochre foot - with its own ink contour and two or three fold lines, so the
+    overlaps read; three ranges (a pale far one, the main one, a lower near one), each
+    dissolving downwards into bare-silk mist and fading towards the centre (the board stays
+    calm)."""
     X, Y = G.X, G.Y
     rng = np.random.default_rng(seed)
     sgn = 1 if corner == "left" else -1
     ex = 70.0 if corner == "left" else W - 70.0
-    for layer, (base, hmax, n_pk, alpha) in enumerate(((300.0, 230.0, 4, 0.75), (370.0, 160.0, 5, 0.7))):
-        ridge = np.full(G.shape[1], 1e9, np.float32)
-        xs = G.xs
-        jag = S.fbm((1, len(xs)), 22.0, seed + 3 + layer, octaves=3)[0]
-        jag2 = S.fbm((1, len(xs)), 6.0, seed + 5 + layer, octaves=2)[0]
+    xs = G.xs
+    fall = (1 - smooth(260, 640, np.abs(X - ex))) * sheet
+    ranges = (  # base y, max height, peaks, opacity, (summit, shoulder, foot) colours, ink
+        (292.0, 205.0, 5, 0.42, ("#8EA9C4", "#A9C3BC", "#D3C6A4"), 0.25),
+        (338.0, 215.0, 4, 0.82, ("#3E6E98", "#3F8E70", "#BC966C"), 0.6),
+        (392.0, 150.0, 3, 0.88, ("#4A79A0", "#4C9A78", "#C4A074"), 0.6),
+    )
+    for layer, (base, hmax, n_pk, alpha, cols, ink) in enumerate(ranges):
+        pk = []
+        x = ex + sgn * rng.uniform(10, 40) + sgn * layer * 35
         for k in range(n_pk):
-            px = ex + sgn * (40 + k * rng.uniform(85, 120) + layer * 50)
-            h = hmax * rng.uniform(0.55, 1.0) * (1.0 - 0.13 * k)
-            w = h * rng.uniform(0.62, 0.85)
-            u = np.abs(xs - px) / w
-            f = np.clip(1.0 - np.clip(u, 0, 1) ** 1.15, 0, 1) ** 1.7
-            y = base - h * f * (0.86 + 0.36 * (jag - 0.5)) - 6.0 * (jag2 - 0.5) * f
-            ridge = np.minimum(ridge, np.where(f > 0, y, 1e9))
-        ridge = np.where(ridge > 1e8, base + 1000, ridge)
-        Hloc = np.maximum(base - ridge, 1.0)[None, :]
-        rel = (Y - ridge[None, :]) / Hloc
-        body = (rel > 0) & (Hloc > 2)
-        fall = (1 - smooth(260, 640, np.abs(X - ex))) * sheet
-        mist = 1 - smooth(0.55, 1.15, rel)
-        n = S.fbm(G.shape, 30.0, seed + 9 + layer, octaves=3)
-        azu = P.mix("#3E6E98", "#7FA6C8", smooth(0.0, 0.35, rel + (n - 0.5) * 0.2))
-        mal = P.mix("#3E8E6E", "#8CBFA0", smooth(0.3, 0.7, rel + (n - 0.5) * 0.2))
-        och = P.mix("#B9926A", "#D8C39A", smooth(0.6, 1.0, rel))
-        c = P.mix(azu, mal, smooth(0.22, 0.42, rel + (n - 0.5) * 0.25)[..., None] * np.ones(3))
-        c = P.mix(c, och, smooth(0.55, 0.8, rel)[..., None] * np.ones(3))
-        m = body * mist * fall * (alpha - 0.15 * layer)
-        col = over(col, m, c)
-        # ink contour along the ridge
-        edge = body * (Y - ridge[None, :] < 2.0) * fall
-        col = over(col, edge.astype(np.float32), rgb("#24302C"), 0.55)
-        # 皴 strokes running down the slopes
-        for _ in range(120):
-            j = int(rng.uniform(0, W - 1))
-            if ridge[j] > 1e3 or fall[min(int(ridge[j]) + 2, H - 1), j] < 0.05:
+            h = hmax * rng.uniform(0.6, 1.0) * (1.0 - 0.12 * k)
+            w = h * rng.uniform(0.36, 0.5)
+            pk.append((x, h, w, rng.uniform(-0.12, 0.12)))
+            x += sgn * (w * rng.uniform(0.9, 1.35))
+        # the tallest at the back, then the others in front
+        for (px, h, w, lean) in sorted(pk, key=lambda q: -q[1]):
+            u = (xs - px) / w
+            f = np.clip(1.0 - np.clip(np.abs(u - lean * (1 - np.abs(u))), 0, 1) ** 2.2, 0, 1) ** 1.1
+            jag = S.fbm((1, len(xs)), 9.0, seed + int(px), octaves=2)[0]
+            y_top = base - h * f * (0.94 + 0.12 * (jag - 0.5))
+            y_top = np.where(f > 0.004, y_top, base + 1000)[None, :]
+            rel = (Y - y_top) / max(h, 1.0)
+            body = ((rel > 0) & (Y < base + 40)).astype(np.float32)
+            if not body.any():
                 continue
-            if base - ridge[j] < 12:
+            n = S.fbm(G.shape, 26.0, seed + 9 + layer + int(px) % 97, octaves=3)
+            q = rel + (n - 0.5) * 0.18
+            c = P.mix(cols[0], P.mix(cols[0], "#FFFFFF", 0.35), smooth(0.0, 0.25, q))
+            c = P.mix(c, cols[1], smooth(0.16, 0.34, q)[..., None] * np.ones(3))
+            c = P.mix(c, P.mix(cols[1], "#E8E0C0", 0.35), smooth(0.4, 0.6, q)[..., None] * np.ones(3))
+            c = P.mix(c, cols[2], smooth(0.55, 0.8, q)[..., None] * np.ones(3))
+            mist = 1 - smooth(0.62, 1.05, rel)
+            m = body * mist * fall * alpha
+            col = over(col, m, c)
+            if ink <= 0:
                 continue
-            y0 = ridge[j] + rng.uniform(3, 0.6 * float(base - ridge[j]))
-            slope = (ridge[min(j + 3, W - 1)] - ridge[max(j - 3, 0)]) / 6.0
-            L = rng.uniform(8, 22)
-            dx = np.sign(slope) * min(abs(slope), 1.5) * L * 0.6
-            pnts = np.array([[j, y0], [j + dx * 0.5, y0 + L * 0.5], [j + dx, y0 + L]], np.float32)
-            sd = S.sd_polyline(G, pnts, np.array([0.9, 0.7, 0.2], np.float32), pad=2)
-            rr = (y0 - ridge[j]) / max(base - ridge[j], 1)
-            col = over(col, S.aa_mask(sd, G), rgb("#24302C"), 0.3 * float(1 - smooth(0.4, 0.9, rr)) * float(fall[int(y0), j]))
+            # contour of this peak (fading down the flanks into the mist)
+            below_summit = 1.0 - (base - y_top) / max(h, 1.0)       # 0 at the summit, 1 at the foot
+            edge = (np.abs(Y - y_top) < 1.3) * (1 - smooth(0.25, 0.75, below_summit))
+            col = over(col, edge.astype(np.float32) * fall, rgb("#22302C"), ink * 0.9)
+            # fold lines from below the summit down the body
+            for sfold in (-0.42, 0.18, 0.55)[: 2 + int(h > 150)]:
+                t = np.linspace(0, 1, 18, dtype=np.float32)
+                x0 = px + sfold * w * 0.25
+                x1 = px + sfold * w * 0.85
+                fx = x0 + (x1 - x0) * t ** 0.8
+                ytop_at = float(base - h * 0.96)
+                fy = ytop_at + h * (0.12 + 0.5 * t)
+                rr = (0.8 * np.sin(np.pi * np.clip(t * 0.9 + 0.1, 0, 1)) + 0.15).astype(np.float32)
+                sd = S.sd_polyline(G, np.stack([fx, fy], 1), rr, pad=2)
+                col = over(col, S.aa_mask(sd, G) * body * fall * mist, rgb("#22302C"), ink * 0.45)
+            # a few 皴 strokes on the flanks
+            for _ in range(int(6 + h / 25)):
+                uu = rng.uniform(-0.8, 0.8)
+                j = int(np.clip(px + uu * w, 0, W - 1))
+                if fall[min(H - 1, int(base)), j] < 0.05:
+                    continue
+                yt = float(y_top[0, j])
+                if yt > base:
+                    continue
+                y0 = yt + rng.uniform(0.1, 0.45) * (base - yt)
+                L = rng.uniform(8, 18)
+                dx = np.sign(uu) * L * 0.25                              # outward and down
+                pnts = np.array([[j, y0], [j + dx * 0.5, y0 + L * 0.5], [j + dx, y0 + L]], np.float32)
+                sd = S.sd_polyline(G, pnts, np.array([0.8, 0.6, 0.2], np.float32), pad=2)
+                col = over(col, S.aa_mask(sd, G) * fall * mist, rgb("#22302C"), ink * 0.4)
     return col
 
 
@@ -201,8 +226,8 @@ def paint():
     col = table(G)
     x0, y0, x1, y1 = SHEET
     d = -S.sd_round_box(G, (x0 + x1) / 2, (y0 + y1) / 2, (x1 - x0) / 2, (y1 - y0) / 2, 3.0)
-    silk = GB.silk_ground(G, 21, light="#E6D6B0", dark="#D5BF94", weave=0.02, mottle=0.4, mottle_cell=160.0,
-                          stain=0.3, foxing=0.04, edge=np.maximum(d - 34.0, 0.0), edge_k=0.45)
+    silk = GB.silk_ground(G, 21, light="#E6D6B0", dark="#D5BF94", weave=0.02, mottle=0.3, mottle_cell=160.0,
+                          stain=0.16, foxing=0.03, edge=np.maximum(d - 34.0, 0.0), edge_k=0.45)
     sheet = S.aa_mask(-d, G)
     col = over(col, sheet, silk)
     col = mountains(col, G, "left", 11, sheet)
